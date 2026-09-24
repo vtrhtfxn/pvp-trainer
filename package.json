@@ -1,0 +1,35 @@
+{
+  "name": "pvp-trainer",
+  "productName": "PvP Trainer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Minecraft Java 1.9+ PvP practice arena with a smart bot — web + macOS app",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "app": "npm run build && electron .",
+    "app:icon": "node electron/make-icon.mjs",
+    "app:build": "npm run build && node electron/make-icon.mjs && node electron/build-app.mjs",
+    "build:server": "vite build --config vite.server.config.ts",
+    "server": "npm run build && npm run build:server && node dist-server/server.mjs",
+    "server:pack": "npm run build && npm run build:server && node scripts/pack-server.mjs"
+  },
+  "dependencies": {
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "@types/three": "^0.186.0",
+    "electron": "^44.4.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,209 @@
+# PvP Trainer
+
+A 3D Minecraft **Java Edition 1.9+** PvP practice arena. Duel a bot that plays by the
+same combat rules you do — attack cooldown, 3-block reach, sprint knockback, W-taps,
+crits, jump-resets, hunger/saturation healing and golden apples.
+
+Built for the web (Three.js + TypeScript). It runs in any Mac browser, builds to a
+**single self-contained HTML file**, ships as a **native macOS app**, and has
+**1v1 online duels** over your own network.
+
+## Play
+
+**macOS app:** build it once, then it lives in `dist-app/`:
+
+```bash
+npm install
+npm run app:build
+```
+
+That produces `dist-app/PvP Trainer-darwin-arm64/PvP Trainer.app` — double-click it, or
+drag it to /Applications. `npm run app` runs the same shell without packaging.
+
+The app serves the game over a private `pvp://` scheme rather than `file://`, so settings
+and duel records persist and pointer lock behaves exactly as it does in Chrome. It is
+ad-hoc signed (unsigned by a developer ID), so if you ever move it between machines run
+`xattr -dr com.apple.quarantine "PvP Trainer.app"` first. Pass `--universal` or
+`--arch=x64` to `node electron/build-app.mjs` for other Macs.
+
+**In a browser:** double-click `dist/index.html` (Chrome recommended; Safari works too).
+
+**Dev server:**
+
+```bash
+npm run dev
+```
+
+Then open http://localhost:5173.
+
+| Key | Action |
+| --- | --- |
+| W A S D | Move |
+| Space | Jump (hold to bunny-hop) |
+| Ctrl | Sprint (toggle by default, or double-tap W) |
+| Shift | Sneak |
+| Left click | Attack |
+| Right click (hold) | Eat golden apple |
+| 1–9 / scroll | Hotbar |
+| F5 or V | Third person |
+| ⌘M (or F3 + B) | Toggle combat hitboxes |
+| Esc | Pause |
+| R | Rematch |
+
+In a browser ⌘M may be swallowed by the browser's own Window menu — F3 + B (the vanilla
+binding) always works, and there is a **Hitboxes** switch in Settings. The macOS app rebinds
+Minimize to ⌥⌘M so ⌘M belongs to the game.
+
+### Combat hitboxes
+
+Same overlay Minecraft draws for F3 + B, drawn over the models rather than behind them:
+
+- white wireframe of the 0.6 × 1.8 entity box (0.6 × 1.5 while sneaking),
+- a red slab at eye height — the exact point every attack ray starts from,
+- a blue ray along the look direction, drawn **3 blocks** long, which is 1.9+ attack reach.
+
+A box turns **yellow** while that fighter is inside the other one's reach, so you can see the
+moment a swing would actually connect. Your own box is hidden in first person.
+
+## Multiplayer
+
+Double-click **`Start Server.command`** in this folder, or:
+
+```bash
+npm run server        # run it from this checkout
+npm run server:pack   # or build a standalone folder anyone can run
+```
+
+The launcher does the same thing as `npm run server` — it also runs `npm install` on a first
+run and keeps the window open when something fails, so it is the one to double-click.
+
+`server:pack` writes **`~/Desktop/PvP Trainer Server/`** — `server.mjs`, `game.html` and
+double-click launchers for Windows (`.bat`), macOS (`.command`) and Linux. It has **no
+dependencies at all**: the WebSocket server is implemented in
+[`src/server/ws.ts`](src/server/ws.ts) and the whole thing bundles to one ~50 kB file, so the
+host only needs Node installed. Zip that folder and send it to whoever is hosting.
+
+The server prints every address a friend could actually reach — deliberately skipping carrier-NAT (`100.64.0.0/10`,
+what a phone hotspot hands out) and link-local addresses, which nobody can route to. Friends
+open the printed URL in a browser, then **Multiplayer → Host a new room** / **Join room code**
+with a 4-letter code. Two per room, unlimited rooms.
+
+**Hits are lag-compensated.** Your client draws the opponent `INTERP_TICKS` (100 ms) behind the
+newest snapshot and interpolates between the two snapshots either side of that moment, so remote
+movement is smooth and — more importantly — delayed by a known amount. When you swing, the server
+rewinds the target by exactly that delay plus half your round-trip time before testing the ray, so
+a swing that connected on your screen connects here. Rewinds are clamped to `MAX_REWIND_TICKS`.
+
+The split is Minecraft's own: **movement is client-authoritative** (each client runs its own
+`Fighter` so the controls never wait on the network) and **combat is server-authoritative** —
+the server owns health, hunger, effects, the attack cooldown and knockback, and runs the exact
+same `Fighter`/`combat` code the single-player sim does, bundled for Node by
+`npm run build:server`. A landed hit sends the victim a velocity packet, which is
+`ClientboundSetEntityMotionPacket` by another name.
+
+The host plays too — hosting just means running the process; open `http://localhost:4180`
+and join like anyone else.
+
+Everyone must be on the same network as the host. Different SSIDs, a phone hotspot or
+anything behind carrier NAT will not reach it; for that, put every machine on
+[Tailscale](https://tailscale.com) and use the host's Tailscale IP.
+
+Because movement is trusted, a modified client could move in ways it shouldn't — it's a
+play-with-friends server, not a hardened one.
+
+| Piece | File |
+| --- | --- |
+| Wire format | [`src/net/protocol.ts`](src/net/protocol.ts) |
+| Authoritative duel | [`src/net/Duel.ts`](src/net/Duel.ts) |
+| Client-side match | [`src/net/NetMatch.ts`](src/net/NetMatch.ts) |
+| Server | [`src/server/main.ts`](src/server/main.ts) |
+| WebSocket (no deps) | [`src/server/ws.ts`](src/server/ws.ts) |
+
+Rendering adapts: the device pixel ratio drops automatically when frames run long and climbs back
+when they do not, which is what keeps it playable on integrated graphics.
+
+## Game modes
+
+| Mode | Status |
+| --- | --- |
+| **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV), 5 golden apples | ✅ Playable |
+| Axe, UHC, Diamond Pot, NethPot, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
+
+Bot difficulties: **Practice, Easy, Normal, Hard, Expert**.
+
+**Practice** moves, strafes, chases and eats golden apples exactly like Easy, but never
+swings — you take no damage, so you can drill combos, W-taps, crits and reach without the
+duel fighting back. Its nametag reads *Passive*.
+
+## Mechanics (all simulated at 20 ticks/second)
+
+- **Attack cooldown**: damage × (0.2 + 0.8·charge²); a sword fully charges in 12 ticks
+  (0.6 s). Every click, including a miss, resets the cooldown. Switching items resets it too.
+- **Reach**: 3.0 blocks from the eyes to the 0.6 × 1.8 hitbox, ray-tested against your crosshair.
+- **Damage**: Diamond Sword 7 + Sharpness V 3. Against Diamond Prot IV a full hit deals
+  1.08 HP and a crit 1.63 HP (vanilla armor-toughness and Protection formulas).
+- **Critical hits**: falling, not on the ground, charge > 90%, and not *server-side* sprinting →
+  1.5× base damage, applied before the Sharpness bonus. A sprint hit always takes priority over a
+  crit, so you have to release sprint before you click. The trick is that after one sprint hit your
+  sprint is cancelled and the client's re-sprint never reaches the server, so **every following hit
+  can crit until you genuinely stop sprinting** — which is also what gets Sprint KB back.
+  The HUD's **Next hit** line names which of the three you are about to land, and why.
+- **Knockback**: 0.4 base, +0.5 per sprint/Knockback level, 0.4 max upward. An **airborne target
+  takes horizontal knockback only** (15w49a) — their vertical motion is left completely alone, so
+  being hit mid-jump keeps the full arc and jump-resets work. Online, the client reports its
+  vertical velocity in every move packet precisely so the server can leave it untouched.
+  Horizontal knockback is computed from a server-side velocity copy that keeps the previous
+  impulse (decaying with friction), which is what makes knockback build through a combo instead
+  of resetting to the same push on every hit.
+- **Sprint knockback and W-tap**: a sprint hit cancels your sprint and slows you to 60%. If you
+  keep holding sprint, the client sprints again but the server never learns about it. You get no
+  more sprint knockback until you W-tap or S-tap, and you can crit while still sprinting.
+- **Hurt immunity**: 10 ticks; a stronger hit during immunity deals only the extra damage and no knockback.
+- **Jump-reset / hit-select**: jumping on the tick you get hit adds the sprint-jump boost
+  toward your opponent. Sprint-hitting right after getting hit cuts your own velocity by 40%.
+- **Movement**: walk 4.317 m/s, sprint 5.612 m/s, sprint-jump boost 0.2, jump 0.42, gravity
+  0.08, drag 0.98, ground friction 0.546, air friction 0.91.
+- **Hunger**: exhaustion from sprinting (0.1/m), jumping (0.05 / 0.2 sprint-jump), attacking
+  and taking damage (0.1). Full hunger with saturation heals 1 HP every 0.5 s. At 18+ hunger
+  you heal 1 HP every 4 s. You can't sprint at 6 hunger or below.
+- **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
+  `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
+  Absorption I for 2 min, 4 hunger and 9.6 saturation.
+
+## The bot
+
+The bot only presses keys, moves the mouse and clicks, with a reaction delay and aim error
+that depend on difficulty. It plays with the same physics and combat rules you do. It:
+
+- times hits to the cooldown (half-swings on Hard+), W-taps and S-taps after sprint hits
+- goes for jump crits, jump-resets, hit-selects and circle strafes
+- keeps its spacing while its sword recharges, and backs out of combos
+- **retreats when its health is low**: it lands a last knockback hit, runs (sprint-jumping on
+  Hard+), eats golden apples once it's far enough away, and comes back once it has healed
+- punishes you with crits when you eat
+
+## Project layout
+
+```
+src/core      constants (all vanilla values), math, rng
+src/game      Fighter (movement/hunger/effects), combat, Match (tick order), Game (glue), kits, items
+src/ai        BotBrain + difficulty profiles
+src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation), first-person item, particles
+src/ui        HUD, menus, settings, pixel-art sprites
+src/render/Hitboxes.ts   F3+B-style debug boxes
+src/net       protocol, authoritative Duel, client NetMatch/NetClient
+src/server    Node multiplayer server + dependency-free WebSocket implementation
+scripts/      pack-server.mjs builds the standalone server folder
+electron/     macOS app shell (main + preload), icon generator, packager script
+tests/        mechanics + bot-vs-bot duel tests (npm test)
+```
+
+To add a mode, fill in its `KitDef` in `src/game/kits.ts` (hotbar, armor) and add any new
+items to `src/game/items.ts`. Unused models (axe, bow, arrow, shield) are already in
+`src/assets/models/`.
+
+## Credits
+
+Models (CC-BY 4.0, Sketchfab): Diamond Sword & Diamond Axe by Blender3D, Golden Apple by
+novvaas, Minecraft Player Rigged by lewisglasgow2005, Bow & Shield by William Zarek,
+Arrow by None. Not affiliated with Mojang or Microsoft.

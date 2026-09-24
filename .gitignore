@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-app/
+dist-server/
+vendor/
+.DS_Store
+.claude/
+New Folder With Items/
+/*.glb
+*.log
