@@ -187,6 +187,19 @@ export function toGeometry(b: { pos: number[]; nrm: number[]; uv: number[] }): T
  * way BlockEntityWithoutLevelRenderer draws it inside an item model: translate(-.5,-.5,-.5),
  * scale(1,-1,-1), then the parts in pixels.
  */
+const cubes = new Map<string, ItemModel>();
+
+/** A 16-pixel block (models/block/cube_all) in item-model space: centred, 1 unit per block. */
+export function cubeModel(name: string): ItemModel | null {
+  const cached = cubes.get(name);
+  if (cached) return cached;
+  const texture = packTexture(name);
+  if (!texture) return null;
+  const m = { geometry: new THREE.BoxGeometry(1, 1, 1), texture };
+  cubes.set(name, m);
+  return m;
+}
+
 export function shieldModel(): ItemModel | null {
   const texture = packTexture('entity/shield_base_nopattern');
   if (!texture) return null;

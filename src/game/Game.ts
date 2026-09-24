@@ -20,7 +20,21 @@ import { performAttack, rayDistanceToTarget } from './combat';
 import type { Fighter, FighterEvent } from './Fighter';
 import { EFFECT_COLORS, ITEMS } from './items';
 import { KITS, kitById } from './kits';
+import { B } from './Blocks';
 import type { World } from './World';
+
+/** Average colour of each block's texture, for break particles. */
+const BLOCK_COLORS: Record<number, number> = {
+  [B.PLANKS]: 0xa2824e,
+  [B.COBWEB]: 0xe8e8e8,
+  [B.COBBLESTONE]: 0x7f7f7f,
+  [B.STONE]: 0x7d7d7d,
+  [B.OBSIDIAN]: 0x1b1429,
+};
+
+function blockSound(block: number): 'wood' | 'stone' | 'web' {
+  return block === B.PLANKS ? 'wood' : block === B.COBWEB ? 'web' : 'stone';
+}
 import { Match } from './Match';
 
 type State = 'menu' | 'playing' | 'paused' | 'results';
@@ -66,11 +80,11 @@ export class Game {
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view = new SceneRenderer(canvas, this.match.world, assets);
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'splash_potion' | 'netherite_sword') =>
+    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword') =>
       itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
-      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_apple') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : undefined;
+      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : undefined;
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
     this.hud = new HUD(uiRoot);
@@ -478,6 +492,7 @@ export class Game {
       p.input = this.input.moveInput();
       p.doubleTapSprint = this.settings.doubleTapSprint;
       m.useHeld = this.input.useHeld && !this.inventory.open;
+      m.attackHeld = this.input.attackHeld && !this.inventory.open;
     } else {
       this.input.consumeLook();
     }
@@ -615,6 +630,17 @@ export class Game {
       if (e.type === 'splash') {
         fx.splash(e.x, e.y, e.z, e.color, e.xp);
         this.sound.glassBreak(e);
+      } else if (e.type === 'blockPlace' || e.type === 'blockBreak') {
+        const at = { x: e.x + 0.5, y: e.y + 0.5, z: e.z + 0.5 };
+        this.sound.block(at, blockSound(e.block), e.type === 'blockBreak');
+        if (e.type === 'blockBreak') fx.blockBreak(e.x, e.y, e.z, BLOCK_COLORS[e.block] ?? 0x888888);
+      } else if (e.type === 'blockConvert') {
+        const at = { x: e.x + 0.5, y: e.y + 0.5, z: e.z + 0.5 };
+        if (e.from === B.COBWEB) fx.blockBreak(e.x, e.y, e.z, BLOCK_COLORS[B.COBWEB]);
+        else {
+          this.sound.fizz(at);
+          fx.poof(at.x, e.y, at.z);
+        }
       }
     }
     w.events.length = 0;
@@ -722,6 +748,12 @@ export class Game {
           break;
         case 'xpPickup':
           this.sound.xp(f.pos);
+          break;
+        case 'bucket':
+          this.sound.bucket(f.pos, e.fluid === B.LAVA, e.fill);
+          break;
+        case 'mineHit':
+          if (live && (f.swingTime <= 0 || f.swingTime === 3)) this.sound.dig(f.pos, blockSound(e.block));
           break;
         case 'miss':
           this.sound.swing(f.pos);

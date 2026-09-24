@@ -659,6 +659,21 @@ body {
   background-color: var(--gold);
 }
 
+.fluid-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+}
+.fluid-tint.water {
+  display: block;
+  background: rgba(30, 60, 170, 0.35);
+}
+.fluid-tint.lava {
+  display: block;
+  background: rgba(230, 90, 10, 0.85);
+}
+
 /* Burning, first person: two flame sheets over the bottom corners (fire_0 is 32 frames tall). */
 .fire-overlay {
   position: absolute;

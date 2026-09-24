@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import * as C from '../core/constants';
 import type { Fighter, Hand } from '../game/Fighter';
 import { ITEMS, isEnchanted, type ItemStack } from '../game/items';
-import { itemTextureName } from './itemIcons';
-import { shieldModel, spriteModel, type ItemModel } from './itemMesh';
+import { isCubeItem, itemTextureName } from './itemIcons';
+import { cubeModel, shieldModel, spriteModel, type ItemModel } from './itemMesh';
 import type { ItemKind } from './itemTransforms';
 
 export interface ItemVisual {
@@ -37,12 +37,15 @@ export function itemVisual(f: Fighter, stack: ItemStack, hand: Hand): ItemVisual
       return { model: `item/crossbow_pulling_${n}`, kind: 'crossbow', glint };
     }
     default:
+      if (isCubeItem(stack.id)) return { model: `cube:${itemTextureName(stack)}`, kind: 'block', glint };
       return { model: itemTextureName(stack), kind: ITEMS[stack.id].handheld ? 'handheld' : 'generated', glint };
   }
 }
 
 function modelFor(key: string): ItemModel | null {
-  return key === 'shield' ? shieldModel() : spriteModel(key);
+  if (key === 'shield') return shieldModel();
+  if (key.startsWith('cube:')) return cubeModel(key.slice(5));
+  return spriteModel(key);
 }
 
 /**

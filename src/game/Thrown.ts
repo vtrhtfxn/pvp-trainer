@@ -2,9 +2,11 @@ import * as C from '../core/constants';
 import { V3, rayAABB, type AABB } from '../core/math';
 import type { Fighter } from './Fighter';
 import { POTIONS, type PotionId } from './items';
+import type { RayHit } from './Blocks';
 import type { World } from './World';
 
 const tmpDir = new V3();
+const rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 const ownerBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 const HALF = 0.125; // 0.25-block projectile box
@@ -83,10 +85,12 @@ export class Thrown {
     const v = this.vel;
     const speed = Math.hypot(v.x, v.y, v.z);
     let travel = 1;
-    const tFloor = v.y < 0 ? (world.floorY - this.pos.y) / v.y : Infinity;
-    const tX = v.x > 0 ? (world.maxX - this.pos.x) / v.x : v.x < 0 ? (world.minX - this.pos.x) / v.x : Infinity;
-    const tZ = v.z > 0 ? (world.maxZ - this.pos.z) / v.z : v.z < 0 ? (world.minZ - this.pos.z) / v.z : Infinity;
-    const tBlock = Math.min(tFloor, tX, tZ);
+    // Blocks: the floor, the walls and anything placed (voxel ray through this tick's motion).
+    let tBlock = Infinity;
+    if (speed > 1e-6) {
+      const h = world.blocks.raycast(this.pos.x, this.pos.y, this.pos.z, v.x / speed, v.y / speed, v.z / speed, speed, 'collider', rayHit);
+      if (h) tBlock = h.t / speed;
+    }
     const hitsBlock = tBlock >= 0 && tBlock <= 1;
     if (hitsBlock) travel = tBlock;
 

@@ -1,13 +1,22 @@
 import { PLAYER_WIDTH } from '../core/constants';
 import { Rng } from '../core/rng';
 import { Arrow } from './Arrow';
+import { Blocks, type CollideResult } from './Blocks';
+import type { DroppedItem } from './DroppedItem';
 import type { Fighter } from './Fighter';
 import type { Thrown } from './Thrown';
 import { XpOrb, orbSize } from './XpOrb';
 
 /** Things the renderer and sound need to hear about that don't belong to one fighter. */
 export type WorldEvent =
-  | { type: 'splash'; x: number; y: number; z: number; color: number; xp: boolean };
+  | { type: 'splash'; x: number; y: number; z: number; color: number; xp: boolean }
+  | { type: 'blockPlace'; x: number; y: number; z: number; block: number }
+  | { type: 'blockBreak'; x: number; y: number; z: number; block: number }
+  /** Water and lava meeting (hiss + smoke), or water washing a cobweb away. */
+  | { type: 'blockConvert'; x: number; y: number; z: number; from: number; to: number };
+
+/** UHC build limit: blocks can be placed in the 12 layers above the floor. */
+export const BUILD_HEIGHT = 12;
 
 export interface MoveResult {
   x: number;
@@ -26,12 +35,19 @@ export class World {
   arrows: Arrow[] = [];
   thrown: Thrown[] = [];
   orbs: XpOrb[] = [];
+  items: DroppedItem[] = [];
+  readonly blocks: Blocks;
   /** Drained by the game each frame; capped so headless simulations never grow it forever. */
   events: WorldEvent[] = [];
   rng = new Rng(1);
   /** Kit rule: every hit's raw damage is multiplied by this before armor (Diamond Pot: 1.33). */
   damageMultiplier = 1;
-  constructor(readonly half = 24) {}
+  /** mcpvp.club "stuns": an axe disabling a shield clears the defender's hurt immunity. */
+  shieldStuns = false;
+  constructor(readonly half = 24) {
+    this.blocks = new Blocks(half, BUILD_HEIGHT);
+    this.blocks.onChange = (x, y, z, from, to) => this.emit({ type: 'blockConvert', x, y, z, from, to });
+  }
 
   get minX() {
     return -this.half;
@@ -46,33 +62,12 @@ export class World {
     return this.half;
   }
 
-  /** Moves a player-sized box whose feet are at (x, y, z) and resolves collisions. */
-  move(x: number, y: number, z: number, dx: number, dy: number, dz: number, hw = PLAYER_WIDTH / 2): MoveResult {
-    let nx = x + dx;
-    let ny = y + dy;
-    let nz = z + dz;
-    let hitX = false;
-    let hitY = false;
-    let hitZ = false;
-    if (ny < this.floorY) {
-      ny = this.floorY;
-      hitY = true;
-    }
-    if (nx < this.minX + hw) {
-      nx = this.minX + hw;
-      hitX = true;
-    } else if (nx > this.maxX - hw) {
-      nx = this.maxX - hw;
-      hitX = true;
-    }
-    if (nz < this.minZ + hw) {
-      nz = this.minZ + hw;
-      hitZ = true;
-    } else if (nz > this.maxZ - hw) {
-      nz = this.maxZ - hw;
-      hitZ = true;
-    }
-    return { x: nx, y: ny, z: nz, hitX, hitY, hitZ };
+  /**
+   * Moves a box (half width `hw`, height `h`) whose feet are at (x, y, z), clipped against the
+   * floor, the walls and any placed block.
+   */
+  move(x: number, y: number, z: number, dx: number, dy: number, dz: number, hw = PLAYER_WIDTH / 2, h = 1.8): MoveResult {
+    return this.blocks.collide(x, y, z, dx, dy, dz, hw, h, { x: 0, y: 0, z: 0, hitX: false, hitY: false, hitZ: false } as CollideResult);
   }
 
   /** Distance from (x, z) to the nearest wall. */
@@ -104,6 +99,11 @@ export class World {
 
   /** Runs after both fighters have ticked, like entity ticking in ServerLevel. */
   tickEntities() {
+    this.blocks.tick();
+    if (this.items.length) {
+      for (const it of this.items) it.tick(this);
+      this.items = this.items.filter((i) => !i.removed);
+    }
     if (this.arrows.length) {
       for (const a of this.arrows) a.tick(this);
       this.arrows = this.arrows.filter((a) => !a.removed);
@@ -123,6 +123,8 @@ export class World {
     this.arrows.length = 0;
     this.thrown.length = 0;
     this.orbs.length = 0;
+    this.items.length = 0;
     this.events.length = 0;
+    this.blocks.clear();
   }
 }

@@ -41,6 +41,8 @@ export class NetMatch {
   tickCount = 0;
   winner: Fighter | null = null;
   useHeld = false;
+  /** Mining is offline-only (UHC); kept so the game loop can treat both matches alike. */
+  attackHeld = false;
   /** Set while the remote snapshot has not arrived yet. */
   ready = false;
   /** The inventory screen is open: keep our local layout instead of the server's snapshot. */

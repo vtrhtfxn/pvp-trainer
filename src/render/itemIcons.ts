@@ -1,12 +1,73 @@
 import type { ItemStack } from '../game/items';
-import { POTIONS, durabilityFraction, isEnchanted, type PotionId } from '../game/items';
+import { ITEMS, POTIONS, durabilityFraction, isEnchanted, type PotionId } from '../game/items';
 import { packImage, registerPackImage } from './pack';
 
 /** Pack texture shown for a stack in the GUI (and meshed for the hand). */
 export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>): string {
   if (s.id === 'crossbow') return s.charged ? 'item/crossbow_arrow' : 'item/crossbow_standby';
   if (s.id === 'splash_potion') return potionTexture(s.potion ?? 'healing');
+  // Block items use their block texture (a cube in the GUI and the hand; a flat sprite for webs).
+  if (ITEMS[s.id].places !== undefined) return `block/${s.id}`;
   return `item/${s.id}`;
+}
+
+/** Block items drawn as a little isometric cube (the vanilla GUI block model). */
+export function isCubeItem(id: string): boolean {
+  return id === 'oak_planks' || id === 'cobblestone' || id === 'obsidian';
+}
+
+/**
+ * Isometric 16×16 cube: top, left and right faces of `top`/`side` textures with vanilla's GUI
+ * shading (top 1, left 0.8, right 0.6).
+ */
+export function isoCube(top: CanvasImageSource, left: CanvasImageSource, right: CanvasImageSource = left): HTMLCanvasElement {
+  const [c, ctx] = blank();
+  const face = (img: CanvasImageSource, shade: number, m: [number, number, number, number, number, number]) => {
+    const [fc, fx] = blank();
+    fx.drawImage(img, 0, 0, 16, 16);
+    fx.globalCompositeOperation = 'source-atop';
+    fx.fillStyle = `rgba(0,0,0,${1 - shade})`;
+    fx.fillRect(0, 0, 16, 16);
+    ctx.setTransform(...m);
+    ctx.drawImage(fc, 0, 0);
+  };
+  face(top, 1, [0.4375, -0.21875, 0.4375, 0.21875, 1, 4.5]);
+  face(left, 0.8, [0.4375, 0.21875, 0, 0.46875, 1, 4.5]);
+  face(right, 0.6, [0.4375, -0.21875, 0, 0.46875, 8, 8]);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return c;
+}
+
+// A golden head: a Steve-style 8×8 head painted in gold (H hair, S skin, E eye, P pupil, M mouth).
+const HEAD_FACE = ['HHHHHHHH', 'HHHHHHHH', 'HSSSSSSH', 'SSSSSSSS', 'SEPSSPES', 'SSSMMSSS', 'SSMSSMSS', 'SSMMMMSS'];
+const HEAD_SIDE = ['HHHHHHHH', 'HHHHHHHH', 'HHHHHHSS', 'HHHHSSSS', 'HHSSSSSS', 'HSSSSSSS', 'SSSSSSSS', 'SSSSSSSS'];
+const HEAD_TOP = ['HHHHHHHH', 'HHhHHHhH', 'HHHHhHHH', 'hHHHHHHH', 'HHHhHHHh', 'HHHHHHHH', 'HhHHHhHH', 'HHHHHHHH'];
+const HEAD_COLORS: Record<string, string> = {
+  H: '#9a7410',
+  h: '#b88c1c',
+  S: '#f2c53d',
+  E: '#fff6c8',
+  P: '#6b4300',
+  M: '#b07a14',
+};
+
+function paintHead(rows: string[]): HTMLCanvasElement {
+  const [c, ctx] = blank();
+  rows.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      ctx.fillStyle = HEAD_COLORS[ch];
+      ctx.fillRect(x * 2, y * 2, 2, 2);
+    }),
+  );
+  return c;
+}
+
+/**
+ * The server's Golden Head is a golden player-head item. Drawn as an isometric head and
+ * registered as the pack texture item/golden_head (icons, hand, dropped items all use it).
+ */
+export function registerGoldenHead() {
+  registerPackImage('item/golden_head', isoCube(paintHead(HEAD_TOP), paintHead(HEAD_SIDE), paintHead(HEAD_FACE)));
 }
 
 /**
@@ -98,7 +159,10 @@ export function itemIcon(s: ItemStack): HTMLCanvasElement | undefined {
   if (c) return c;
   let base: HTMLCanvasElement | undefined;
   if (s.id === 'shield') base = shieldIcon();
-  else {
+  else if (isCubeItem(s.id)) {
+    const img = packImage(tex);
+    if (img) base = isoCube(img, img);
+  } else {
     const img = packImage(tex);
     if (img) {
       const [bc, ctx] = blank();

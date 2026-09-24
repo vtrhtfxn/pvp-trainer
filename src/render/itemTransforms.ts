@@ -3,7 +3,7 @@ import * as THREE from 'three';
 const DEG = Math.PI / 180;
 
 /** Which display block of the item model applies (item/handheld.json, bow.json, …). */
-export type ItemKind = 'handheld' | 'generated' | 'bow' | 'crossbow' | 'shield' | 'shield_blocking';
+export type ItemKind = 'handheld' | 'generated' | 'bow' | 'crossbow' | 'shield' | 'shield_blocking' | 'block';
 export type HandSide = 'right' | 'left';
 
 interface Display {
@@ -50,6 +50,12 @@ const DISPLAY: Record<ItemKind, Displays> = {
     thirdL: d([0, 90, 0], [10, 6, 12], 1),
     firstR: d([0, 180, 5], [-10, 2, -10], 1.25),
     firstL: d([0, 180, 5], [10, 0, -10], 1.25),
+  },
+  // models/block/block.json
+  block: {
+    thirdR: d([75, 45, 0], [0, 2.5, 0], 0.375),
+    firstR: d([0, 45, 0], [0, 0, 0], 0.4),
+    firstL: d([0, 225, 0], [0, 0, 0], 0.4),
   },
   shield_blocking: {
     thirdR: d([45, 135, 0], [3.51, 11, -2], 1),

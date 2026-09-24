@@ -1,10 +1,24 @@
 import * as C from '../core/constants';
+import { B } from '../game/Blocks';
 import { STRONG_ATTACK_SCALE } from '../core/constants';
 import { shieldFaces } from '../game/combat';
 import { bowPower, type Fighter } from '../game/Fighter';
 import { EFFECT_NAMES, ITEMS, formatTicks, type EffectId, type ItemStack } from '../game/items';
 import { drawDurabilityBar, itemIcon } from '../render/itemIcons';
 import { packImage, packUrl } from '../render/pack';
+
+/** Which fluid the player's eyes are in, if any. */
+function eyeFluid(p: Fighter): 'water' | 'lava' | null {
+  const b = p.world.blocks;
+  if (!b.count) return null;
+  const ey = p.pos.y + p.eyeHeight();
+  const x = Math.floor(p.pos.x);
+  const y = Math.floor(ey);
+  const z = Math.floor(p.pos.z);
+  const id = b.get(x, y, z);
+  if ((id !== B.WATER && id !== B.LAVA) || ey > y + b.fluidHeight(x, y, z)) return null;
+  return id === B.WATER ? 'water' : 'lava';
+}
 
 const ROMAN = ['', ' II', ' III', ' IV', ' V'];
 const effectIconCss = new Map<EffectId, string>();
@@ -70,6 +84,7 @@ export class HUD {
   private readonly center: HTMLDivElement;
   private readonly fire: HTMLDivElement;
   private readonly totem: HTMLDivElement;
+  private readonly fluidTint: HTMLDivElement;
   private readonly sprites: HudSprites;
   private scale = 2;
   private dpr = 1;
@@ -107,6 +122,9 @@ export class HUD {
     // Drawn under the rest of the HUD, like vanilla (the hotbar sits on top of the flames).
     this.fire = el('div', 'fire-overlay', this.root);
     this.root.prepend(this.fire);
+    // Head under water or lava: tint the view (vanilla's fog colour).
+    this.fluidTint = el('div', 'fluid-tint', this.root);
+    this.root.prepend(this.fluidTint);
     const fireUrl = packUrl('block/fire_0');
     for (const side of ['left', 'right']) {
       const d = el('div', `fire-sheet ${side}`, this.fire);
@@ -204,6 +222,8 @@ export class HUD {
     },
   ) {
     this.fire.style.display = info.firstPerson && player.onFire && !player.dead ? '' : 'none';
+    const eye = eyeFluid(player);
+    this.fluidTint.className = `fluid-tint${info.firstPerson && eye ? ` ${eye}` : ''}`;
 
     // ---- crosshair + attack indicator (Gui.renderCrosshair)
     const charge = player.attackStrengthScale(0);
@@ -301,6 +321,7 @@ export class HUD {
       bar,
       p.armor.points,
       p.shieldCooldown,
+      [...p.cooldowns.values()].map((c) => c.ticks).join(','),
     ].join('|');
     if (key === this.lastKey) return;
     this.lastKey = key;
@@ -404,8 +425,10 @@ export class HUD {
     const c = this.ctx;
     const icon = itemIcon(st);
     if (icon) c.drawImage(icon, x, y, 16, 16);
-    if (st.id === 'shield' && p.shieldCooldown > 0) {
-      const f = p.shieldCooldown / C.SHIELD_DISABLE_TICKS;
+    const cd = p.cooldowns.get(st.id);
+    if (cd || (st.id === 'shield' && p.shieldCooldown > 0)) {
+      // ItemRenderer's cooldown sweep: a white veil that shrinks from the top.
+      const f = cd ? cd.ticks / cd.total : p.shieldCooldown / C.SHIELD_DISABLE_TICKS;
       const top = Math.floor(16 * (1 - f));
       c.fillStyle = 'rgba(255,255,255,0.5)';
       c.fillRect(x, y + top, 16, 16 - top);

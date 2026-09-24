@@ -111,3 +111,15 @@ export const FIRE_DAMAGE = 1;
 export const TOTEM_REGEN_TICKS = 900; // Regeneration II, 45 s
 export const TOTEM_ABSORPTION_TICKS = 100; // Absorption II, 5 s
 export const TOTEM_FIRE_RES_TICKS = 800; // Fire Resistance, 40 s
+
+// ---- Blocks, fluids and cobwebs (UHC)
+/** Standing in lava: 4 damage (armor applies) and 15 s of fire. */
+export const LAVA_DAMAGE = 4;
+export const LAVA_FIRE_TICKS = 300;
+/** Cobweb: Entity.makeStuckInBlock(0.25, 0.05, 0.25). */
+export const WEB_SLOW_H = 0.25;
+export const WEB_SLOW_V = 0.05;
+/** Survival block reach (block_interaction_range). */
+export const BLOCK_REACH = 4.5;
+/** Ticks between breaking one block and starting the next (MultiPlayerGameMode.destroyDelay). */
+export const DESTROY_DELAY = 5;
