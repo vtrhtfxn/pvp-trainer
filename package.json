@@ -15,6 +15,7 @@
     "app": "npm run build && electron .",
     "app:icon": "node electron/make-icon.mjs",
     "app:build": "npm run build && node electron/make-icon.mjs && node electron/build-app.mjs",
+    "app:win": "npm run build && node electron/make-icon.mjs && node electron/build-app.mjs --win",
     "build:server": "vite build --config vite.server.config.ts",
     "server": "npm run build && npm run build:server && node dist-server/server.mjs",
     "server:pack": "npm run build && npm run build:server && node scripts/pack-server.mjs"

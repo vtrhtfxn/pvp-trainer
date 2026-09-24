@@ -5,6 +5,12 @@ export interface InputCallbacks {
   onSlot(i: number): void;
   onScroll(dir: number): void;
   onToggleCamera(): void;
+  /** Right mouse pressed (a fresh use click). */
+  onUse(): void;
+  /** F: swap main hand and off hand. */
+  onSwapHands(): void;
+  /** E: open or close the inventory. */
+  onInventory(): void;
   onToggleHitboxes(): void;
   onRestart(): void;
   onPointerLockChange(locked: boolean): void;
@@ -19,11 +25,21 @@ export class Input {
   private lookX = 0;
   private lookY = 0;
   useHeld = false;
+  /** Left button held (mining). */
+  attackHeld = false;
   sprintToggled = false;
   toggleSprint = true;
   sensitivity = 0.5;
   rawInput = true;
   enabled = false;
+  /**
+   * A match is on: closing the tab (Ctrl+W, the sprint key next to W) asks "Leave site?"
+   * instead of quitting on the spot.
+   */
+  closeGuard = false;
+  /** Go fullscreen while playing, where the Keyboard Lock API keeps Ctrl+W & co. in the game. */
+  fullscreenLock = true;
+  private wentFullscreen = false;
 
   constructor(
     private readonly target: HTMLElement,
@@ -34,6 +50,7 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.useHeld = false;
+      this.attackHeld = false;
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
@@ -44,12 +61,19 @@ export class Input {
     });
     document.addEventListener('mousedown', (e) => {
       if (!this.locked || !this.enabled) return;
-      if (e.button === 0) this.cb.onClick();
-      else if (e.button === 2) this.useHeld = true;
+      if (e.button === 0) {
+        this.attackHeld = true;
+        this.cb.onClick();
+      }
+      else if (e.button === 2) {
+        this.useHeld = true;
+        this.cb.onUse();
+      }
       e.preventDefault();
     });
     document.addEventListener('mouseup', (e) => {
       if (e.button === 2) this.useHeld = false;
+      if (e.button === 0) this.attackHeld = false;
     });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener(
@@ -64,6 +88,7 @@ export class Input {
       if (!this.locked) {
         this.keys.clear();
         this.useHeld = false;
+        this.attackHeld = false;
       }
       this.cb.onPointerLockChange(this.locked);
     });
@@ -74,10 +99,21 @@ export class Input {
       this.enabled = false;
       this.keys.clear();
       this.useHeld = false;
+      this.attackHeld = false;
       this.unlock();
     };
     window.addEventListener('pagehide', release);
-    window.addEventListener('beforeunload', release);
+    window.addEventListener('beforeunload', (e) => {
+      // The desktop app blocks Ctrl+W itself; there a cancelled unload would only stop the
+      // window from closing.
+      if (this.closeGuard && !window.pvpNative) {
+        e.preventDefault();
+        e.returnValue = '';
+        this.unlock();
+        return;
+      }
+      release();
+    });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') this.unlock();
     });
@@ -88,6 +124,7 @@ export class Input {
   }
 
   async lock() {
+    this.holdShortcuts();
     if (this.locked) return;
     try {
       const req = this.target.requestPointerLock as unknown as (opts?: { unadjustedMovement?: boolean }) => Promise<void> | void;
@@ -100,6 +137,45 @@ export class Input {
         /* user gesture required */
       }
     }
+  }
+
+  /**
+   * Browsers never let a page cancel Ctrl+W, Ctrl+T, Ctrl+N or Ctrl+Q — except in fullscreen,
+   * where the Keyboard Lock API (Chrome, Edge) routes those keys to the page. It needs a click
+   * (lock() is always called from one) and a secure page: localhost, a file, or https. Elsewhere
+   * the "Leave site?" guard is what stops an accidental Ctrl+W.
+   */
+  private holdShortcuts() {
+    if (!this.fullscreenLock || window.pvpNative) return;
+    const keyboard = (navigator as Navigator & { keyboard?: { lock?(codes?: string[]): Promise<void> } }).keyboard;
+    const hold = () => {
+      keyboard?.lock?.(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyT', 'KeyN', 'KeyF', 'Tab']).catch(() => {});
+    };
+    if (document.fullscreenElement) {
+      hold();
+      return;
+    }
+    try {
+      const r = document.documentElement.requestFullscreen?.({ navigationUI: 'hide' });
+      if (!r) return;
+      this.wentFullscreen = true;
+      r.then(hold, () => {
+        this.wentFullscreen = false;
+      });
+    } catch {
+      /* no fullscreen here */
+    }
+  }
+
+  /** Back to the menus: leave the fullscreen we entered and give the shortcuts back. */
+  releaseShortcuts() {
+    try {
+      (navigator as Navigator & { keyboard?: { unlock?(): void } }).keyboard?.unlock?.();
+    } catch {
+      /* not supported */
+    }
+    if (this.wentFullscreen && document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    this.wentFullscreen = false;
   }
 
   /**
@@ -121,7 +197,7 @@ export class Input {
       this.keys.add(code);
     } else this.keys.delete(code);
     if (code === 'F3' || (code === 'KeyM' && (e.metaKey || e.ctrlKey))) e.preventDefault();
-    if (this.locked && ['Space', 'Tab', 'F5', 'ControlLeft', 'KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(code)) e.preventDefault();
+    if (this.locked && ['Space', 'Tab', 'F5', 'ControlLeft', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyF', 'KeyE'].includes(code)) e.preventDefault();
   }
 
   private keyPressed(code: string, e: KeyboardEvent) {
@@ -142,6 +218,10 @@ export class Input {
       if (this.enabled) this.cb.onToggleCamera();
     } else if (code === 'KeyR') {
       this.cb.onRestart();
+    } else if (code === 'KeyE' && !e.repeat) {
+      this.cb.onInventory();
+    } else if (code === 'KeyF' && !e.repeat) {
+      if (this.enabled) this.cb.onSwapHands();
     } else if ((code === 'ControlLeft' || code === 'ControlRight') && this.toggleSprint) {
       this.sprintToggled = !this.sprintToggled;
     }

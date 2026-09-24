@@ -144,11 +144,11 @@ export class Menus {
     this.kitInfo = h('div', { class: 'kit-info' });
     panel.append(this.kitInfo);
 
-    panel.append(h('div', { class: 'section-title' }, 'Bot difficulty'));
+    panel.append(h('div', { class: 'section-title' }, 'Bot tier'));
     const diffs = h('div', { class: 'diff-row' });
     for (const id of DIFFICULTY_ORDER) {
       const d = DIFFICULTIES[id];
-      const b = h('button', { class: 'diff-btn', 'data-diff': id }, d.name);
+      const b = h('button', { class: id === 'practice' ? 'diff-btn diff-practice' : 'diff-btn', 'data-diff': id }, d.name);
       b.style.setProperty('--diff', d.color);
       b.addEventListener('click', () => {
         this.cb.onUiSound();
@@ -179,7 +179,7 @@ export class Menus {
       h(
         'div',
         { class: 'credits' },
-        'Not affiliated with Mojang. Models (CC-BY 4.0): Diamond Sword by Blender3D · Golden Apple by novvaas · Player rig by lewisglasgow2005.',
+        'Not affiliated with Mojang. Textures: Bare Bones resource pack. Player rig (CC-BY 4.0) by lewisglasgow2005.',
       ),
     );
     return root;
@@ -209,12 +209,20 @@ export class Menus {
 
   // ------------------------------------------------------------------ pause
 
+  private restartBtn!: HTMLElement;
+
+  /** Online there is nothing to restart: that would quietly leave the match for a bot duel. */
+  setOnline(online: boolean) {
+    this.restartBtn.style.display = online ? 'none' : '';
+  }
+
   private buildPause(): HTMLDivElement {
     const root = h('div', { class: 'screen pause' });
     const panel = h('div', { class: 'menu-panel small' });
     panel.append(h('div', { class: 'screen-title' }, 'Game Paused'));
     panel.append(this.button('Back to Duel', () => this.cb.onResume(), 'big'));
-    panel.append(this.button('Restart Duel', () => this.cb.onRestart()));
+    this.restartBtn = this.button('Restart Duel', () => this.cb.onRestart());
+    panel.append(this.restartBtn);
     panel.append(this.button('Settings', () => this.openSettings('pause')));
     panel.append(this.button('Quit to Title', () => this.cb.onQuit()));
     root.append(panel);
@@ -279,13 +287,14 @@ export class Menus {
     toggle('Double-tap W Sprint', () => s.doubleTapSprint, (v) => (s.doubleTapSprint = v));
     toggle('View Bobbing', () => s.viewBobbing, (v) => (s.viewBobbing = v));
     toggle('Raw Mouse Input', () => s.rawInput, (v) => (s.rawInput = v));
+    if (!window.pvpNative) toggle('Fullscreen (blocks Ctrl+W)', () => s.fullscreenLock, (v) => (s.fullscreenLock = v));
     toggle('Reach Display', () => s.showReach, (v) => (s.showReach = v));
     toggle('Combo Counter', () => s.showCombo, (v) => (s.showCombo = v));
     toggle('CPS Counter', () => s.showCps, (v) => (s.showCps = v));
     toggle('Next-hit Coach', () => s.showNextHit, (v) => (s.showNextHit = v));
     toggle('Hit Feedback', () => s.hitFeedback, (v) => (s.hitFeedback = v));
     toggle('Opponent Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v));
-    toggle('Hitboxes (⌘M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
+    toggle(/Mac|iP(hone|ad)/.test(navigator.platform) ? 'Hitboxes (⌘M)' : 'Hitboxes (Ctrl+M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
     panel.append(grid);
     panel.append(this.button('Done', () => this.show(this.settingsReturn), 'big'));
     root.append(panel);
@@ -308,9 +317,11 @@ export class Menus {
       ['Space', 'Jump (hold to bunny-hop)'],
       ['Ctrl', 'Sprint (toggle by default) · or double-tap W'],
       ['Shift', 'Sneak'],
-      ['Left Click', 'Attack — full damage every 0.6 s, clicking early resets the cooldown'],
-      ['Right Click (hold)', 'Eat golden apple (1.5 s, you move at 20% speed)'],
-      ['1 – 9 / Scroll', 'Hotbar (switching items resets the attack cooldown)'],
+      ['Left Click', 'Attack — full damage every 0.6 s, clicking early resets the cooldown. Hold on a block to mine it'],
+      ['Right Click (hold)', 'Use: eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion or XP bottle, place a block, pour or fill a bucket. Main hand first, then off hand'],
+      ['1 – 9 / Scroll', 'Hotbar (switching items resets the attack cooldown on the next tick)'],
+      ['F', 'Swap main hand and off hand'],
+      ['E', 'Inventory — drag or click items, shift-click to quick-move, 1–9 / F over a slot to swap'],
       ['F5 or V', 'Toggle third person'],
       ['⌘M (or F3 + B)', 'Toggle combat hitboxes — white box, red eye line, blue 3-block reach ray'],
       ['Esc', 'Pause'],
@@ -337,7 +348,22 @@ export class Menus {
       h('li', {}, 'Jump the moment you get hit (jump-reset) to take less knockback.'),
       h('li', {}, 'Full hunger + saturation heals fast. Golden apples give Regen II + Absorption.'),
       h('li', {}, 'With hitboxes on, a box turns yellow while that fighter is inside the other one\u2019s 3-block reach.'),
-      h('li', {}, 'Practice difficulty never swings back — use it to drill combos, W-taps and reach.'),
+      h('li', {}, 'Practice difficulty never swings back — use it to drill combos, W-taps and reach. In the Axe kit it keeps its shield up, so you can drill shield disables.'),
+      h('li', {}, 'Shield: blocks everything from the front half once it has been up for 0.25 s. You cannot attack while it is raised — lower it first.'),
+      h('li', {}, 'An axe hit on a raised shield disables it for 5 s, at any charge.'),
+      h('li', {}, 'NethPot: look straight down to pot — a splash heals less the further from your feet it lands (nothing past 4 blocks). Healing II is 4 hearts at best.'),
+      h('li', {}, 'NethPot: after a totem pops, re-totem fast — slot key + F with a hotbar totem, or E, hover a totem, F.'),
+      h('li', {}, 'P-crit: when a hit knocks you up, let go of sprint and hit on the way down — a crit without jumping.'),
+      h('li', {}, 'UHC: hold left click to mine (axe for planks, sword for webs); right click places blocks and pours buckets — a bucket ignores players, so aim at the floor under their feet to lava them. Water puts fire out.'),
+      h('li', {}, 'Mace: look straight down and throw a wind charge to fly up; smash on the way down — the longer the fall, the harder (Density for big falls, Breach for short ones). From high up: elytra on (right click it), jump to glide, dive, chestplate back on, smash.'),
+      h('li', {}, 'Crystal: right click obsidian with a crystal, then left click the crystal. Knee-high crystals are half blocked by their own obsidian, so blow craters and set obsidian into the ground for foot-level hits.'),
+      h('li', {}, 'Crystal: anchor = place, glowstone, then click it with anything else (your totem slot is safest). Blasts within 0.5 s of each other only deal the difference.'),
+      h('li', {}, 'Diamond Pot: combos win — W-tap between sprint hits to keep them in the air. Low? Sprint away and pot at your feet (the potion carries your speed). Eat steak before hunger stops your sprint.'),
+      h(
+        'li',
+        {},
+        'Attribute swap: press a hotbar key and click on the same tick (within 50 ms). The hit uses the OLD item\u2019s damage and cooldown with the NEW item\u2019s effect — e.g. a fully charged sword hit that still disables a shield with the axe.',
+      ),
     );
     panel.append(tips);
     panel.append(this.button('Done', () => this.show('main'), 'big'));
@@ -356,7 +382,7 @@ export class Menus {
       h(
         'div',
         { class: 'mp-intro' },
-        'Real 1v1 over your network. One of you runs the server, the other opens the same address — then share a room code.',
+        'Real 1v1 over your network. One of you runs the server, everyone connects to it — then share a room code.',
       ),
     );
     // Opened by double-clicking game.html there is no server behind the page, so the address
@@ -366,9 +392,9 @@ export class Menus {
         h(
           'div',
           { class: 'mp-warn' },
-          'You opened the game as a file, so it does not know where the server is. Unless you are the host, close this and open the ',
-          h('b', {}, 'http://…:4180'),
-          ' address the host\u2019s server window prints.',
+          'Not the host? Type the host\u2019s address in ',
+          h('b', {}, 'Server'),
+          ' (the one their server window prints, for example 192.168.1.23).',
         ),
       );
     }
@@ -381,11 +407,14 @@ export class Menus {
       return input;
     };
 
+    panel.append(
+      h('div', { class: 'mp-hint' }, 'Hosting uses the kit you picked on the main menu (every kit works online); joining plays the host\u2019s kit.'),
+    );
     this.nameInput = field('Your name', loadNetName(), 'Steve', 16);
     this.roomInput = field('Room code', '', 'blank = create a new one', 8);
-    this.serverInput = field('Server', loadNetServer(), 'ws://localhost:4180/ws', 120);
+    this.serverInput = field('Server', loadNetServer(), '192.168.1.23 (the host\u2019s address)', 120);
     panel.append(
-      h('div', { class: 'mp-hint' }, 'Server = the host\u2019s machine. Joining someone else? Replace "localhost" with their address.'),
+      h('div', { class: 'mp-hint' }, 'Server = the host\u2019s machine. Joining someone else? Type their address, e.g. 192.168.1.23.'),
     );
 
     this.netStatusEl = h('div', { class: 'mp-status' });
@@ -418,7 +447,7 @@ export class Menus {
         { class: 'mp-help' },
         'To host: run the server (',
         h('code', {}, 'npm run server'),
-        ', or the START launcher). Everyone — including the host — opens the http:// address it prints, then comes back here. Same network only.',
+        ', or the START launcher). Players type the address it prints in Server — or open that http:// address in a browser. Same network only.',
       ),
     );
     root.append(panel);
@@ -458,6 +487,23 @@ export class Menus {
       ['Longest combo', `${r.player.maxCombo}${r.newBestCombo ? ' ★' : ''}`, `${r.bot.maxCombo}`],
       ['Damage dealt', `${(r.player.damageDealt / 2).toFixed(1)} ❤`, `${(r.bot.damageDealt / 2).toFixed(1)} ❤`],
       ['Golden apples', `${r.player.gapplesEaten}`, `${r.bot.gapplesEaten}`],
+      ...(r.player.blocked + r.bot.blocked + r.player.shieldsDisabled + r.bot.shieldsDisabled > 0
+        ? ([
+            ['Hits blocked', `${r.player.blocked}`, `${r.bot.blocked}`],
+            ['Shields disabled', `${r.player.shieldsDisabled}`, `${r.bot.shieldsDisabled}`],
+            ['Attribute swaps', `${r.player.attributeSwaps}`, `${r.bot.attributeSwaps}`],
+          ] as [string, string, string][])
+        : []),
+      ...(r.player.potsThrown + r.bot.potsThrown + r.player.totemsPopped + r.bot.totemsPopped > 0
+        ? ([
+            ['Pots thrown', `${r.player.potsThrown}`, `${r.bot.potsThrown}`],
+            ['Totems popped', `${r.player.totemsPopped}`, `${r.bot.totemsPopped}`],
+            ['XP bottles', `${r.player.xpBottles}`, `${r.bot.xpBottles}`],
+          ] as [string, string, string][])
+        : []),
+      ...(r.player.arrowsShot + r.bot.arrowsShot > 0
+        ? ([['Arrows hit', `${r.player.arrowHits}/${r.player.arrowsShot}`, `${r.bot.arrowHits}/${r.bot.arrowsShot}`]] as [string, string, string][])
+        : []),
       ['Avg reach', reach(r.player), reach(r.bot)],
     ];
     const table = h('div', { class: 'stats-table' });

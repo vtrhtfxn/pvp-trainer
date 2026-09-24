@@ -127,6 +127,14 @@ export class Sound {
     this.tone(d, t + 0.005, 0.12, 'sawtooth', base * 1.5, base * 0.8, 0.08);
   }
 
+  /** entity.player.attack.sweep: a longer, airy whoosh. */
+  sweep(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.22, 'bandpass', 600, 2600, 1.1, 0.45);
+  }
+
   swing(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.5);
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.13, 'bandpass', 380, 1300, 1.4, 0.35);
@@ -178,6 +186,215 @@ export class Sound {
   land(pos: { x: number; y: number; z: number }, self: boolean) {
     const d = this.out(self ? undefined : pos, self ? 0.25 : 0.3);
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.09, 'lowpass', 500, 150, 0.7, 0.6);
+  }
+
+  /** Wooden thunk of a hit landing on a raised shield. */
+  shieldBlock(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.9);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.09, 'lowpass', 700, 180, 1.2, 0.9);
+    this.tone(d, t, 0.12, 'triangle', 150, 70, 0.6);
+  }
+
+  /** The crack of an axe disabling a shield. */
+  shieldBreak(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.22, 'bandpass', 1800, 300, 0.8, 1);
+    this.noiseBurst(d, t + 0.04, 0.14, 'lowpass', 600, 150, 1, 0.7);
+    this.tone(d, t, 0.2, 'sawtooth', 220, 60, 0.25);
+  }
+
+  shieldRaise(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.35);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.06, 'bandpass', 500, 900, 1.5, 0.3);
+  }
+
+  bowShoot(pos: { x: number; y: number; z: number }, power: number) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 0.12, 'triangle', 420 + power * 200, 180, 0.35);
+    this.noiseBurst(d, t, 0.18, 'bandpass', 2500, 700, 1.2, 0.4);
+  }
+
+  crossbowLoad(pos: { x: number; y: number; z: number }, done: boolean) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    if (done) {
+      this.noiseBurst(d, t, 0.05, 'highpass', 3000, 2000, 1, 0.5);
+      this.tone(d, t, 0.06, 'square', 900, 700, 0.12);
+    } else this.noiseBurst(d, t, 0.25, 'bandpass', 600, 1500, 2, 0.25);
+  }
+
+  arrowHit(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.9);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.07, 'bandpass', 2200, 900, 1.5, 0.7);
+    this.tone(d, t, 0.06, 'sine', 900, 500, 0.25);
+  }
+
+  /** The little "ding" when you hit someone with an arrow (vanilla's arrow hit-player sound). */
+  arrowDing() {
+    const d = this.out(undefined, 0.45);
+    if (d) this.tone(d, this.ctx!.currentTime, 0.16, 'sine', 1250, 1240, 0.3);
+  }
+
+  pickup(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.4);
+    if (d) this.tone(d, this.ctx!.currentTime, 0.07, 'sine', 1400 + Math.random() * 400, 1800, 0.2);
+  }
+
+  /** Throwing a splash potion or XP bottle (entity.splash_potion.throw). */
+  throwItem(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.5);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.14, 'bandpass', 900, 2400, 1.2, 0.35);
+  }
+
+  /** Glass breaking (entity.splash_potion.break). */
+  glassBreak(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.18, 'highpass', 5000, 2500, 0.8, 0.7);
+    for (let i = 0; i < 3; i++) this.tone(d, t + i * 0.025, 0.07, 'sine', 2600 + Math.random() * 1800, 2000, 0.12);
+  }
+
+  /** item.totem.use: a rising magical whoosh. */
+  totem(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.9, 'bandpass', 400, 3200, 2, 0.5);
+    this.tone(d, t, 0.6, 'triangle', 330, 990, 0.3);
+    this.tone(d, t + 0.1, 0.6, 'sine', 495, 1480, 0.2);
+  }
+
+  /** entity.experience_orb.pickup: a high random chime. */
+  xp(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.25);
+    if (d) this.tone(d, this.ctx!.currentTime, 0.09, 'sine', 1600 + Math.random() * 1200, 2400, 0.18);
+  }
+
+  /** entity.item.break */
+  itemBreak(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.2, 'bandpass', 1200, 400, 1, 0.8);
+    this.tone(d, t, 0.15, 'square', 300, 120, 0.15);
+  }
+
+  /** Burning damage tick (entity.player.hurt_on_fire). */
+  sizzle(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.5);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.25, 'highpass', 3000, 1500, 0.7, 0.45);
+  }
+
+  /** Placing or breaking a block: wood thunks, stone clacks, webs rustle. */
+  block(pos: { x: number; y: number; z: number }, kind: 'wood' | 'stone' | 'web', broke: boolean) {
+    const d = this.out(pos, broke ? 0.8 : 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    if (kind === 'web') this.noiseBurst(d, t, 0.12, 'highpass', 4000, 2500, 0.7, 0.35);
+    else if (kind === 'wood') {
+      this.noiseBurst(d, t, broke ? 0.16 : 0.1, 'lowpass', 900, 300, 1.4, 0.8);
+      this.tone(d, t, 0.08, 'triangle', 190, 120, 0.25);
+    } else {
+      this.noiseBurst(d, t, broke ? 0.14 : 0.09, 'bandpass', 1800, 700, 1.2, 0.8);
+    }
+  }
+
+  /** A mining tick (the quiet hit sound while digging). */
+  dig(pos: { x: number; y: number; z: number }, kind: 'wood' | 'stone' | 'web') {
+    const d = this.out(pos, 0.25);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.05, kind === 'wood' ? 'lowpass' : 'bandpass', kind === 'wood' ? 700 : 1600, 400, 1, 0.5);
+  }
+
+  bucket(pos: { x: number; y: number; z: number }, lava: boolean, fill: boolean) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, lava ? 0.4 : 0.3, 'lowpass', fill ? 600 : 1500, fill ? 1500 : 400, 1, lava ? 0.5 : 0.7);
+    if (lava) this.tone(d, t, 0.3, 'sine', 90, 60, 0.3);
+  }
+
+  /** Lava meeting water (block.lava.extinguish). */
+  fizz(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.7);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.45, 'highpass', 5000, 2000, 0.6, 0.6);
+  }
+
+  /** entity.generic.explode: a deep boom with a noisy tail (louder and longer for bigger blasts). */
+  /** entity.wind_charge.wind_burst: a hollow airy thump. */
+  windBurst(pos: { x: number; y: number; z: number }, power: number) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.35 + power * 0.05, 'bandpass', 250, 1400, 0.9, 0.8);
+    this.tone(d, t, 0.18, 'sine', 140, 60, 0.5);
+  }
+
+  /** item.mace.smash_air / smash_ground(_heavy). */
+  smash(pos: { x: number; y: number; z: number }, heavy: boolean) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, heavy ? 0.4 : 0.25, 'triangle', heavy ? 110 : 160, 35, heavy ? 1 : 0.7);
+    this.noiseBurst(d, t, heavy ? 0.3 : 0.18, 'lowpass', 900, 200, 1, heavy ? 1 : 0.6);
+  }
+
+  /** item.armor.equip_netherite / equip_elytra. */
+  equipArmor(pos: { x: number; y: number; z: number }, elytra: boolean) {
+    const d = this.out(pos, 0.5);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, elytra ? 0.2 : 0.12, 'bandpass', elytra ? 900 : 500, elytra ? 2400 : 300, 1, 0.4);
+  }
+
+  explosion(pos: { x: number; y: number; z: number }, power: number) {
+    const d = this.out(pos, 1.4);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.9 + power * 0.08, 'lowpass', 900, 60, 0.9, 1);
+    this.tone(d, t, 0.6, 'sine', 70, 30, 0.9);
+    this.noiseBurst(d, t + 0.02, 0.35, 'bandpass', 2400, 400, 0.7, 0.5);
+  }
+
+  /** Placing an end crystal: a glassy chime. */
+  crystalPlace(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.5);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 0.25, 'sine', 1500, 1900, 0.18);
+    this.tone(d, t + 0.03, 0.2, 'triangle', 2250, 2600, 0.1);
+  }
+
+  /** block.respawn_anchor.charge: a rising hum. */
+  anchorCharge(pos: { x: number; y: number; z: number }, charge: number) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 0.35, 'sawtooth', 110 + charge * 40, 220 + charge * 60, 0.15);
+    this.noiseBurst(d, t, 0.3, 'bandpass', 500, 1400, 2, 0.3);
+  }
+
+  /** Ender pearl throw / teleport: a portal whoosh. */
+  pearl(pos: { x: number; y: number; z: number }, land: boolean) {
+    const d = this.out(pos, land ? 0.8 : 0.4);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, land ? 0.45 : 0.2, 'bandpass', land ? 300 : 1200, land ? 1600 : 600, 1.5, 0.5);
+    if (land) this.tone(d, t, 0.4, 'sine', 180, 520, 0.2);
+  }
+
+  equip() {
+    const d = this.out(undefined, 0.3);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.08, 'bandpass', 1200, 700, 1, 0.3);
   }
 
   ui() {

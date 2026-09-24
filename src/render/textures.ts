@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Rng } from '../core/rng';
+import { packImage } from './pack';
 
 /** Procedurally painted 16×16 textures in the spirit of Minecraft's default pack. */
 
@@ -154,7 +155,68 @@ const painters: Record<string, Painter> = {
 
 const cache = new Map<string, THREE.CanvasTexture>();
 
+// Resource-pack block textures, with the plains biome tints vanilla applies to grass and leaves.
+const GRASS_TINT = '#91bd59';
+const FOLIAGE_TINT = '#77ab2f';
+const PACK_BLOCKS: Record<string, { tex: string; tint?: string; overlay?: string }> = {
+  grass_top: { tex: 'block/grass_block_top', tint: GRASS_TINT },
+  grass_side: { tex: 'block/grass_block_side', overlay: 'block/grass_block_side_overlay' },
+  dirt: { tex: 'block/dirt' },
+  stone_bricks: { tex: 'block/stone_bricks' },
+  mossy_stone_bricks: { tex: 'block/mossy_stone_bricks' },
+  cracked_stone_bricks: { tex: 'block/cracked_stone_bricks' },
+  oak_log: { tex: 'block/oak_log' },
+  oak_log_top: { tex: 'block/oak_log_top' },
+  oak_leaves: { tex: 'block/oak_leaves', tint: FOLIAGE_TINT },
+  oak_planks: { tex: 'block/oak_planks' },
+  cobblestone: { tex: 'block/cobblestone' },
+  glowstone_block: { tex: 'block/glowstone' },
+  bedrock: { tex: 'block/bedrock' },
+  respawn_anchor_top: { tex: 'block/respawn_anchor_top' },
+  respawn_anchor_top_off: { tex: 'block/respawn_anchor_top_off' },
+  respawn_anchor_bottom: { tex: 'block/respawn_anchor_bottom' },
+  respawn_anchor_side0: { tex: 'block/respawn_anchor_side0' },
+  respawn_anchor_side1: { tex: 'block/respawn_anchor_side1' },
+  respawn_anchor_side2: { tex: 'block/respawn_anchor_side2' },
+  respawn_anchor_side3: { tex: 'block/respawn_anchor_side3' },
+  respawn_anchor_side4: { tex: 'block/respawn_anchor_side4' },
+  obsidian: { tex: 'block/obsidian' },
+  stone: { tex: 'block/stone' },
+  glowstone: { tex: 'block/glowstone' },
+};
+
+/** Multiplies a grayscale texture by a biome colour, keeping its alpha. */
+function tinted(img: CanvasImageSource, tint: string): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = c.height = 16;
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(img, 0, 0, 16, 16);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = tint;
+  ctx.fillRect(0, 0, 16, 16);
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(img, 0, 0, 16, 16);
+  return c;
+}
+
+function packCanvas(name: string): HTMLCanvasElement | null {
+  const spec = PACK_BLOCKS[name];
+  const img = spec && packImage(spec.tex);
+  if (!spec || !img) return null;
+  if (spec.tint) return tinted(img, spec.tint);
+  const c = document.createElement('canvas');
+  c.width = c.height = 16;
+  const ctx = c.getContext('2d')!;
+  // Animated textures are vertical strips of square frames: take the first.
+  ctx.drawImage(img, 0, 0, img.width, img.width, 0, 0, 16, 16);
+  const over = spec.overlay && packImage(spec.overlay);
+  if (over) ctx.drawImage(tinted(over, GRASS_TINT), 0, 0);
+  return c;
+}
+
 export function canvasFor(name: string, seed = 1): HTMLCanvasElement {
+  const pack = packCanvas(name);
+  if (pack) return pack;
   const c = document.createElement('canvas');
   c.width = c.height = 16;
   const ctx = c.getContext('2d')!;

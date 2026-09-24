@@ -288,7 +288,7 @@ body {
 
 .diff-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 6px;
 }
 .diff-btn {
@@ -643,11 +643,106 @@ body {
   display: block;
   clip-path: polygon(50% 100%, 0 40%, 0 15%, 20% 0, 50% 15%, 80% 0, 100% 15%, 100% 40%);
 }
+.effect i[style] {
+  clip-path: none;
+  background-color: transparent;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+}
+.effect.blink i {
+  opacity: 0.35;
+}
 .effect.regeneration i {
-  background: #e35ea6;
+  background-color: #e35ea6;
 }
 .effect.absorption i {
-  background: var(--gold);
+  background-color: var(--gold);
+}
+
+.fluid-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+}
+.fluid-tint.water {
+  display: block;
+  background: rgba(30, 60, 170, 0.35);
+}
+.fluid-tint.lava {
+  display: block;
+  background: rgba(230, 90, 10, 0.85);
+}
+
+/* Burning, first person: two flame sheets over the bottom corners (fire_0 is 32 frames tall). */
+.fire-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38vh;
+  pointer-events: none;
+  opacity: 0.8;
+}
+.fire-sheet {
+  position: absolute;
+  bottom: -8vh;
+  width: 30vw;
+  height: 100%;
+  background-size: 100% 3200%;
+  image-rendering: pixelated;
+  animation: fire-anim 1.6s steps(32, jump-none) infinite;
+}
+.fire-sheet.left {
+  left: -4vw;
+}
+.fire-sheet.right {
+  right: -4vw;
+  transform: scaleX(-1);
+}
+@keyframes fire-anim {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 100%;
+  }
+}
+
+.totem-pop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  opacity: 0;
+}
+.totem-pop img {
+  display: block;
+  width: 40vmin;
+  height: 40vmin;
+  image-rendering: pixelated;
+  transform: translate(-50%, -50%);
+}
+.totem-pop.show {
+  animation: totem-pop 2s ease-out forwards;
+}
+@keyframes totem-pop {
+  0% {
+    opacity: 1;
+    transform: translateY(40vh) scale(0.3) rotate(0deg);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(-12deg);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-4vh) scale(1.05) rotate(8deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-70vh) scale(0.6) rotate(0deg);
+  }
 }
 .effect em {
   font-style: normal;
@@ -806,4 +901,149 @@ body {
   font-size: 12px;
   color: #9a9a9a;
   margin-top: -4px;
+}
+
+/* ---------------------------------------------------------------- inventory (E) */
+.inv-screen {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+  background: rgba(16, 16, 16, 0.55);
+  z-index: 30;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.inv-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--gui) * 176px);
+  height: calc(var(--gui) * 166px);
+  transform: translate(-50%, -50%);
+  background: #c6c6c6;
+  border-radius: calc(var(--gui) * 3px);
+  box-shadow:
+    inset calc(var(--gui) * 2px) calc(var(--gui) * 2px) 0 #ffffff,
+    inset calc(var(--gui) * -2px) calc(var(--gui) * -2px) 0 #555555,
+    0 0 0 calc(var(--gui) * 1px) #000000;
+}
+.inv-slot,
+.inv-preview {
+  position: absolute;
+  box-sizing: border-box;
+}
+.inv-slot {
+  width: calc(var(--gui) * 18px);
+  height: calc(var(--gui) * 18px);
+  background: #8b8b8b;
+  border-top: calc(var(--gui) * 1px) solid #373737;
+  border-left: calc(var(--gui) * 1px) solid #373737;
+  border-right: calc(var(--gui) * 1px) solid #ffffff;
+  border-bottom: calc(var(--gui) * 1px) solid #ffffff;
+}
+.inv-slot:not(.deco):hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+.inv-slot.selected {
+  background: #9f9f9f;
+}
+.inv-slot.result {
+  width: calc(var(--gui) * 26px);
+  height: calc(var(--gui) * 26px);
+}
+.inv-preview {
+  width: calc(var(--gui) * 51px);
+  height: calc(var(--gui) * 72px);
+  background: #000;
+  border-top: calc(var(--gui) * 1px) solid #373737;
+  border-left: calc(var(--gui) * 1px) solid #373737;
+  border-right: calc(var(--gui) * 1px) solid #ffffff;
+  border-bottom: calc(var(--gui) * 1px) solid #ffffff;
+  overflow: hidden;
+}
+.inv-preview canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.inv-label {
+  position: absolute;
+  color: #404040;
+  font-size: calc(var(--gui) * 8px);
+  line-height: 1;
+}
+.inv-arrow {
+  position: absolute;
+  width: calc(var(--gui) * 12px);
+  height: calc(var(--gui) * 8px);
+  background:
+    linear-gradient(#8b8b8b, #8b8b8b) 0 calc(var(--gui) * 2.5px) / calc(var(--gui) * 7px) calc(var(--gui) * 3px) no-repeat,
+    conic-gradient(from 225deg at 100% 50%, #8b8b8b 90deg, transparent 0) calc(var(--gui) * 7px) 0 / calc(var(--gui) * 5px) 100% no-repeat;
+}
+.inv-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--gui) * 16px);
+  height: calc(var(--gui) * 16px);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.inv-count {
+  position: absolute;
+  right: calc(var(--gui) * -1px);
+  bottom: calc(var(--gui) * -2px);
+  font-size: calc(var(--gui) * 8px);
+  line-height: 1;
+  color: #fff;
+  text-shadow: calc(var(--gui) * 1px) calc(var(--gui) * 1px) 0 #3f3f3f;
+  pointer-events: none;
+}
+.inv-cursor {
+  position: fixed;
+  left: calc(var(--gui) * -8px);
+  top: calc(var(--gui) * -8px);
+  width: calc(var(--gui) * 16px);
+  height: calc(var(--gui) * 16px);
+  pointer-events: none;
+  z-index: 2;
+}
+.inv-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: none;
+  pointer-events: none;
+  z-index: 3;
+  padding: calc(var(--gui) * 3px) calc(var(--gui) * 4px);
+  background: rgba(16, 0, 16, 0.94);
+  border: calc(var(--gui) * 1px) solid #2a0a5e;
+  outline: calc(var(--gui) * 1px) solid rgba(16, 0, 16, 0.94);
+  color: #a8a8a8;
+  font-size: calc(var(--gui) * 8px);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.inv-tooltip b {
+  display: block;
+  color: #fff;
+  font-weight: 400;
+  margin-bottom: calc(var(--gui) * 2px);
+}
+.inv-tooltip b.ench {
+  color: #55ffff;
+}
+.inv-tooltip span {
+  display: block;
+}
+.inv-tooltip span.attr {
+  color: #5555ff;
+}
+.eat-bar.full .eat-fill {
+  background: #ffffff;
 }

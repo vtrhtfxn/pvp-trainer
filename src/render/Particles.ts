@@ -62,8 +62,9 @@ class ParticleLayer {
   }
 
   spawn(p: P) {
-    if (this.list.length >= this.capacity) this.list.shift();
-    this.list.push(p);
+    // Full: recycle a random old particle instead of shifting the whole array.
+    if (this.list.length >= this.capacity) this.list[(Math.random() * this.list.length) | 0] = p;
+    else this.list.push(p);
   }
 
   update(dt: number) {
@@ -73,7 +74,9 @@ class ParticleLayer {
       const p = this.list[i];
       p.life -= dt;
       if (p.life <= 0) {
-        this.list.splice(i, 1);
+        // Swap-remove: O(1), and draw order does not matter for additive-looking sprites.
+        const last = this.list.pop()!;
+        if (i < this.list.length) this.list[i] = last;
         continue;
       }
       const d = Math.pow(p.drag, steps);
@@ -214,6 +217,141 @@ export class Particles {
         grow: 1.2,
       });
     }
+  }
+
+  /** Splash potion impact (level events 2002/2007): a ring of the potion's colour. */
+  splash(x: number, y: number, z: number, color: number, xp: boolean) {
+    const r = ((color >> 16) & 255) / 255;
+    const g = ((color >> 8) & 255) / 255;
+    const b = (color & 255) / 255;
+    for (let i = 0; i < 70; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 0.05 + Math.random() * 0.15;
+      const shade = 0.75 + Math.random() * 0.25;
+      const life = 0.5 + Math.random() * 0.6;
+      this.stars.spawn({
+        x,
+        y: y + 0.1,
+        z,
+        vx: Math.cos(ang) * sp,
+        vy: 0.02 + Math.random() * 0.12,
+        vz: Math.sin(ang) * sp,
+        r: r * shade,
+        g: g * shade,
+        b: b * shade,
+        size: xp ? 0.07 : 0.1,
+        life,
+        maxLife: life,
+        gravity: 0.004,
+        drag: 0.9,
+        grow: 0,
+      });
+    }
+  }
+
+  /** Block break (level event 2001): chunks of the block's colour burst out of the cell. */
+  blockBreak(x: number, y: number, z: number, color: number) {
+    const r = ((color >> 16) & 255) / 255;
+    const g = ((color >> 8) & 255) / 255;
+    const b = (color & 255) / 255;
+    for (let i = 0; i < 30; i++) {
+      const life = 0.4 + Math.random() * 0.5;
+      const shade = 0.7 + Math.random() * 0.3;
+      const px = x + 0.1 + Math.random() * 0.8;
+      const py = y + 0.1 + Math.random() * 0.8;
+      const pz = z + 0.1 + Math.random() * 0.8;
+      this.squares.spawn({
+        x: px,
+        y: py,
+        z: pz,
+        vx: (px - x - 0.5) * 0.15,
+        vy: 0.05 + Math.random() * 0.1,
+        vz: (pz - z - 0.5) * 0.15,
+        r: r * shade,
+        g: g * shade,
+        b: b * shade,
+        size: 0.07,
+        life,
+        maxLife: life,
+        gravity: 0.03,
+        drag: 0.95,
+        grow: 0,
+      });
+    }
+  }
+
+  /** Ender pearl landing / teleport: a burst of purple portal specks. */
+  portal(x: number, y: number, z: number) {
+    for (let i = 0; i < 32; i++) {
+      const life = 0.4 + Math.random() * 0.6;
+      const shade = 0.6 + Math.random() * 0.4;
+      this.squares.spawn({
+        x: x + (Math.random() - 0.5) * 0.8,
+        y: y + Math.random() * 1.8,
+        z: z + (Math.random() - 0.5) * 0.8,
+        vx: (Math.random() - 0.5) * 0.1,
+        vy: (Math.random() - 0.5) * 0.1,
+        vz: (Math.random() - 0.5) * 0.1,
+        r: 0.8 * shade,
+        g: 0.3 * shade,
+        b: shade,
+        size: 0.05,
+        life,
+        maxLife: life,
+        gravity: 0,
+        drag: 0.9,
+        grow: 0,
+      });
+    }
+  }
+
+  /** Totem of Undying: a fountain of green and yellow sparks around the player. */
+  totem(x: number, y: number, z: number) {
+    for (let i = 0; i < 90; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 0.08 + Math.random() * 0.2;
+      const yellow = Math.random() < 0.4;
+      const life = 0.8 + Math.random() * 1.2;
+      this.squares.spawn({
+        x: x + Math.cos(ang) * 0.3,
+        y: y + 0.4 + Math.random() * 1.2,
+        z: z + Math.sin(ang) * 0.3,
+        vx: Math.cos(ang) * sp,
+        vy: 0.15 + Math.random() * 0.3,
+        vz: Math.sin(ang) * sp,
+        r: yellow ? 1 : 0.35 + Math.random() * 0.2,
+        g: yellow ? 0.9 : 0.85 + Math.random() * 0.15,
+        b: yellow ? 0.2 : 0.2,
+        size: 0.06,
+        life,
+        maxLife: life,
+        gravity: 0.01,
+        drag: 0.9,
+        grow: 0,
+      });
+    }
+  }
+
+  /** Ambient potion swirl (LivingEntity.tickEffects): one faint particle in the effect's colour. */
+  swirl(x: number, y: number, z: number, color: number) {
+    const life = 0.8 + Math.random() * 0.4;
+    this.squares.spawn({
+      x: x + (Math.random() - 0.5) * 0.6,
+      y: y + Math.random() * 1.8,
+      z: z + (Math.random() - 0.5) * 0.6,
+      vx: 0,
+      vy: 0.02,
+      vz: 0,
+      r: ((color >> 16) & 255) / 255,
+      g: ((color >> 8) & 255) / 255,
+      b: (color & 255) / 255,
+      size: 0.05,
+      life,
+      maxLife: life,
+      gravity: -0.0005,
+      drag: 0.95,
+      grow: 0,
+    });
   }
 
   clear() {
