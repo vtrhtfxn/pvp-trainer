@@ -1,4 +1,4 @@
-import type { DifficultyId } from '../ai/difficulty';
+import { DIFFICULTIES, LEGACY_DIFFICULTY, type DifficultyId } from '../ai/difficulty';
 import type { KitId } from '../game/kits';
 
 export interface Settings {
@@ -11,6 +11,8 @@ export interface Settings {
   toggleSprint: boolean;
   doubleTapSprint: boolean;
   rawInput: boolean;
+  /** Fullscreen while playing, so Ctrl+W (sprint + forward) cannot close the tab. */
+  fullscreenLock: boolean;
   showReach: boolean;
   showCombo: boolean;
   showCps: boolean;
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   toggleSprint: true,
   doubleTapSprint: true,
   rawInput: true,
+  fullscreenLock: true,
   showReach: true,
   showCombo: true,
   showCps: true,
@@ -43,7 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.8,
   guiScale: 0,
   kit: 'sword',
-  difficulty: 'normal',
+  difficulty: 'ht4',
 };
 
 const KEY = 'pvp-trainer.settings.v1';
@@ -52,7 +55,12 @@ const RECORD_KEY = 'pvp-trainer.records.v1';
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (raw) {
+      const s: Settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      // Easy / Normal / Hard / Expert became tiers; anything unknown falls back to the default.
+      if (!(s.difficulty in DIFFICULTIES)) s.difficulty = LEGACY_DIFFICULTY[s.difficulty] ?? DEFAULT_SETTINGS.difficulty;
+      return s;
+    }
   } catch {
     /* storage unavailable */
   }

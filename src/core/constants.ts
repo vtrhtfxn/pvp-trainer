@@ -61,5 +61,82 @@ export const EXHAUSTION_HEAL = 6;
 export const EXHAUSTION_MAX = 40;
 
 // ---- Items ----
-// Vanilla golden apples take 32 ticks (1.6 s). Set to 30 (1.5 s) as requested.
-export const GOLDEN_APPLE_EAT_TICKS = 30;
+// Golden apples take 32 ticks (1.6 s) to eat, like every food (FoodProperties / Consumable).
+export const GOLDEN_APPLE_EAT_TICKS = 32;
+
+// ---- Shields (Java 1.9+)
+/** A raised shield only blocks once it has been held up this long (LivingEntity.isBlocking). */
+export const SHIELD_RAISE_TICKS = 5;
+/** An axe hit on a raised shield puts it on cooldown for 5 s. */
+export const SHIELD_DISABLE_TICKS = 100;
+/** Items with an open-ended use (shield, bow, loading crossbow) — vanilla's 72000. */
+export const USE_FOREVER = 72000;
+
+// ---- Bows, crossbows and arrows (AbstractArrow / BowItem / CrossbowItem)
+export const BOW_FULL_DRAW_TICKS = 20;
+export const BOW_MAX_SPEED = 3;
+export const CROSSBOW_CHARGE_TICKS = 25;
+export const CROSSBOW_SPEED = 3.15;
+export const ARROW_BASE_DAMAGE = 2;
+export const ARROW_GRAVITY = 0.05;
+export const ARROW_DRAG = 0.99;
+export const ARROW_INACCURACY = 0.0172275;
+/** Arrows stuck in the ground vanish after a minute (1200 ticks). */
+export const ARROW_DESPAWN_TICKS = 1200;
+
+// ---- Thrown items (ThrowableProjectile, ThrownSplashPotion, ThrownExperienceBottle)
+/** Splash potions and XP bottles are thrown 20° above the crosshair (shootFromRotation). */
+export const THROW_PITCH_OFFSET_DEG = 20;
+export const POTION_THROW_SPEED = 0.5;
+export const POTION_GRAVITY = 0.05;
+export const XP_BOTTLE_THROW_SPEED = 0.7;
+export const XP_BOTTLE_GRAVITY = 0.07;
+export const THROWN_DRAG = 0.99;
+/** Ender pearls: thrown straight along the crosshair at 1.5 blocks/tick, gravity 0.03. */
+export const PEARL_THROW_SPEED = 1.5;
+export const PEARL_GRAVITY = 0.03;
+/** Landing a pearl: 5 fall damage (Feather Falling reduces it). */
+export const PEARL_DAMAGE = 5;
+/** Splash radius: full strength on a direct hit, fading linearly to nothing 4 blocks out. */
+export const SPLASH_RADIUS = 4;
+
+// ---- Experience orbs and Mending
+export const XP_ORB_GRAVITY = 0.03;
+export const XP_ORB_FOLLOW_RANGE = 8;
+/** Player.takeXpDelay: one orb every 2 ticks. */
+export const XP_PICKUP_DELAY = 2;
+/** Mending repairs 2 durability per experience point. */
+export const MENDING_DURABILITY_PER_XP = 2;
+
+// ---- Fire, totems
+/** Fire Aspect sets the target alight for 4 s per level. */
+export const FIRE_ASPECT_TICKS_PER_LEVEL = 80;
+/** Burning deals 1 damage every 20 ticks (Entity.baseTick), ignoring armor points. */
+export const FIRE_DAMAGE = 1;
+export const TOTEM_REGEN_TICKS = 900; // Regeneration II, 45 s
+export const TOTEM_ABSORPTION_TICKS = 100; // Absorption II, 5 s
+export const TOTEM_FIRE_RES_TICKS = 800; // Fire Resistance, 40 s
+
+// ---- Blocks, fluids and cobwebs (UHC)
+/** Standing in lava: 4 damage (armor applies) and 15 s of fire. */
+export const LAVA_DAMAGE = 4;
+export const LAVA_FIRE_TICKS = 300;
+/** Cobweb: Entity.makeStuckInBlock(0.25, 0.05, 0.25). */
+export const WEB_SLOW_H = 0.25;
+export const WEB_SLOW_V = 0.05;
+/** Survival block reach (block_interaction_range). */
+export const BLOCK_REACH = 4.5;
+/** Ticks between breaking one block and starting the next (MultiPlayerGameMode.destroyDelay). */
+export const DESTROY_DELAY = 5;
+
+// ---- Mace kit
+/** WindChargeItem: thrown at 1.5 blocks/tick with no pitch offset. */
+export const WIND_CHARGE_SPEED = 1.5;
+/** Wind charge explosion radius (power) and the knockback multiplier a player's charge gets. */
+export const WIND_CHARGE_POWER = 1.2;
+export const WIND_CHARGE_KNOCKBACK = 1.22;
+/** Mace smash attacks need more than this fall distance (MaceItem.canSmashAttack). */
+export const SMASH_MIN_FALL = 1.5;
+/** Elytra flight: the FALL_FLYING pose is a 0.6-block cube with the eyes at 0.4. */
+export const PLAYER_GLIDE_HEIGHT = 0.6;
+export const EYE_HEIGHT_GLIDE = 0.4;

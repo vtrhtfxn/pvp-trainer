@@ -17,6 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Duel } from '../net/Duel';
+import { KITS, type KitId } from '../game/kits';
 import { NET_TPS, PROTOCOL_VERSION, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
 import { attachWebSocket, type WsConnection } from './ws';
 
@@ -74,6 +75,9 @@ class Room {
   private tick = 0;
   private rematchVotes = new Set<number>();
 
+  /** The kit everyone in the room fights with — chosen by whoever created the room. */
+  kit: KitId = 'sword';
+
   constructor(readonly code: string) {}
 
   get players(): Client[] {
@@ -94,38 +98,42 @@ class Room {
       t: 'lobby',
       room: this.code,
       players: this.players.map((c) => ({ i: c.seat, name: c.name })),
+      kit: this.kit,
     });
   }
 
   startIfReady() {
     if (this.players.length !== 2 || this.duel) return;
     const names: [string, string] = [this.seats[0]!.name, this.seats[1]!.name];
-    this.duel = new Duel(names);
+    this.duel = new Duel(names, this.kit);
     this.rematchVotes.clear();
-    this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds });
+    this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
     this.timer = setInterval(() => this.step(), TICK_MS);
     log(`room ${this.code}: duel started — ${names[0]} vs ${names[1]}`);
   }
 
   private step() {
+    try {
+      this.stepDuel();
+    } catch (err) {
+      // One broken duel must not take every other room down with it.
+      log(`room ${this.code}: duel crashed — ${(err as Error)?.stack ?? err}`);
+      if (this.timer) clearInterval(this.timer);
+      this.timer = null;
+      this.duel = null;
+      for (const c of this.players) c.send({ t: 'error', message: 'The duel hit an error on the server. Join the room again to play on.' });
+    }
+  }
+
+  private stepDuel() {
     const duel = this.duel;
     if (!duel) return;
     this.tick++;
     for (const e of duel.tick()) {
       if (e.motion) this.seats[e.motion.to]?.send({ t: 'motion', vx: e.motion.vx, vy: e.motion.vy, vz: e.motion.vz });
-      if (e.hit) this.broadcast({ t: 'hit', on: e.hit.on, hit: e.hit.hit });
-      if (e.miss) this.broadcast({ t: 'miss', by: e.miss.by });
-      if (e.eat) this.broadcast({ t: 'eat', by: e.eat.by, kind: e.eat.kind });
+      if (e.teleport) this.seats[e.teleport.to]?.send({ t: 'teleport', id: e.teleport.id, x: e.teleport.x, y: e.teleport.y, z: e.teleport.z });
     }
-    this.broadcast({
-      t: 'state',
-      tick: this.tick,
-      phase: duel.phase,
-      fightTicks: duel.fightTicks,
-      countdown: duel.countdownSeconds,
-      players: [0, 1].map((i) => duel.snapshot(i, this.seats[i]?.ping ?? 0)),
-      winner: duel.winner,
-    });
+    this.broadcast(duel.stateMessage(this.tick, [this.seats[0]?.ping ?? 0, this.seats[1]?.ping ?? 0]));
     if (this.tick % PING_EVERY === 0) for (const c of this.players) c.startPing();
     if (duel.phase === 'ended' && duel.phaseTicks === 1) {
       this.broadcast({ t: 'end', winner: duel.winner });
@@ -134,12 +142,12 @@ class Room {
   }
 
   voteRematch(seat: number) {
-    if (!this.duel) return;
+    if (!this.duel || this.duel.phase !== 'ended') return;
     this.rematchVotes.add(seat);
     if (this.rematchVotes.size >= 2 && this.players.length === 2) {
       this.rematchVotes.clear();
       this.duel.reset();
-      this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds });
+      this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
     }
   }
 
@@ -181,6 +189,11 @@ function handle(client: Client, msg: ClientMsg) {
         room = new Room(code);
         rooms.set(code, room);
       }
+      // A new room takes the creator's kit; joining an existing room keeps its kit.
+      if (room.players.length === 0) {
+        const kit = String(msg.kit ?? 'sword');
+        room.kit = KITS.some((k) => k.id === kit && k.available) ? (kit as KitId) : 'sword';
+      }
       const seat = room.freeSeat();
       if (seat < 0) {
         client.send({ t: 'error', message: `Room ${room.code} is full — it already has two fighters.` });
@@ -195,19 +208,14 @@ function handle(client: Client, msg: ClientMsg) {
       log(`${client.name} joined room ${room.code} as seat ${seat}`);
       return;
     }
-    case 'move': {
-      const d = client.room?.duel;
-      d?.fighters[client.seat].applyMove(msg.x, msg.y, msg.z, msg.yaw, msg.pitch, !!msg.g, !!msg.sp, !!msg.sn, Number(msg.vy) || 0);
-      return;
-    }
+    case 'move':
     case 'attack':
-      client.room?.duel?.queueAttack(client.seat);
-      return;
     case 'use':
-      client.room?.duel?.setUse(client.seat, !!msg.down);
-      return;
+    case 'mine':
     case 'slot':
-      client.room?.duel?.setSlot(client.seat, Number(msg.i) | 0);
+    case 'swap':
+    case 'inv':
+      client.room?.duel?.receive(client.seat, msg);
       return;
     case 'rematch':
       client.room?.voteRematch(client.seat);
@@ -333,13 +341,13 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  You (the host) play here:   http://localhost:${PORT}`);
   console.log('  Hosting does NOT stop you playing - open that link and join like anyone else.');
   console.log('');
-  console.log('  IMPORTANT: everyone opens an http:// address in a browser.');
-  console.log('  Do NOT double-click game.html - opened that way the game cannot find this');
-  console.log('  server, and it will say "could not reach that server".');
   if (usable.length) {
     console.log('');
-    console.log('  Everyone else on your network opens ONE of these:');
+    console.log('  Everyone else on your network opens ONE of these in a browser:');
     for (const a of usable) console.log(`      http://${a.address}:${PORT}      (${a.iface})`);
+    console.log('');
+    console.log('  Friends with the PvP Trainer app (Windows or Mac) instead type the address');
+    console.log(`  in Multiplayer -> Server, e.g.  ${usable[0].address}${PORT === 4180 ? '' : `:${PORT}`}`);
   } else {
     console.log('');
     console.log('  NOBODY ELSE CAN REACH THIS MACHINE.');
@@ -376,7 +384,11 @@ function openBrowser(url: string) {
   const cmd = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
   try {
-    spawn(cmd, args, { stdio: 'ignore', detached: true }).unref();
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    // A missing opener (no xdg-open on a bare Linux box) arrives as an async 'error' event —
+    // unhandled, it would take the whole server down right after it started.
+    child.on('error', () => {});
+    child.unref();
   } catch {
     /* no browser to open; the address is printed above anyway */
   }

@@ -10,8 +10,8 @@ function setup() {
   const world = new World(40);
   const a = new Fighter('player', 'A', world);
   const b = new Fighter('bot', 'B', world);
-  a.reset(0, 2, 0, kit.hotbar, kit.armor); // at z=2 looking toward -Z
-  b.reset(0, 0, Math.PI, kit.hotbar, kit.armor); // at z=0 looking toward +Z
+  a.reset(0, 2, 0, kit); // at z=2 looking toward -Z
+  b.reset(0, 0, Math.PI, kit); // at z=0 looking toward +Z
   return { world, a, b };
 }
 
@@ -185,7 +185,7 @@ describe('damage', () => {
 });
 
 describe('golden apple', () => {
-  it('takes the configured time and gives Regeneration II + Absorption', () => {
+  it('takes 32 ticks (1.6 s) and gives Regeneration II + Absorption', () => {
     const { a } = setup();
     a.health = 10;
     a.selectSlot(1);
@@ -196,8 +196,8 @@ describe('golden apple', () => {
       step(a);
       ticks++;
     }
-    expect(ticks).toBe(30);
-    expect(a.hotbar[1]?.count).toBe(4);
+    expect(ticks).toBe(32);
+    expect(a.inventory[1]?.count).toBe(4);
     expect(a.absorption).toBe(4);
     expect(a.effects.get('regeneration')?.amplifier).toBe(1);
     const before = a.health;
@@ -217,5 +217,33 @@ describe('golden apple', () => {
     for (let i = 0; i < 10; i++) step(a);
     const speed = (z0 - a.pos.z) / 10;
     expect(speed).toBeLessThan(0.05);
+  });
+});
+
+describe('audit regressions', () => {
+  it('a gapple eaten under a totem’s Absorption II keeps its Absorption I for later', async () => {
+    const { World } = await import('../src/game/World');
+    const { Fighter } = await import('../src/game/Fighter');
+    const { kitById } = await import('../src/game/kits');
+    const world = new World(20);
+    const f = new Fighter('player', 'A', world);
+    world.fighters.push(f);
+    f.reset(0.5, 0.5, 0, kitById('neth_pot'));
+    f.addEffect('absorption', 1, 100); // totem
+    f.absorption = 2; // some of it already soaked up
+    f.addEffect('absorption', 0, 2400); // gapple
+    expect(f.effects.get('absorption')?.amplifier).toBe(1);
+    for (let i = 0; i < 120; i++) f.tick();
+    const e = f.effects.get('absorption');
+    expect(e?.amplifier).toBe(0);
+    expect(e!.duration).toBeGreaterThan(2200);
+    expect(f.absorption).toBe(4);
+  });
+
+  it('the arena walls go up forever: nobody leaves above build height', async () => {
+    const { World } = await import('../src/game/World');
+    const world = new World(40);
+    const r = world.move(39.5, 20, 0, 3, 0, 0, 0.3, 1.8);
+    expect(r.x).toBeLessThan(40);
   });
 });

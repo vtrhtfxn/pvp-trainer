@@ -1,7 +1,8 @@
 import { BotBrain } from '../ai/BotBrain';
 import type { BotProfile } from '../ai/difficulty';
 import { Rng } from '../core/rng';
-import { performAttack, pushApart, type AttackOutcome } from './combat';
+import { performAttack, pushApart, rayDistanceToTarget, type AttackOutcome } from './combat';
+import { attackCrystal, crosshairCrystal } from './crystals';
 import { Fighter } from './Fighter';
 import type { KitDef } from './kits';
 import { World } from './World';
@@ -15,7 +16,7 @@ export const SPAWN_DISTANCE = 12;
  * the same order as a Minecraft client/server tick (inputs & clicks first, then entity ticks).
  */
 export class Match {
-  readonly world = new World(24);
+  readonly world: World;
   readonly player: Fighter;
   readonly bot: Fighter;
   readonly brain: BotBrain;
@@ -29,7 +30,11 @@ export class Match {
   // Player controls fed by the input layer
   private queuedClicks = 0;
   private queuedSlot: number | null = null;
+  private queuedUse = 0;
+  private queuedSwap = 0;
   useHeld = false;
+  /** Left button held: keeps mining the block under the crosshair. */
+  attackHeld = false;
   /** Last outcome of a player click (for HUD feedback). */
   lastPlayerAttack: AttackOutcome | null = null;
 
@@ -39,26 +44,54 @@ export class Match {
     seed?: number,
   ) {
     this.rng = new Rng(seed);
+    this.world = new World(undefined, kit.floorDepth ?? 0);
     this.player = new Fighter('player', 'You', this.world);
     this.bot = new Fighter('bot', `${profile.name} Bot`, this.world);
-    this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () =>
-      performAttack(this.bot, this.player),
-    );
+    this.world.fighters.push(this.player, this.bot);
+    this.world.damageMultiplier = kit.damageMultiplier ?? 1;
+    this.world.shieldStuns = !!kit.shieldStuns;
+    this.world.rng = new Rng(this.rng.int(0, 2 ** 30));
+    this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () => {
+      // Like the player's clicks: an end crystal nearer than the opponent takes the hit.
+      const cr = crosshairCrystal(this.bot);
+      const t = rayDistanceToTarget(this.bot, this.player);
+      if (cr && (t < 0 || cr.t < t)) {
+        attackCrystal(this.bot, cr.crystal);
+        return { hit: false, reach: -1, crit: false, sprint: false, scale: 1, damage: 0, blocked: false, disabled: false, swap: false };
+      }
+      return performAttack(this.bot, this.player);
+    });
     this.reset();
   }
 
   reset() {
     const half = SPAWN_DISTANCE / 2;
-    this.player.reset(0, half, 0, this.kit.hotbar, this.kit.armor);
-    this.bot.reset(0, -half, Math.PI, this.kit.hotbar, this.kit.armor);
+    this.player.reset(0, half, 0, this.kit);
+    this.bot.reset(0, -half, Math.PI, this.kit);
+    this.world.clearEntities();
+    this.player.naturalRegen = this.bot.naturalRegen = this.kit.naturalRegen ?? true;
+    this.brain.resetRound();
     this.phase = 'countdown';
     this.phaseTicks = 0;
     this.fightTicks = 0;
     this.winner = null;
     this.queuedClicks = 0;
     this.queuedSlot = null;
+    this.queuedUse = 0;
+    this.queuedSwap = 0;
     this.useHeld = false;
+    this.attackHeld = false;
     this.lastPlayerAttack = null;
+  }
+
+  /** A fresh right-click press (so a tap shorter than a tick still fires a crossbow). */
+  queueUse() {
+    this.queuedUse++;
+  }
+
+  /** F: swap main hand and off hand. */
+  queueSwapHands() {
+    this.queuedSwap++;
   }
 
   queueClick() {
@@ -86,6 +119,8 @@ export class Match {
       this.brain.tick();
     } else {
       this.queuedClicks = 0;
+      this.queuedUse = 0;
+      this.queuedSwap = 0;
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
       if (this.phase === 'countdown') {
         b.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
@@ -96,6 +131,7 @@ export class Match {
     p.tick();
     b.tick();
     pushApart(p, b);
+    this.world.tickEntities();
 
     this.phaseTicks++;
     if (this.phase === 'countdown' && this.phaseTicks >= COUNTDOWN_TICKS) {
@@ -108,20 +144,46 @@ export class Match {
     }
   }
 
-  /** Mirrors Minecraft.handleKeybinds for the local player. */
+  /**
+   * Mirrors Minecraft.handleKeybinds for the local player: hotbar keys, then swap-hands, then
+   * either the item in use or attacks and use clicks. The fixed order is what makes attribute
+   * swapping work — a number key and a click inside the same tick always switch first.
+   */
   private handlePlayerActions() {
     const p = this.player;
     if (this.queuedSlot !== null) {
       p.selectSlot(this.queuedSlot);
       this.queuedSlot = null;
     }
+    while (this.queuedSwap > 0) {
+      this.queuedSwap--;
+      p.swapHands();
+    }
     if (p.usingItem) {
-      if (!this.useHeld) p.stopUsingItem();
-      this.queuedClicks = 0; // clicks are swallowed while eating
+      if (!this.useHeld) p.releaseUsingItem();
+      this.queuedClicks = 0; // clicks are swallowed while an item is in use
+      this.queuedUse = 0;
     } else {
+      // A click on a block starts mining it (and is not an attack: no cooldown reset); holding
+      // the button keeps mining. Anything else is a swing at the opponent.
+      let mined = false;
       while (this.queuedClicks > 0) {
         this.queuedClicks--;
-        this.lastPlayerAttack = performAttack(p, this.bot);
+        // The crosshair picks whatever is nearest: an end crystal in front of the opponent
+        // gets hit (and blows up) instead of them.
+        const cr = crosshairCrystal(p);
+        const botT = rayDistanceToTarget(p, this.bot);
+        if (cr && (botT < 0 || cr.t < botT)) {
+          attackCrystal(p, cr.crystal);
+          continue;
+        }
+        if (!mined && p.tickMining(true, true)) mined = true;
+        else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot);
+      }
+      if (!mined) p.tickMining(this.attackHeld, false);
+      while (this.queuedUse > 0) {
+        this.queuedUse--;
+        p.startUsingItem(true);
       }
       if (this.useHeld) p.startUsingItem();
     }
