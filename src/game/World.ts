@@ -16,6 +16,8 @@ export type WorldEvent =
   /** Water and lava meeting (hiss + smoke), or water washing a cobweb away. */
   | { type: 'blockConvert'; x: number; y: number; z: number; from: number; to: number }
   | { type: 'explosion'; x: number; y: number; z: number; power: number }
+  /** A wind charge or Wind Burst gust (no damage, knockback only). */
+  | { type: 'wind'; x: number; y: number; z: number; power: number }
   | { type: 'crystalPlace'; x: number; y: number; z: number }
   | { type: 'anchorCharge'; x: number; y: number; z: number; charge: number }
   | { type: 'pearl'; x: number; y: number; z: number };

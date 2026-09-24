@@ -4,6 +4,8 @@ import type { Fighter } from './Fighter';
 import { POTIONS, type PotionId } from './items';
 import type { RayHit } from './Blocks';
 import { detonateCrystal } from './crystals';
+import { hurt } from './combat';
+import { windExplosion } from './Explosion';
 import type { EndCrystal } from './EndCrystal';
 import type { World } from './World';
 
@@ -29,7 +31,7 @@ export class Thrown {
 
   constructor(
     readonly owner: Fighter,
-    readonly kind: 'potion' | 'xp' | 'pearl',
+    readonly kind: 'potion' | 'xp' | 'pearl' | 'wind',
     readonly potion: PotionId | null,
     x: number,
     y: number,
@@ -40,6 +42,7 @@ export class Thrown {
   }
 
   get gravity() {
+    if (this.kind === 'wind') return 0;
     return this.kind === 'potion' ? C.POTION_GRAVITY : this.kind === 'pearl' ? C.PEARL_GRAVITY : C.XP_BOTTLE_GRAVITY;
   }
 
@@ -139,6 +142,8 @@ export class Thrown {
       return;
     }
     this.pos.set(this.pos.x + v.x, this.pos.y + v.y, this.pos.z + v.z);
+    // Wind charges (AbstractHurtingProjectile with no acceleration) keep their speed.
+    if (this.kind === 'wind') return;
     v.x *= C.THROWN_DRAG;
     v.y *= C.THROWN_DRAG;
     v.z *= C.THROWN_DRAG;
@@ -147,6 +152,12 @@ export class Thrown {
 
   private impact(world: World, direct: Fighter | null) {
     this.removed = true;
+    if (this.kind === 'wind') {
+      // WindCharge.onHitEntity: 1 damage to whoever it hits, then the burst where it is.
+      if (direct) hurt(direct, 1, this.owner, false);
+      windExplosion(world, this.pos.x, this.pos.y, this.pos.z, C.WIND_CHARGE_POWER, C.WIND_CHARGE_KNOCKBACK);
+      return;
+    }
     if (this.kind === 'xp') {
       // ThrownExperienceBottle: 3 + rand(5) + rand(5) experience, split into orbs.
       const xp = 3 + world.rng.int(0, 4) + world.rng.int(0, 4);

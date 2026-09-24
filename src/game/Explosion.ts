@@ -187,3 +187,39 @@ export function explode(world: World, cx: number, cy: number, cz: number, power:
     explode(world, c.x, c.y, c.z, 6, { source: opts.source });
   }
 }
+
+/**
+ * A wind explosion (wind charges, Wind Burst): ServerExplosion with a damage calculator that
+ * deals nothing and breaks nothing — knockback only. Everyone within 2 × power is pushed from the
+ * centre toward their eyes by (1 − distance / (2 × power)) × exposure × `knockback`. Players it
+ * pushes stop taking fall damage for the part of the fall above where they were launched.
+ */
+export function windExplosion(world: World, cx: number, cy: number, cz: number, power: number, knockback: number) {
+  const diameter = power * 2;
+  for (const f of world.fighters) {
+    if (f.dead) continue;
+    const dist = Math.hypot(f.pos.x - cx, f.pos.y - cy, f.pos.z - cz) / diameter;
+    if (dist > 1) continue;
+    const bb = f.aabb();
+    const seen = seenPercent(world, cx, cy, cz, bb.minX, bb.minY, bb.minZ, bb.maxX, bb.maxY, bb.maxZ);
+    let kx = f.pos.x - cx;
+    let ky = f.pos.y + f.eyeHeight() - cy;
+    let kz = f.pos.z - cz;
+    const kl = Math.hypot(kx, ky, kz);
+    if (kl < 1e-6) continue;
+    kx /= kl;
+    ky /= kl;
+    kz /= kl;
+    const kb = (1 - dist) * seen * (1 - Math.min(1, Math.max(0, f.armor.explosionKnockbackResistance))) * knockback;
+    if (kb <= 0) continue;
+    f.vel.x += kx * kb;
+    f.vel.y += ky * kb;
+    f.vel.z += kz * kb;
+    f.serverVel.x += kx * kb;
+    f.serverVel.y += ky * kb;
+    f.serverVel.z += kz * kb;
+    f.impulseY = f.pos.y;
+    f.events.push({ type: 'windLaunch', vx: f.vel.x, vy: f.vel.y, vz: f.vel.z });
+  }
+  world.emit({ type: 'wind', x: cx, y: cy, z: cz, power });
+}

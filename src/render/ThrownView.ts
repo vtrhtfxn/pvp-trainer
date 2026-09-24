@@ -53,7 +53,9 @@ export class ThrownView {
       const icon = itemIcon(
         t.kind === 'xp'
           ? { id: 'experience_bottle', count: 1 }
-          : t.kind === 'pearl'
+          : t.kind === 'wind'
+            ? { id: 'wind_charge', count: 1 }
+            : t.kind === 'pearl'
             ? { id: 'ender_pearl', count: 1 }
             : { id: 'splash_potion', count: 1, potion: t.potion ?? 'healing' },
       );

@@ -37,11 +37,14 @@ export type ItemId =
   | 'ender_pearl'
   | 'netherite_pickaxe'
   | 'netherite_axe'
+  | 'mace'
+  | 'wind_charge'
+  | 'elytra'
   | 'tipped_arrow';
 export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance' | 'slow_falling';
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal';
+export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip';
 
 /** Mining tool classes (the mineable/* block tags). */
 export type ToolKind = 'axe' | 'pickaxe' | 'sword';
@@ -116,6 +119,8 @@ export interface ArmorProps {
   points: number;
   toughness: number;
   knockbackResistance: number;
+  /** Elytra: lets you glide while it is worn. */
+  glider?: boolean;
 }
 
 export interface ItemDef {
@@ -164,6 +169,12 @@ export interface Enchants {
   multishot?: number;
   quickCharge?: number;
   silkTouch?: number;
+  /** Mace: +0.5 smash damage per level per block fallen. */
+  density?: number;
+  /** Mace: the target's armor protects 15% less (absolute) per level. */
+  breach?: number;
+  /** Mace: a smash hit launches you back up (knockback ×1.2 / 1.75 / 2.2). */
+  windBurst?: number;
   /** Sweep attacks hit others near your target for 1 + level/(level+1) of the damage. */
   sweepingEdge?: number;
   /** Sneaking speed 30% + 15% per level. */
@@ -187,7 +198,8 @@ export interface ItemStack {
 const MELEE_FIST = { attackDamage: FIST_DAMAGE, attackSpeed: FIST_ATTACK_SPEED };
 
 function armor(id: ItemId, name: string, slot: ArmorSlot, points: number, maxDamage: number, toughness = 2, knockbackResistance = 0): ItemDef {
-  return { id, name, maxStack: 1, ...MELEE_FIST, use: 'none', maxDamage, armor: { slot, points, toughness, knockbackResistance } };
+  // Right click with armor in hand swaps it with what you are wearing (1.19.4+).
+  return { id, name, maxStack: 1, ...MELEE_FIST, use: 'equip', maxDamage, armor: { slot, points, toughness, knockbackResistance } };
 }
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -208,6 +220,19 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     hitCost: 2,
     tool: 'axe',
     toolSpeed: 8,
+  },
+  // Mace: 6 attack damage, 0.6 attack speed (a 33-tick cooldown); smash attacks while falling.
+  mace: { id: 'mace', name: 'Mace', maxStack: 1, attackDamage: 6, attackSpeed: 0.6, use: 'none', handheld: true, maxDamage: 500, hitCost: 1 },
+  // Wind charge: thrown straight (no gravity), bursts on impact; 0.5 s cooldown.
+  wind_charge: { id: 'wind_charge', name: 'Wind Charge', maxStack: 64, ...MELEE_FIST, use: 'throw', cooldown: 10 },
+  elytra: {
+    id: 'elytra',
+    name: 'Elytra',
+    maxStack: 1,
+    ...MELEE_FIST,
+    use: 'equip',
+    maxDamage: 432,
+    armor: { slot: 1, points: 0, toughness: 0, knockbackResistance: 0, glider: true },
   },
   // Netherite axe: 10 attack damage, 1.0 attack speed (a 20-tick cooldown); disables shields.
   netherite_axe: {
@@ -368,6 +393,9 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.featherFalling) out.push(`Feather Falling ${roman(e.featherFalling)}`);
   if (e?.knockback) out.push(`Knockback ${roman(e.knockback)}`);
   if (e?.sweepingEdge) out.push(`Sweeping Edge ${roman(e.sweepingEdge)}`);
+  if (e?.density) out.push(`Density ${roman(e.density)}`);
+  if (e?.breach) out.push(`Breach ${roman(e.breach)}`);
+  if (e?.windBurst) out.push(`Wind Burst ${roman(e.windBurst)}`);
   if (e?.swiftSneak) out.push(`Swift Sneak ${roman(e.swiftSneak)}`);
   if (e?.efficiency) out.push(`Efficiency ${roman(e.efficiency)}`);
   if (e?.silkTouch) out.push('Silk Touch');

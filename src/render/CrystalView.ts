@@ -98,6 +98,7 @@ export class ExplosionView {
   private acc = 0;
 
   private readonly sweepFrames: THREE.Texture[] = [];
+  private readonly gustFrames: THREE.Texture[] = [];
 
   constructor() {
     for (let i = 0; i < 16; i++) {
@@ -107,6 +108,26 @@ export class ExplosionView {
     for (let i = 0; i < 8; i++) {
       const t = packTexture(`particle/sweep_${i}`);
       if (t) this.sweepFrames.push(t);
+    }
+    for (let i = 0; i < 12; i++) {
+      const t = packTexture(`particle/gust_${i}`);
+      if (t) this.gustFrames.push(t);
+    }
+  }
+
+  /** GustParticle (wind charges, Wind Burst): white 12-frame gusts around the burst. */
+  gust(x: number, y: number, z: number, power: number) {
+    if (!this.gustFrames.length) return;
+    const n = power > 2 ? 6 : 3;
+    for (let i = 0; i < n; i++) {
+      const s = this.free.pop() ?? new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, fog: false }));
+      (s.material as THREE.SpriteMaterial).color.setRGB(1, 1, 1);
+      const r = i === 0 ? 0 : power * 0.5;
+      s.position.set(x + (Math.random() - 0.5) * r, y + 0.3 + (Math.random() - 0.5) * r, z + (Math.random() - 0.5) * r);
+      s.scale.setScalar(1.5 + Math.random() * (power > 2 ? 2 : 1));
+      s.renderOrder = 6;
+      this.group.add(s);
+      this.puffs.push({ sprite: s, age: 0, life: 12, frames: this.gustFrames });
     }
   }
 

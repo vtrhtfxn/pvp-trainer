@@ -80,11 +80,11 @@ export class Game {
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view = new SceneRenderer(canvas, this.match.world, assets);
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword' | 'end_crystal' | 'netherite_axe') =>
+    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword' | 'end_crystal' | 'netherite_axe' | 'mace') =>
       itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
-      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : kit.icon === 'crystal' ? packIcon('end_crystal') : kit.icon === 'smp' ? packIcon('netherite_axe') : undefined;
+      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : kit.icon === 'crystal' ? packIcon('end_crystal') : kit.icon === 'smp' ? packIcon('netherite_axe') : kit.icon === 'mace' ? packIcon('mace') : undefined;
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
     this.hud = new HUD(uiRoot);
@@ -637,6 +637,9 @@ export class Game {
       } else if (e.type === 'explosion') {
         this.view.explosions.onEvent(e);
         this.sound.explosion(e, e.power);
+      } else if (e.type === 'wind') {
+        this.view.explosions.gust(e.x, e.y, e.z, e.power);
+        this.sound.windBurst(e, e.power);
       } else if (e.type === 'crystalPlace') {
         this.sound.crystalPlace(e);
       } else if (e.type === 'anchorCharge') {
@@ -745,6 +748,14 @@ export class Game {
         case 'throw':
           if (e.kind === 'pearl') this.sound.pearl(f.pos, false);
           else this.sound.throwItem(f.pos);
+          break;
+        case 'equip':
+          this.sound.equipArmor(f.pos, e.id === 'elytra');
+          break;
+        case 'smash':
+          this.sound.smash(f.pos, e.fall > 5);
+          fx.crit(f.pos.x, f.pos.y - 1, f.pos.z, false, 40);
+          if (isPlayer && live && this.settings.hitFeedback) this.hud.showFeedback(`SMASH ${(e.damage / 2).toFixed(1)} ❤ · ${e.fall.toFixed(0)} blocks`, 'crit');
           break;
         case 'pearlLand':
           this.sound.pearl(f.pos, true);

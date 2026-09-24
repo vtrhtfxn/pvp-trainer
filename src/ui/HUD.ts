@@ -1,7 +1,7 @@
 import * as C from '../core/constants';
 import { B } from '../game/Blocks';
 import { STRONG_ATTACK_SCALE } from '../core/constants';
-import { shieldFaces } from '../game/combat';
+import { canSmash, shieldFaces, smashBonus } from '../game/combat';
 import { bowPower, type Fighter } from '../game/Fighter';
 import { EFFECT_NAMES, ITEMS, formatTicks, type EffectId, type ItemStack } from '../game/items';
 import { drawDurabilityBar, itemIcon } from '../render/itemIcons';
@@ -56,6 +56,12 @@ function nextHit(p: Fighter, target: Fighter): { text: string; cls: string } {
   if (target.isBlocking() && shieldFaces(target, p.pos.x, p.pos.z)) {
     return p.heldDef().disablesShield ? { text: 'AXE · disables the shield', cls: 'ok' } : { text: 'SHIELD UP · swap to axe', cls: 'no' };
   }
+  // A mace smash ignores the cooldown for its bonus: show it whenever it would trigger.
+  if (canSmash(p)) {
+    const e = p.heldStack()?.ench ?? {};
+    return { text: `SMASH +${smashBonus(p.fallDistance, e.density ?? 0).toFixed(0)} · ${p.fallDistance.toFixed(1)} blocks`, cls: 'kb' };
+  }
+  if (p.fallFlying) return { text: 'gliding · swap to the chestplate, then smash', cls: 'mid' };
   if (charge <= STRONG_ATTACK_SCALE) return { text: `charging ${Math.round(charge * 100)}%`, cls: 'no' };
   if (p.serverSprinting) return { text: 'SPRINT KB', cls: 'kb' };
   if (p.fallDistance > 0 && !p.onGround) return { text: 'CRIT', cls: 'ok' };

@@ -79,6 +79,42 @@ function netheriteArmor(): (ItemStack | null)[] {
 const pot = (potion: PotionId): ItemStack => ({ id: 'splash_potion', count: 1, potion });
 
 /**
+ * The Mace tier-test kit, laid out as in the reference inventory: sword, axe, the Density/Wind
+ * Burst mace, elytra, wind charges, the Breach mace, shield, gapples and pearls in the hotbar; a
+ * totem in the off hand; potions, a second stack each of gapples and wind charges, three more
+ * stacks of pearls and a spare totem in the inventory.
+ */
+function maceLoadout(): Loadout {
+  const ub = { unbreaking: 3 };
+  const armor: ItemStack[] = [
+    { id: 'netherite_helmet', count: 1, ench: { protection: 4, ...ub } },
+    { id: 'netherite_chestplate', count: 1, ench: { protection: 4, ...ub } },
+    { id: 'netherite_leggings', count: 1, ench: { protection: 4, ...ub } },
+    { id: 'netherite_boots', count: 1, ench: { protection: 4, ...ub } },
+  ];
+  const hotbar: ItemStack[] = [
+    { id: 'netherite_sword', count: 1, ench: { sharpness: 5, ...ub } },
+    { id: 'netherite_axe', count: 1, ench: { sharpness: 5, ...ub } },
+    { id: 'mace', count: 1, ench: { density: 5, windBurst: 3, ...ub } },
+    { id: 'elytra', count: 1 },
+    { id: 'wind_charge', count: 64 },
+    { id: 'mace', count: 1, ench: { breach: 4, ...ub } },
+    { id: 'shield', count: 1, ench: ub },
+    { id: 'golden_apple', count: 64 },
+    { id: 'ender_pearl', count: 16 },
+  ];
+  const S = () => pot('strength');
+  const V = () => pot('swiftness');
+  const pearl = (): ItemStack => ({ id: 'ender_pearl', count: 16 });
+  const main: ItemStack[] = [
+    S(), V(), S(), { id: 'golden_apple', count: 64 }, { id: 'totem_of_undying', count: 1 }, { id: 'wind_charge', count: 64 }, S(), V(), S(),
+    S(), V(), S(), pearl(), pearl(), pearl(), S(), V(), S(),
+    S(), V(), S(), V(), S(), V(), S(), V(), S(),
+  ];
+  return { hotbar, main, armor, offhand: { id: 'totem_of_undying', count: 1 } };
+}
+
+/**
  * The SMP tier-test kit, laid out as in the reference inventory: sword, gapples, pearls, axe,
  * the knockback sword, one of each buff and the totem in the hotbar; the shield in the off hand;
  * the rest of the potions, a stack of XP and the second stacks of gapples and pearls in the
@@ -265,10 +301,6 @@ function crystalLoadout(): Loadout {
   return { hotbar, main, armor, offhand: totem() };
 }
 
-function soon(id: KitId, name: string, icon: KitIcon, summary: string): KitDef {
-  return { id, name, icon, available: false, summary, contents: [], hotbar: [], armor: [], offhand: null, armorLabel: '' };
-}
-
 export const KITS: KitDef[] = [
   {
     id: 'sword',
@@ -392,7 +424,22 @@ export const KITS: KitDef[] = [
     ...smpLoadout(),
     armorLabel: 'Netherite · Prot IV',
   },
-  soon('mace', 'Mace', 'mace', 'Wind charges and smash attacks.'),
+  {
+    id: 'mace',
+    name: 'Mace',
+    icon: 'mace',
+    available: true,
+    summary: 'Wind charges, pearls and an elytra to get above them, then a mace smash from the sky.',
+    contents: [
+      'Netherite Armor — Prot IV, Unbreaking III · Elytra',
+      'Mace — Density V, Wind Burst III · Mace — Breach IV (both Unbreaking III)',
+      'Netherite Sword & Axe — Sharp V, Unbreaking III · Shield — Unbreaking III',
+      '128× Wind Charge · 64× Ender Pearl · 128× Golden Apple · 2× Totem',
+      '13× Strength II · 8× Speed II (splash)',
+    ],
+    ...maceLoadout(),
+    armorLabel: 'Netherite · Prot IV',
+  },
 ];
 
 export function kitById(id: KitId): KitDef {

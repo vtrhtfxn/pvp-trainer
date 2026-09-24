@@ -128,3 +128,15 @@ export const WEB_SLOW_V = 0.05;
 export const BLOCK_REACH = 4.5;
 /** Ticks between breaking one block and starting the next (MultiPlayerGameMode.destroyDelay). */
 export const DESTROY_DELAY = 5;
+
+// ---- Mace kit
+/** WindChargeItem: thrown at 1.5 blocks/tick with no pitch offset. */
+export const WIND_CHARGE_SPEED = 1.5;
+/** Wind charge explosion radius (power) and the knockback multiplier a player's charge gets. */
+export const WIND_CHARGE_POWER = 1.2;
+export const WIND_CHARGE_KNOCKBACK = 1.22;
+/** Mace smash attacks need more than this fall distance (MaceItem.canSmashAttack). */
+export const SMASH_MIN_FALL = 1.5;
+/** Elytra flight: the FALL_FLYING pose is a 0.6-block cube with the eyes at 0.4. */
+export const PLAYER_GLIDE_HEIGHT = 0.6;
+export const EYE_HEIGHT_GLIDE = 0.4;
