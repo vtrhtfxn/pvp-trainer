@@ -10,8 +10,8 @@ function setup() {
   const world = new World(40);
   const a = new Fighter('player', 'A', world);
   const b = new Fighter('bot', 'B', world);
-  a.reset(0, 2, 0, kit.hotbar, kit.armor); // at z=2 looking toward -Z
-  b.reset(0, 0, Math.PI, kit.hotbar, kit.armor); // at z=0 looking toward +Z
+  a.reset(0, 2, 0, kit); // at z=2 looking toward -Z
+  b.reset(0, 0, Math.PI, kit); // at z=0 looking toward +Z
   return { world, a, b };
 }
 
@@ -197,7 +197,7 @@ describe('golden apple', () => {
       ticks++;
     }
     expect(ticks).toBe(30);
-    expect(a.hotbar[1]?.count).toBe(4);
+    expect(a.inventory[1]?.count).toBe(4);
     expect(a.absorption).toBe(4);
     expect(a.effects.get('regeneration')?.amplifier).toBe(1);
     const before = a.health;

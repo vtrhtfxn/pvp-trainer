@@ -1,8 +1,17 @@
 import * as C from '../core/constants';
 import { V3, clamp, forwardX, forwardZ, lookDir, wrapAngle, type AABB } from '../core/math';
-import { FIST, ITEMS, type EffectId, type ItemDef, type ItemId, type ItemStack } from './items';
-import type { ArmorStats } from './kits';
+import { Arrow } from './Arrow';
+import { FIST, ITEMS, cloneStack, defOf, type EffectId, type ItemDef, type ItemId, type ItemStack, type UseKind } from './items';
+import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
 import type { World } from './World';
+
+/** Inventory slot addresses: 0–8 hotbar, 9–35 main inventory, 36–39 armor (head → feet), 40 off hand. */
+export const INV_SIZE = 36;
+export const SLOT_ARMOR = 36;
+export const SLOT_OFFHAND = 40;
+export const SLOT_COUNT = 41;
+
+export type Hand = 'main' | 'off';
 
 export interface MoveInput {
   /** -1..1, +1 = W */
@@ -32,6 +41,14 @@ export interface FighterStats {
   gapplesEaten: number;
   reachSum: number;
   maxReach: number;
+  /** Hits (and arrows) your shield stopped. */
+  blocked: number;
+  /** Times you put the opponent's shield on cooldown. */
+  shieldsDisabled: number;
+  arrowsShot: number;
+  arrowHits: number;
+  /** Hits landed with the previous item's attributes (hotbar swap on the same tick). */
+  attributeSwaps: number;
 }
 
 export type FighterEvent =
@@ -53,8 +70,22 @@ export type FighterEvent =
       damage: number;
       reach: number;
       fullHit: boolean;
+      /** Landed with the previous item's attack attributes (attribute swap). */
+      swap: boolean;
     }
   | { type: 'noDamage'; target: Fighter }
+  /** Your swing hit a raised shield. */
+  | { type: 'hitShield'; target: Fighter; disabled: boolean; swap: boolean }
+  | { type: 'shieldRaise' }
+  | { type: 'shieldBlock'; attacker: Fighter }
+  | { type: 'shieldDisabled' }
+  | { type: 'bowDraw' }
+  | { type: 'crossbowLoading' }
+  | { type: 'crossbowLoaded' }
+  | { type: 'shoot'; crossbow: boolean; power: number }
+  | { type: 'arrowHit'; target: Fighter; damage: number; crit: boolean }
+  | { type: 'pickup' }
+  | { type: 'swapHands' }
   | { type: 'hurt'; attacker: Fighter; damage: number; crit: boolean }
   | { type: 'death' }
   | { type: 'heal'; amount: number };
@@ -72,6 +103,11 @@ export function newStats(): FighterStats {
     gapplesEaten: 0,
     reachSum: 0,
     maxReach: 0,
+    blocked: 0,
+    shieldsDisabled: 0,
+    arrowsShot: 0,
+    arrowHits: 0,
+    attributeSwaps: 0,
   };
 }
 
@@ -199,13 +235,27 @@ export class Fighter {
   attackAnim = 0;
   oAttackAnim = 0;
 
-  hotbar: (ItemStack | null)[] = new Array(9).fill(null);
+  /** 0–8 hotbar, 9–35 main inventory — vanilla Inventory.items order. */
+  inventory: (ItemStack | null)[] = new Array(INV_SIZE).fill(null);
+  /** Head, chest, legs, feet. */
+  armorSlots: (ItemStack | null)[] = [null, null, null, null];
+  offhand: ItemStack | null = null;
   selected = 0;
-  private lastHeld: ItemId | null = null;
+  /**
+   * The main-hand item whose attribute modifiers (attack damage, attack speed) are applied.
+   * Vanilla only refreshes these in the entity tick, so a hotbar switch and a click on the same
+   * tick still attack with the OLD item's damage and cooldown but the NEW item's own effects
+   * (an axe's shield disable, its enchantments). That gap is attribute swapping.
+   */
+  attrId: ItemId | null = null;
   usingItem = false;
+  useHand: Hand = 'main';
+  private useId: ItemId | null = null;
   useItemRemaining = 0;
   useItemDuration = 0;
   rightClickDelay = 0;
+  /** Ticks left before any shield can be raised again (after an axe disabled it). */
+  shieldCooldown = 0;
 
   armor: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, knockbackResistance: 0 };
 
@@ -233,7 +283,7 @@ export class Fighter {
 
   // ---------------------------------------------------------------- setup
 
-  reset(x: number, z: number, yaw: number, hotbar: (ItemStack | null)[], armor: ArmorStats) {
+  reset(x: number, z: number, yaw: number, kit: Loadout) {
     this.pos.set(x, this.world.floorY, z);
     this.prevPos.copy(this.pos);
     // Grounded entities rest at vy = -0.0784 (gravity applied after the floor collision).
@@ -261,13 +311,18 @@ export class Fighter {
     this.swinging = false;
     this.swingTime = 0;
     this.attackAnim = this.oAttackAnim = 0;
-    this.hotbar = new Array(9).fill(null);
-    hotbar.forEach((s, i) => (this.hotbar[i] = s ? { ...s } : null));
+    this.inventory = new Array(INV_SIZE).fill(null);
+    kit.hotbar.forEach((s, i) => (this.inventory[i] = cloneStack(s)));
+    this.armorSlots = [0, 1, 2, 3].map((i) => cloneStack(kit.armor[i]));
+    this.offhand = cloneStack(kit.offhand);
     this.selected = 0;
-    this.lastHeld = this.hotbar[0]?.id ?? null;
+    this.attrId = this.inventory[0]?.id ?? null;
     this.usingItem = false;
+    this.useHand = 'main';
+    this.useId = null;
     this.useItemRemaining = this.useItemDuration = this.rightClickDelay = 0;
-    this.armor = { ...armor };
+    this.shieldCooldown = 0;
+    this.recomputeArmor();
     this.walkDist = this.walkDistO = this.moveDist = 0;
     this.nextStep = 1;
     this.bob = this.oBob = 0;
@@ -295,26 +350,53 @@ export class Fighter {
     return lookDir(this.yaw, this.pitch, out);
   }
   aabb(): AABB {
-    const hw = C.PLAYER_WIDTH / 2;
-    return {
-      minX: this.pos.x - hw,
-      minY: this.pos.y,
-      minZ: this.pos.z - hw,
-      maxX: this.pos.x + hw,
-      maxY: this.pos.y + this.height(),
-      maxZ: this.pos.z + hw,
-    };
+    return this.aabbInto({ minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 });
+  }
+  /** Writes the hitbox (grown by `grow` on every side) into `out` without allocating. */
+  aabbInto(out: AABB, grow = 0): AABB {
+    const hw = C.PLAYER_WIDTH / 2 + grow;
+    out.minX = this.pos.x - hw;
+    out.minY = this.pos.y - grow;
+    out.minZ = this.pos.z - hw;
+    out.maxX = this.pos.x + hw;
+    out.maxY = this.pos.y + this.height() + grow;
+    out.maxZ = this.pos.z + hw;
+    return out;
   }
   heldStack(): ItemStack | null {
-    return this.hotbar[this.selected];
+    return this.inventory[this.selected];
+  }
+  stackIn(hand: Hand): ItemStack | null {
+    return hand === 'main' ? this.inventory[this.selected] : this.offhand;
   }
   heldDef(): ItemDef {
-    const s = this.heldStack();
-    return s ? ITEMS[s.id] : FIST;
+    return defOf(this.heldStack());
   }
-  /** Ticks for a full attack charge: 20 / attack speed (12.5 for swords). */
+  /** The item whose attack attributes are in effect — see `attrId`. */
+  attrDef(): ItemDef {
+    return this.attrId ? ITEMS[this.attrId] : FIST;
+  }
+  /** Ticks for a full attack charge: 20 / attack speed (12.5 for swords, 20 for axes). */
   attackDelay(): number {
-    return 20 / this.heldDef().attackSpeed;
+    return 20 / this.attrDef().attackSpeed;
+  }
+  /** What the item being used does, or 'none'. */
+  useKind(): UseKind {
+    return this.usingItem && this.useId ? ITEMS[this.useId].use : 'none';
+  }
+  /** Ticks the current item has been in use. */
+  useTicks(): number {
+    return this.usingItem ? this.useItemDuration - this.useItemRemaining : 0;
+  }
+  /** Shield held up — drawn from the first tick, but only blocks after SHIELD_RAISE_TICKS. */
+  raisingShield(): boolean {
+    return this.useKind() === 'shield';
+  }
+  isBlocking(): boolean {
+    return this.useKind() === 'shield' && this.useTicks() >= C.SHIELD_RAISE_TICKS;
+  }
+  hasShield(): boolean {
+    return this.offhand?.id === 'shield' || this.heldStack()?.id === 'shield';
   }
   /** Player.getAttackStrengthScale — 0..1 cooldown progress. */
   attackStrengthScale(partial: number): number {
@@ -324,10 +406,80 @@ export class Fighter {
     return C.WALK_SPEED * (this.sprinting ? C.SPRINT_SPEED_MULT : 1);
   }
   countItem(id: ItemId): number {
-    return this.hotbar.reduce((n, s) => n + (s && s.id === id ? s.count : 0), 0);
+    let n = this.offhand?.id === id ? this.offhand.count : 0;
+    for (const s of this.inventory) if (s && s.id === id) n += s.count;
+    return n;
   }
+  /** Hotbar index holding `id`, or -1. */
   slotOf(id: ItemId): number {
-    return this.hotbar.findIndex((s) => s?.id === id);
+    for (let i = 0; i < 9; i++) if (this.inventory[i]?.id === id) return i;
+    return -1;
+  }
+
+  // ---------------------------------------------------------------- inventory
+
+  getSlot(i: number): ItemStack | null {
+    if (i < INV_SIZE) return this.inventory[i] ?? null;
+    if (i < SLOT_OFFHAND) return this.armorSlots[i - SLOT_ARMOR];
+    return this.offhand;
+  }
+
+  setSlot(i: number, s: ItemStack | null) {
+    const v = s && s.count > 0 ? s : null;
+    if (i < INV_SIZE) this.inventory[i] = v;
+    else if (i < SLOT_OFFHAND) {
+      this.armorSlots[i - SLOT_ARMOR] = v;
+      this.recomputeArmor();
+    } else this.offhand = v;
+  }
+
+  recomputeArmor() {
+    this.armor = armorStatsOf(this.armorSlots);
+  }
+
+  /** Inventory.add: tops up matching stacks first, then fills the first empty slot. */
+  addItem(stack: ItemStack): boolean {
+    const max = ITEMS[stack.id].maxStack;
+    let left = stack.count;
+    const top = (s: ItemStack | null) => {
+      if (!s || s.id !== stack.id || left <= 0) return;
+      const n = Math.min(left, max - s.count);
+      if (n > 0) {
+        s.count += n;
+        left -= n;
+      }
+    };
+    top(this.heldStack());
+    top(this.offhand);
+    for (const s of this.inventory) top(s);
+    for (let i = 0; i < INV_SIZE && left > 0; i++) {
+      if (!this.inventory[i]) {
+        const n = Math.min(left, max);
+        this.inventory[i] = { ...stack, count: n };
+        left -= n;
+      }
+    }
+    stack.count = left;
+    return left <= 0;
+  }
+
+  /** Player.getProjectile: off hand first, then main hand, then the inventory in order. */
+  private findAmmo(): number {
+    if (this.offhand?.id === 'arrow') return SLOT_OFFHAND;
+    if (this.heldStack()?.id === 'arrow') return this.selected;
+    for (let i = 0; i < INV_SIZE; i++) if (this.inventory[i]?.id === 'arrow') return i;
+    return -1;
+  }
+  hasAmmo(): boolean {
+    return this.findAmmo() >= 0;
+  }
+  private consumeAmmo(): boolean {
+    const i = this.findAmmo();
+    if (i < 0) return false;
+    const s = this.getSlot(i)!;
+    s.count--;
+    if (s.count <= 0) this.setSlot(i, null);
+    return true;
   }
   effectiveHealth(): number {
     return this.health + this.absorption;
@@ -355,24 +507,145 @@ export class Fighter {
   selectSlot(i: number) {
     if (i === this.selected || i < 0 || i > 8) return;
     this.selected = i;
-    if (this.usingItem) this.stopUsingItem();
+    // An off-hand shield stays up while you scroll; only a main-hand use is interrupted.
+    if (this.usingItem && this.useHand === 'main') this.stopUsingItem();
   }
 
-  startUsingItem(): boolean {
-    if (this.usingItem || this.dead || this.rightClickDelay > 0) return false;
-    const food = this.heldDef().food;
-    if (!this.heldStack() || !food) return false;
-    if (!food.alwaysEdible && this.food.level >= C.MAX_FOOD) return false;
+  /** F: swaps the main-hand and off-hand stacks (ServerboundPlayerActionPacket SWAP_ITEM_WITH_OFFHAND). */
+  swapHands() {
+    if (this.dead) return;
+    const main = this.inventory[this.selected];
+    this.inventory[this.selected] = this.offhand;
+    this.offhand = main;
+    if (this.usingItem) this.stopUsingItem();
+    this.events.push({ type: 'swapHands' });
+  }
+
+  /**
+   * Right click. Like Minecraft.startUseItem it tries the main hand first and falls through to
+   * the off hand when the main-hand item has no use: a sword with a shield or golden apple in
+   * the off hand blocks or eats. `click` is a fresh press, which ignores the 4-tick
+   * rightClickDelay that throttles a held button.
+   */
+  startUsingItem(click = false): boolean {
+    if (this.usingItem || this.dead) return false;
+    if (!click && this.rightClickDelay > 0) return false;
+    for (const hand of ['main', 'off'] as const) {
+      const s = this.stackIn(hand);
+      if (s && this.tryUse(s, hand)) {
+        this.rightClickDelay = C.USE_ITEM_DELAY;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private beginUse(hand: Hand, id: ItemId, duration: number) {
     this.usingItem = true;
-    this.useItemDuration = this.useItemRemaining = food.useTicks;
-    this.rightClickDelay = C.USE_ITEM_DELAY;
-    this.events.push({ type: 'eatStart' });
-    return true;
+    this.useHand = hand;
+    this.useId = id;
+    this.useItemDuration = this.useItemRemaining = duration;
+  }
+
+  private tryUse(s: ItemStack, hand: Hand): boolean {
+    const def = ITEMS[s.id];
+    switch (def.use) {
+      case 'food': {
+        const food = def.food!;
+        if (!food.alwaysEdible && this.food.level >= C.MAX_FOOD) return false;
+        this.beginUse(hand, s.id, food.useTicks);
+        this.events.push({ type: 'eatStart' });
+        return true;
+      }
+      case 'shield':
+        if (this.shieldCooldown > 0) return false;
+        this.beginUse(hand, s.id, C.USE_FOREVER);
+        this.events.push({ type: 'shieldRaise' });
+        return true;
+      case 'bow':
+        if (!this.hasAmmo()) return false;
+        this.beginUse(hand, s.id, C.USE_FOREVER);
+        this.events.push({ type: 'bowDraw' });
+        return true;
+      case 'crossbow':
+        if (s.charged) {
+          // A loaded crossbow fires on the click itself.
+          s.charged = false;
+          this.shootArrow(C.CROSSBOW_SPEED, true, false);
+          this.events.push({ type: 'shoot', crossbow: true, power: 1 });
+          return true;
+        }
+        if (!this.hasAmmo()) return false;
+        this.beginUse(hand, s.id, C.USE_FOREVER);
+        this.events.push({ type: 'crossbowLoading' });
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** Letting go of right click: looses a drawn bow, or finishes loading a crossbow. */
+  releaseUsingItem() {
+    if (!this.usingItem) return;
+    const s = this.stackIn(this.useHand);
+    const ticks = this.useTicks();
+    if (s && s.id === this.useId) {
+      if (s.id === 'bow') {
+        const power = bowPower(ticks);
+        if (power >= 0.1 && this.consumeAmmo()) {
+          this.shootArrow(power * C.BOW_MAX_SPEED, power >= 1, true);
+          this.events.push({ type: 'shoot', crossbow: false, power });
+        }
+      } else if (s.id === 'crossbow' && ticks >= C.CROSSBOW_CHARGE_TICKS && !s.charged && this.consumeAmmo()) {
+        s.charged = true;
+        this.events.push({ type: 'crossbowLoaded' });
+      }
+    }
+    this.stopUsingItem();
   }
 
   stopUsingItem() {
     this.usingItem = false;
     this.useItemRemaining = 0;
+    this.useId = null;
+  }
+
+  /** Online: mirrors the server's item-use state onto this fighter. */
+  applyUseState(using: boolean, hand: Hand, remaining: number, duration: number) {
+    const s = using ? this.stackIn(hand) : null;
+    if (!s) {
+      this.stopUsingItem();
+      return;
+    }
+    this.usingItem = true;
+    this.useHand = hand;
+    this.useId = s.id;
+    this.useItemRemaining = remaining;
+    this.useItemDuration = duration;
+  }
+
+  /** Axe hit on a raised shield: every shield goes on a 5 s cooldown and drops. */
+  disableShield() {
+    this.shieldCooldown = C.SHIELD_DISABLE_TICKS;
+    if (this.raisingShield()) this.stopUsingItem();
+    this.events.push({ type: 'shieldDisabled' });
+  }
+
+  private shootArrow(speed: number, crit: boolean, addMotion: boolean) {
+    const eyeY = this.pos.y + this.eyeHeight() - 0.1;
+    const arrow = new Arrow(this, this.pos.x, eyeY, this.pos.z, crit);
+    const d = this.look();
+    arrow.shoot(d.x, d.y, d.z, speed, 1, this.world.rng);
+    if (addMotion) {
+      // BowItem uses shootFromRotation, which inherits the shooter's own movement.
+      const mx = this.networked ? this.pos.x - this.prevPos.x : this.vel.x;
+      const mz = this.networked ? this.pos.z - this.prevPos.z : this.vel.z;
+      arrow.vel.x += mx;
+      arrow.vel.z += mz;
+      if (!this.onGround) arrow.vel.y += this.vel.y;
+    }
+    this.world.spawnArrow(arrow);
+    this.stats.arrowsShot++;
   }
 
   heal(amount: number) {
@@ -422,6 +695,7 @@ export class Fighter {
 
   tick() {
     if (this.hurtTime > 0) this.hurtTime--;
+    if (this.shieldCooldown > 0) this.shieldCooldown--;
     if (this.invulnerableTime > 0) this.invulnerableTime--;
     if (this.dead) {
       this.deathTime++;
@@ -437,10 +711,11 @@ export class Fighter {
     this.updateSwingTime();
 
     this.attackStrengthTicker++;
+    // Equipment change detection: new attribute modifiers, and a fresh attack cooldown.
     const held = this.heldStack()?.id ?? null;
-    if (held !== this.lastHeld) {
+    if (held !== this.attrId) {
       this.resetAttackStrength();
-      this.lastHeld = held;
+      this.attrId = held;
     }
     if (!this.dead) this.food.tick(this, this.naturalRegen);
 
@@ -474,21 +749,31 @@ export class Fighter {
   private tickItemUse() {
     if (this.rightClickDelay > 0) this.rightClickDelay--;
     if (!this.usingItem) return;
-    const stack = this.heldStack();
-    const food = this.heldDef().food;
-    if (!stack || !food) {
+    const stack = this.stackIn(this.useHand);
+    // LivingEntity.updatingUsingItem: stop if the hand no longer holds what we started using.
+    if (!stack || stack.id !== this.useId) {
       this.stopUsingItem();
       return;
     }
+    const def = ITEMS[stack.id];
+    if (def.use !== 'food') {
+      this.useItemRemaining--;
+      if (def.use === 'crossbow' && this.useTicks() === C.CROSSBOW_CHARGE_TICKS) this.events.push({ type: 'crossbowLoaded' });
+      if (def.use === 'shield' && this.shieldCooldown > 0) this.stopUsingItem();
+      return;
+    }
+    const food = def.food!;
     const i = this.useItemRemaining;
     if (i <= this.useItemDuration - 7 && i % 4 === 0) this.events.push({ type: 'eatTick' });
     if (--this.useItemRemaining <= 0) {
       this.food.eat(food.nutrition, food.saturationModifier);
       for (const e of food.effects) this.addEffect(e.id, e.amplifier, e.duration);
       stack.count--;
-      if (stack.count <= 0) this.hotbar[this.selected] = null;
-      this.usingItem = false;
-      this.useItemRemaining = 0;
+      if (stack.count <= 0) {
+        if (this.useHand === 'main') this.inventory[this.selected] = null;
+        else this.offhand = null;
+      }
+      this.stopUsingItem();
       this.stats.gapplesEaten++;
       this.events.push({ type: 'eatDone' });
     }
@@ -708,4 +993,10 @@ export class Fighter {
     }
     this.attackAnim = this.swingTime / C.SWING_DURATION;
   }
+}
+
+/** BowItem.getPowerForTime: 0..1 draw strength after `ticks` of pulling. */
+export function bowPower(ticks: number): number {
+  const f = ticks / C.BOW_FULL_DRAW_TICKS;
+  return Math.min(1, (f * f + f * 2) / 3);
 }

@@ -68,20 +68,36 @@ export interface AABB {
  * 0 if the origin is inside the box, or -1 on a miss.
  */
 export function rayAABB(o: V3, d: V3, b: AABB): number {
+  // Unrolled slab test: this runs several times per frame and per bot tick, so no arrays.
   let tmin = 0;
   let tmax = Infinity;
-  const axes: [number, number, number, number][] = [
-    [o.x, d.x, b.minX, b.maxX],
-    [o.y, d.y, b.minY, b.maxY],
-    [o.z, d.z, b.minZ, b.maxZ],
-  ];
-  for (const [oo, dd, lo, hi] of axes) {
-    if (Math.abs(dd) < 1e-9) {
-      if (oo < lo || oo > hi) return -1;
-      continue;
-    }
-    let t1 = (lo - oo) / dd;
-    let t2 = (hi - oo) / dd;
+  let t1: number;
+  let t2: number;
+  if (Math.abs(d.x) < 1e-9) {
+    if (o.x < b.minX || o.x > b.maxX) return -1;
+  } else {
+    t1 = (b.minX - o.x) / d.x;
+    t2 = (b.maxX - o.x) / d.x;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    if (t1 > tmin) tmin = t1;
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax) return -1;
+  }
+  if (Math.abs(d.y) < 1e-9) {
+    if (o.y < b.minY || o.y > b.maxY) return -1;
+  } else {
+    t1 = (b.minY - o.y) / d.y;
+    t2 = (b.maxY - o.y) / d.y;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    if (t1 > tmin) tmin = t1;
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax) return -1;
+  }
+  if (Math.abs(d.z) < 1e-9) {
+    if (o.z < b.minZ || o.z > b.maxZ) return -1;
+  } else {
+    t1 = (b.minZ - o.z) / d.z;
+    t2 = (b.maxZ - o.z) / d.z;
     if (t1 > t2) [t1, t2] = [t2, t1];
     if (t1 > tmin) tmin = t1;
     if (t2 < tmax) tmax = t2;

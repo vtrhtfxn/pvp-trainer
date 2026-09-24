@@ -11,7 +11,8 @@ import { HUD } from '../ui/HUD';
 import { Menus } from '../ui/Menus';
 import { loadRecords, saveRecords, saveSettings, type Records, type Settings } from '../ui/settings';
 import { makeKitIcon, type Sprite } from '../ui/sprites';
-import { renderItemIcon } from '../render/icons';
+import { itemIcon } from '../render/itemIcons';
+import { InventoryScreen } from '../ui/Inventory';
 import { NetClient, type NetStatus } from '../net/Client';
 import { NetMatch } from '../net/NetMatch';
 import type { NetHit, ServerMsg } from '../net/protocol';
@@ -46,6 +47,8 @@ export class Game {
   private readonly clickHint: HTMLDivElement;
   private readonly net: NetClient;
   private netMatch: NetMatch | null = null;
+  private readonly inventory: InventoryScreen;
+  private readonly previewCanvas: HTMLCanvasElement;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -61,12 +64,22 @@ export class Game {
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view = new SceneRenderer(canvas, this.match.world, assets);
-    const swordIcon = renderItemIcon(this.view.renderer, assets.sword, 32);
-    const appleIcon = renderItemIcon(this.view.renderer, assets.apple, 32);
+    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple') => itemIcon({ id, count: 1 });
     const kitIcons: Record<string, Sprite> = {};
-    for (const kit of KITS) kitIcons[kit.icon] = makeKitIcon(kit.icon, swordIcon, appleIcon);
+    for (const kit of KITS) {
+      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_apple') : undefined;
+      kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
+    }
     this.hud = new HUD(uiRoot);
-    this.hud.setIcons({ diamond_sword: swordIcon, golden_apple: appleIcon });
+    this.inventory = new InventoryScreen(uiRoot, {
+      onChange: () => {
+        this.sound.equip();
+        this.netMatch?.syncInventory();
+      },
+      onClose: () => this.closeInventory(),
+    });
+    this.previewCanvas = document.createElement('canvas');
+    this.inventory.preview.appendChild(this.previewCanvas);
     this.menus = new Menus(uiRoot, settings, this.records, kitIcons, {
       onStart: () => this.startDuel(),
       onResume: () => this.resume(),
@@ -94,6 +107,9 @@ export class Game {
       onToggleCamera: () => {
         this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first';
       },
+      onUse: () => this.state === 'playing' && !this.inventory.open && this.match.queueUse(),
+      onSwapHands: () => this.state === 'playing' && !this.inventory.open && this.match.queueSwapHands(),
+      onInventory: () => this.toggleInventory(),
       onToggleHitboxes: () => this.toggleHitboxes(),
       onRestart: () => {
         if (this.state !== 'results') return;
@@ -101,11 +117,11 @@ export class Game {
         else this.startDuel();
       },
       onPointerLockChange: (locked) => {
-        if (!locked && this.state === 'playing') this.pause();
+        if (!locked && this.state === 'playing' && !this.inventory.open) this.pause();
       },
     });
     canvas.addEventListener('click', () => {
-      if (this.state === 'playing' && !this.input.locked) void this.input.lock();
+      if (this.state === 'playing' && !this.input.locked && !this.inventory.open) void this.input.lock();
     });
     this.clickHint = document.createElement('div');
     this.clickHint.className = 'click-hint';
@@ -114,6 +130,7 @@ export class Game {
     window.addEventListener('resize', () => {
       this.view.resize();
       this.hud.layout(this.settings);
+      this.inventory.root.style.setProperty('--gui', String(this.hud.guiScale));
     });
     // The macOS app routes its ⌘M menu item here, since the menu swallows the key event.
     window.pvpNative?.onToggleHitboxes(() => this.toggleHitboxes());
@@ -156,9 +173,44 @@ export class Game {
     this.input.rawInput = s.rawInput;
     this.sound.volume = s.volume;
     this.hud.layout(s);
+    this.inventory.root.style.setProperty('--gui', String(this.hud.guiScale));
+  }
+
+  // ------------------------------------------------------------------ inventory
+
+  private toggleInventory() {
+    if (this.inventory.open) this.closeInventory();
+    else this.openInventory();
+  }
+
+  private openInventory() {
+    const p = this.match.player;
+    if (this.state !== 'playing' || p.dead || this.match.phase === 'ended') return;
+    // Opening a screen lets go of every key; an item in use is put away rather than fired.
+    if (p.usingItem) p.stopUsingItem();
+    this.match.useHeld = false;
+    this.input.useHeld = false;
+    this.input.enabled = false;
+    if (this.netMatch) this.netMatch.holdInventory = true;
+    this.inventory.show(p);
+    this.input.unlock();
+  }
+
+  private closeInventory() {
+    if (!this.inventory.open) return;
+    this.inventory.hide();
+    if (this.netMatch) {
+      this.netMatch.holdInventory = false;
+      this.netMatch.syncInventory();
+    }
+    if (this.state === 'playing') {
+      this.input.enabled = true;
+      void this.input.lock();
+    }
   }
 
   private toMenu() {
+    this.inventory.hide();
     this.state = 'menu';
     this.input.enabled = false;
     this.input.unlock();
@@ -175,6 +227,7 @@ export class Game {
 
   private startDuel() {
     this.sound.unlock();
+    this.inventory.hide();
     this.netMatch = null;
     this.net.close();
     const kit = kitById(this.settings.kit);
@@ -285,6 +338,15 @@ export class Game {
     const attacker = hit.by === this.net.you ? m.player : m.bot;
     const victim = on === this.net.you ? m.player : m.bot;
     const fx = this.view.particles;
+    if (hit.shield) {
+      this.sound.shieldBlock(victim.pos);
+      if (hit.disabled) this.sound.shieldBreak(victim.pos);
+      if (this.settings.hitFeedback) {
+        if (hit.by === this.net.you) this.hud.showFeedback(hit.disabled ? 'SHIELD DISABLED' : 'BLOCKED', hit.disabled ? 'sprint' : 'miss');
+        else this.hud.showFeedback(hit.disabled ? 'YOUR SHIELD IS DOWN' : 'BLOCKED', hit.disabled ? 'weak' : 'hit');
+      }
+      return;
+    }
     if (hit.blocked) {
       this.sound.hit('weak', victim.pos);
       if (hit.by === this.net.you && this.settings.hitFeedback) this.hud.showFeedback('NO DAMAGE', 'weak');
@@ -353,6 +415,7 @@ export class Game {
 
   private pause() {
     if (this.state !== 'playing') return;
+    this.inventory.hide();
     this.state = 'paused';
     this.input.enabled = false;
     this.menus.show('pause');
@@ -411,7 +474,7 @@ export class Game {
       }
       p.input = this.input.moveInput();
       p.doubleTapSprint = this.settings.doubleTapSprint;
-      m.useHeld = this.input.useHeld;
+      m.useHeld = this.input.useHeld && !this.inventory.open;
     } else {
       this.input.consumeLook();
     }
@@ -447,7 +510,14 @@ export class Game {
         now: performance.now(),
       });
     }
-    this.clickHint.style.display = this.state === 'playing' && !this.input.locked ? '' : 'none';
+    if (this.inventory.open) {
+      if (p.dead || m.phase === 'ended' || this.state !== 'playing') this.closeInventory();
+      else {
+        this.inventory.refresh();
+        this.view.renderPreview(this.previewCanvas, p, this.inventory.mouseX, this.inventory.mouseY);
+      }
+    }
+    this.clickHint.style.display = this.state === 'playing' && !this.input.locked && !this.inventory.open ? '' : 'none';
     const eye = p.eyePos();
     this.sound.listener = { x: eye.x, y: eye.y, z: eye.z, yaw: p.yaw };
     requestAnimationFrame((t) => this.frame(t));
@@ -461,7 +531,7 @@ export class Game {
     }
     if (this.state === 'menu') {
       if (m.phase === 'fight') this.demoBrain.tick();
-      m.useHeld = this.demoBrain.state === 'eat';
+      m.useHeld = this.demoBrain.useHeld;
       m.tick();
       if (m.phase === 'ended' && m.phaseTicks > 60) {
         this.match = this.newDemo();
@@ -547,14 +617,57 @@ export class Game {
           if (isPlayer && live) {
             this.lastReach = e.reach;
             if (this.settings.hitFeedback) {
-              if (e.crit) this.hud.showFeedback('CRIT!', 'crit');
-              else if (e.sprint) this.hud.showFeedback('SPRINT KB', 'sprint');
-              else if (!e.strong) this.hud.showFeedback(`WEAK ${Math.round(e.scale * 100)}%`, 'weak');
-              else this.hud.showFeedback('HIT', 'hit');
+              const swap = e.swap ? ' · SWAP' : '';
+              if (e.crit) this.hud.showFeedback(`CRIT!${swap}`, 'crit');
+              else if (e.sprint) this.hud.showFeedback(`SPRINT KB${swap}`, 'sprint');
+              else if (!e.strong) this.hud.showFeedback(`WEAK ${Math.round(e.scale * 100)}%${swap}`, 'weak');
+              else this.hud.showFeedback(`HIT${swap}`, 'hit');
             }
           }
           break;
         }
+        case 'hitShield':
+          if (isPlayer && live && this.settings.hitFeedback) {
+            if (e.disabled) this.hud.showFeedback(e.swap ? 'SHIELD DISABLED · SWAP' : 'SHIELD DISABLED', 'sprint');
+            else this.hud.showFeedback('BLOCKED', 'miss');
+          }
+          break;
+        case 'shieldBlock':
+          this.sound.shieldBlock(f.pos);
+          if (isPlayer && live && this.settings.hitFeedback) this.hud.showFeedback('BLOCKED', 'hit');
+          break;
+        case 'shieldDisabled':
+          this.sound.shieldBreak(f.pos);
+          if (isPlayer && live) this.hud.showFeedback('YOUR SHIELD IS DOWN', 'weak');
+          break;
+        case 'shieldRaise':
+          if (live) this.sound.shieldRaise(f.pos);
+          break;
+        case 'shoot':
+          this.sound.bowShoot(f.pos, e.power);
+          break;
+        case 'crossbowLoading':
+          this.sound.crossbowLoad(f.pos, false);
+          break;
+        case 'crossbowLoaded':
+          this.sound.crossbowLoad(f.pos, true);
+          break;
+        case 'arrowHit': {
+          const t = e.target;
+          this.sound.arrowHit(t.pos);
+          if (e.crit) fx.crit(t.pos.x, t.pos.y, t.pos.z, false);
+          if (isPlayer && live) {
+            this.sound.arrowDing();
+            if (this.settings.hitFeedback) this.hud.showFeedback(e.crit ? 'ARROW · CRIT' : 'ARROW HIT', 'crit');
+          }
+          break;
+        }
+        case 'pickup':
+          this.sound.pickup(f.pos);
+          break;
+        case 'swapHands':
+          if (isPlayer && live) this.sound.equip();
+          break;
         case 'noDamage':
           this.sound.hit('weak', e.target.pos);
           if (isPlayer && live && this.settings.hitFeedback) this.hud.showFeedback('NO DAMAGE', 'weak');

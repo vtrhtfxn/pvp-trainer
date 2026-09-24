@@ -209,6 +209,12 @@ function handle(client: Client, msg: ClientMsg) {
     case 'slot':
       client.room?.duel?.setSlot(client.seat, Number(msg.i) | 0);
       return;
+    case 'swap':
+      client.room?.duel?.queueSwap(client.seat);
+      return;
+    case 'inv':
+      client.room?.duel?.setInventory(client.seat, msg.slots);
+      return;
     case 'rematch':
       client.room?.voteRematch(client.seat);
       return;

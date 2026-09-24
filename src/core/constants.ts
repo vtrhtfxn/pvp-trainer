@@ -63,3 +63,23 @@ export const EXHAUSTION_MAX = 40;
 // ---- Items ----
 // Vanilla golden apples take 32 ticks (1.6 s). Set to 30 (1.5 s) as requested.
 export const GOLDEN_APPLE_EAT_TICKS = 30;
+
+// ---- Shields (Java 1.9+)
+/** A raised shield only blocks once it has been held up this long (LivingEntity.isBlocking). */
+export const SHIELD_RAISE_TICKS = 5;
+/** An axe hit on a raised shield puts it on cooldown for 5 s. */
+export const SHIELD_DISABLE_TICKS = 100;
+/** Items with an open-ended use (shield, bow, loading crossbow) — vanilla's 72000. */
+export const USE_FOREVER = 72000;
+
+// ---- Bows, crossbows and arrows (AbstractArrow / BowItem / CrossbowItem)
+export const BOW_FULL_DRAW_TICKS = 20;
+export const BOW_MAX_SPEED = 3;
+export const CROSSBOW_CHARGE_TICKS = 25;
+export const CROSSBOW_SPEED = 3.15;
+export const ARROW_BASE_DAMAGE = 2;
+export const ARROW_GRAVITY = 0.05;
+export const ARROW_DRAG = 0.99;
+export const ARROW_INACCURACY = 0.0172275;
+/** Arrows stuck in the ground vanish after a minute (1200 ticks). */
+export const ARROW_DESPAWN_TICKS = 1200;

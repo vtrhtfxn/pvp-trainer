@@ -48,6 +48,30 @@ export interface BotProfile {
   punishEating: boolean;
   maxGapsPerRetreat: number;
   comboEscape: 'none' | 'jumpreset' | 'shold';
+  /** Shield, axe and ranged play for the Axe kit. */
+  axe: AxeSkill;
+}
+
+export interface AxeSkill {
+  /** Chance, per exchange, that the bot uses its shield when it is threatened. */
+  shieldChance: number;
+  /**
+   * Ticks of warning the bot needs before your hit to have its shield up. A shield only blocks
+   * 5 ticks after it is raised, so anything below 5 means some hits get through.
+   */
+  shieldLead: number;
+  /** Extra ticks before it notices you raised or lowered your shield. */
+  shieldReact: number;
+  /** Disables your shield with an attribute swap: switch to the axe and swing on the same tick. */
+  swap: boolean;
+  /** Without swapping: ticks between pulling out the axe and swinging it. */
+  axeDelay: [number, number];
+  /** Chance it drops its own shield and hits you when you pull out your axe. */
+  readAxe: number;
+  /** 0 = melee only, 1 = uses the crossbow, 2 = crossbow and bow. */
+  ranged: 0 | 1 | 2;
+  /** Aim error (degrees) on arrows. */
+  rangedNoiseDeg: number;
 }
 
 export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
@@ -91,6 +115,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     punishEating: false,
     maxGapsPerRetreat: 1,
     comboEscape: 'none',
+    axe: { shieldChance: 0.85, shieldLead: 5, shieldReact: 4, swap: false, axeDelay: [12, 20], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
   },
   easy: {
     id: 'easy',
@@ -130,6 +155,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     punishEating: false,
     maxGapsPerRetreat: 1,
     comboEscape: 'none',
+    axe: { shieldChance: 0.35, shieldLead: 2, shieldReact: 6, swap: false, axeDelay: [10, 18], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
   },
   normal: {
     id: 'normal',
@@ -169,6 +195,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     punishEating: true,
     maxGapsPerRetreat: 1,
     comboEscape: 'jumpreset',
+    axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 4, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
   },
   hard: {
     id: 'hard',
@@ -208,6 +235,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     punishEating: true,
     maxGapsPerRetreat: 2,
     comboEscape: 'jumpreset',
+    axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 2, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
   },
   expert: {
     id: 'expert',
@@ -247,6 +275,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     punishEating: true,
     maxGapsPerRetreat: 2,
     comboEscape: 'shold',
+    axe: { shieldChance: 0.95, shieldLead: 6, shieldReact: 1, swap: true, axeDelay: [1, 2], readAxe: 0.85, ranged: 2, rangedNoiseDeg: 0.6 },
   },
 };
 

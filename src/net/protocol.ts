@@ -8,7 +8,9 @@
  * like ServerboundInteractPacket.
  */
 
-export const PROTOCOL_VERSION = 4;
+import { ITEMS, type ItemId, type ItemStack } from '../game/items';
+
+export const PROTOCOL_VERSION = 5;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -26,7 +28,37 @@ export const INTERP_TICKS = 2;
 /** Never rewind a target further than this; beyond it, lag compensation becomes abuse. */
 export const MAX_REWIND_TICKS = 10;
 
-export type Slot = readonly [id: string, count: number] | null;
+/** An item stack on the wire; `e` packs Sharpness (bits 0–2), Protection (3–5) and crossbow charge (6). */
+export type Slot = readonly [id: string, count: number, e?: number] | null;
+
+export function toSlot(s: ItemStack | null): Slot {
+  if (!s) return null;
+  const e = (s.ench?.sharpness ?? 0) | ((s.ench?.protection ?? 0) << 3) | (s.charged ? 64 : 0);
+  return e ? [s.id, s.count, e] : [s.id, s.count];
+}
+
+export function fromSlot(slot: Slot | undefined): ItemStack | null {
+  if (!slot || !(slot[0] in ITEMS)) return null;
+  const count = Math.max(1, Math.min(64, Number(slot[1]) | 0));
+  const e = Number(slot[2]) | 0;
+  const out: ItemStack = { id: slot[0] as ItemId, count };
+  const sharpness = e & 7;
+  const protection = (e >> 3) & 7;
+  if (sharpness || protection) out.ench = { ...(sharpness ? { sharpness } : {}), ...(protection ? { protection } : {}) };
+  if (e & 64) out.charged = true;
+  return out;
+}
+
+/** Item totals keyed by id + enchantments: an inventory rearrangement must not change these. */
+export function itemTotals(slots: readonly Slot[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const s of slots) {
+    if (!s) continue;
+    const key = `${s[0]}:${(Number(s[2]) | 0) & 63}`;
+    m.set(key, (m.get(key) ?? 0) + (Number(s[1]) | 0));
+  }
+  return m;
+}
 
 /** One fighter as the server sees it. Short keys: this goes out 20×/second. */
 export interface NetFighter {
@@ -51,7 +83,12 @@ export interface NetFighter {
   food: number;
   sat: number;
   sel: number;
-  bar: Slot[];
+  /** Every slot: 0–35 inventory, 36–39 armor, 40 off hand. */
+  inv: Slot[];
+  /** Ticks left on the shield cooldown. */
+  sc: number;
+  /** Hand the item in use is in: 0 main, 1 off. */
+  uh: number;
   /** hurtTime, invulnerableTime, hurtDir */
   ht: number;
   iv: number;
@@ -81,6 +118,11 @@ export interface NetStats {
   gapplesEaten: number;
   reachSum: number;
   maxReach: number;
+  blocked: number;
+  shieldsDisabled: number;
+  arrowsShot: number;
+  arrowHits: number;
+  attributeSwaps: number;
 }
 
 export type NetPhase = 'lobby' | 'countdown' | 'fight' | 'ended';
@@ -107,6 +149,10 @@ export type ClientMsg =
   | { t: 'attack' }
   | { t: 'use'; down: boolean }
   | { t: 'slot'; i: number }
+  /** F: swap hands. */
+  | { t: 'swap' }
+  /** The inventory screen rearranged items; the server checks nothing was created. */
+  | { t: 'inv'; slots: Slot[] }
   | { t: 'rematch' }
   | { t: 'pong'; id: number };
 
@@ -124,6 +170,9 @@ export interface NetHit {
   fullHit: boolean;
   /** No damage got through (i-frames). */
   blocked: boolean;
+  /** Stopped by a raised shield (and disabled it, if `disabled`). */
+  shield?: boolean;
+  disabled?: boolean;
 }
 
 export type ServerMsg =

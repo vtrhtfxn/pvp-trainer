@@ -5,6 +5,12 @@ export interface InputCallbacks {
   onSlot(i: number): void;
   onScroll(dir: number): void;
   onToggleCamera(): void;
+  /** Right mouse pressed (a fresh use click). */
+  onUse(): void;
+  /** F: swap main hand and off hand. */
+  onSwapHands(): void;
+  /** E: open or close the inventory. */
+  onInventory(): void;
   onToggleHitboxes(): void;
   onRestart(): void;
   onPointerLockChange(locked: boolean): void;
@@ -45,7 +51,10 @@ export class Input {
     document.addEventListener('mousedown', (e) => {
       if (!this.locked || !this.enabled) return;
       if (e.button === 0) this.cb.onClick();
-      else if (e.button === 2) this.useHeld = true;
+      else if (e.button === 2) {
+        this.useHeld = true;
+        this.cb.onUse();
+      }
       e.preventDefault();
     });
     document.addEventListener('mouseup', (e) => {
@@ -121,7 +130,7 @@ export class Input {
       this.keys.add(code);
     } else this.keys.delete(code);
     if (code === 'F3' || (code === 'KeyM' && (e.metaKey || e.ctrlKey))) e.preventDefault();
-    if (this.locked && ['Space', 'Tab', 'F5', 'ControlLeft', 'KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(code)) e.preventDefault();
+    if (this.locked && ['Space', 'Tab', 'F5', 'ControlLeft', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyF', 'KeyE'].includes(code)) e.preventDefault();
   }
 
   private keyPressed(code: string, e: KeyboardEvent) {
@@ -142,6 +151,10 @@ export class Input {
       if (this.enabled) this.cb.onToggleCamera();
     } else if (code === 'KeyR') {
       this.cb.onRestart();
+    } else if (code === 'KeyE' && !e.repeat) {
+      this.cb.onInventory();
+    } else if (code === 'KeyF' && !e.repeat) {
+      if (this.enabled) this.cb.onSwapHands();
     } else if ((code === 'ControlLeft' || code === 'ControlRight') && this.toggleSprint) {
       this.sprintToggled = !this.sprintToggled;
     }

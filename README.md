@@ -43,8 +43,10 @@ Then open http://localhost:5173.
 | Ctrl | Sprint (toggle by default, or double-tap W) |
 | Shift | Sneak |
 | Left click | Attack |
-| Right click (hold) | Eat golden apple |
+| Right click (hold) | Use — eat, raise the shield, draw the bow, load / fire the crossbow (main hand first, then off hand) |
 | 1–9 / scroll | Hotbar |
+| F | Swap main hand and off hand |
+| E | Inventory |
 | F5 or V | Third person |
 | ⌘M (or F3 + B) | Toggle combat hitboxes |
 | Esc | Pause |
@@ -127,7 +129,10 @@ when they do not, which is what keeps it playable on integrated graphics.
 | Mode | Status |
 | --- | --- |
 | **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV), 5 golden apples | ✅ Playable |
-| Axe, UHC, Diamond Pot, NethPot, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
+| **Axe** — Diamond Axe, Diamond Sword, Crossbow, Bow, 6 Arrows, Shield (off hand), Diamond armor (unenchanted) | ✅ Playable (vs bot) |
+| UHC, Diamond Pot, NethPot, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
+
+Online duels use the Sword kit; the inventory screen and F work online too.
 
 Bot difficulties: **Practice, Easy, Normal, Hard, Expert**.
 
@@ -166,6 +171,28 @@ duel fighting back. Its nametag reads *Passive*.
 - **Hunger**: exhaustion from sprinting (0.1/m), jumping (0.05 / 0.2 sprint-jump), attacking
   and taking damage (0.1). Full hunger with saturation heals 1 HP every 0.5 s. At 18+ hunger
   you heal 1 HP every 4 s. You can't sprint at 6 hunger or below.
+- **Off hand**: right click tries the main hand first and falls through to the off hand when the
+  main-hand item has no use — a sword with a shield behind it blocks, with a golden apple behind it
+  eats. **F** swaps the two hands.
+- **Shield**: blocks every melee hit and arrow from the front half once it has been raised for 5 ticks
+  (0.25 s). You move at 20% speed and cannot attack while it is up — clicks are swallowed, so you have to
+  lower it for a tick first. A blocked hit still gives the defender fresh i-frames with `lastHurt = 0`.
+- **Axe**: 9 damage, 1.0 attack speed (20-tick charge). Any axe hit on a raised shield disables every
+  shield for 5 s (100 ticks), whatever the charge.
+- **Attribute swapping**: attack damage and attack speed come from the item held at the *last* entity
+  tick; enchantments and item effects come from the item in your hand *now*. Press a hotbar key and click
+  on the same tick (within 50 ms — hotbar keys are always processed before clicks) and you hit with the
+  old item's damage and charged cooldown plus the new item's effect: e.g. a full-charge sword hit that
+  still disables a shield because the axe is already in your hand. The HUD marks these hits **· SWAP**
+  and the coach line shows which item's attributes are live.
+- **Bow**: full draw in 20 ticks, arrow speed 3 × power, crit (random bonus damage) at full draw.
+  **Crossbow**: loads in 25 ticks (hold, then release), fires at 3.15 on the next click, always crit.
+  Arrows fly with vanilla drag (×0.99) and gravity (0.05), deal ⌈speed × 2⌉, stick in the floor and
+  walls, and can be walked over to pick them back up.
+- **Inventory (E)**: the full survival inventory — armor, off hand, 27 slots and the hotbar. Left click
+  picks up / places / swaps, right click splits, shift-click quick-moves, 1–9 or F over a slot swaps it
+  with that hotbar slot or the off hand, and you can drag a stack straight onto another slot. The game
+  keeps running while it is open, just like vanilla.
 - **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
   `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
   Absorption I for 2 min, 4 hunger and 9.6 saturation.
@@ -182,14 +209,29 @@ that depend on difficulty. It plays with the same physics and combat rules you d
   Hard+), eats golden apples once it's far enough away, and comes back once it has healed
 - punishes you with crits when you eat
 
+In the **Axe** kit it also plays the shield game:
+
+- raises its shield when your weapon is about to be charged and its own is not (it tracks your swings
+  and your held item's cooldown, and needs the 5-tick raise lead to be safe), and drops it for a tick to
+  hit back
+- disables your shield with the axe — **Hard and Expert attribute-swap** (axe in hand and swing on the
+  same tick, sword damage and cooldown), lower difficulties pull the axe out and commit to it
+- goes all in with sword crits for the 5 s your shield is down, and reads your axe: Hard+ lowers its
+  shield and hits you when you pull yours out
+- loads the crossbow when you keep your distance and shoots it (and the bow on Hard+) with ballistic
+  aim and lead, stops when you close in
+- Practice keeps its shield up at you and never swings — a shield-disable drill
+
 ## Project layout
 
 ```
 src/core      constants (all vanilla values), math, rng
-src/game      Fighter (movement/hunger/effects), combat, Match (tick order), Game (glue), kits, items
+src/game      Fighter (movement/inventory/items/effects), combat, Arrow, Match (tick order), Game (glue), kits, items
 src/ai        BotBrain + difficulty profiles
-src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation), first-person item, particles
-src/ui        HUD, menus, settings, pixel-art sprites
+src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
+              first-person hands, item meshes from the resource pack, arrows, particles
+src/ui        HUD, inventory screen, menus, settings, pixel-art sprites
+src/assets/pack  the resource-pack textures the game uses (items, armor, shield, arrows, blocks, HUD)
 src/render/Hitboxes.ts   F3+B-style debug boxes
 src/net       protocol, authoritative Duel, client NetMatch/NetClient
 src/server    Node multiplayer server + dependency-free WebSocket implementation
@@ -198,12 +240,12 @@ electron/     macOS app shell (main + preload), icon generator, packager script
 tests/        mechanics + bot-vs-bot duel tests (npm test)
 ```
 
-To add a mode, fill in its `KitDef` in `src/game/kits.ts` (hotbar, armor) and add any new
-items to `src/game/items.ts`. Unused models (axe, bow, arrow, shield) are already in
-`src/assets/models/`.
+To add a mode, fill in its `KitDef` in `src/game/kits.ts` (hotbar, armor, off hand) and add any new
+items to `src/game/items.ts`. Item models are generated from the 16×16 textures in
+`src/assets/pack/item/` the way vanilla's ItemModelGenerator does it, so a new item only needs its PNG.
 
 ## Credits
 
-Models (CC-BY 4.0, Sketchfab): Diamond Sword & Diamond Axe by Blender3D, Golden Apple by
-novvaas, Minecraft Player Rigged by lewisglasgow2005, Bow & Shield by William Zarek,
-Arrow by None. Not affiliated with Mojang or Microsoft.
+Textures: the **Bare Bones** resource pack (items, armor, shield, arrows, blocks and HUD sprites in
+`src/assets/pack/`) — used here for private practice; check the pack's terms before redistributing.
+Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005. Not affiliated with Mojang or Microsoft.

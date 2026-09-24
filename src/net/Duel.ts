@@ -1,9 +1,10 @@
 import { performAttack, pushApart, rayDistanceToTarget } from '../game/combat';
-import { Fighter, type FighterEvent } from '../game/Fighter';
+import { Fighter, SLOT_COUNT, type FighterEvent } from '../game/Fighter';
+import { ITEMS } from '../game/items';
 import { kitById } from '../game/kits';
 import { World } from '../game/World';
 import { COUNTDOWN_TICKS, SPAWN_DISTANCE } from '../game/Match';
-import { INTERP_TICKS, MAX_REWIND_TICKS, NET_TPS, type NetFighter, type NetHit, type NetPhase, type Slot } from './protocol';
+import { INTERP_TICKS, MAX_REWIND_TICKS, NET_TPS, fromSlot, itemTotals, toSlot, type NetFighter, type NetHit, type NetPhase, type Slot } from './protocol';
 
 /** Where a fighter was on one past tick, for lag compensation. */
 interface Rewind {
@@ -42,6 +43,8 @@ export class Duel {
   private readonly useHeld: [boolean, boolean] = [false, false];
   private readonly pendingAttacks: [number, number] = [0, 0];
   private readonly pendingSlot: [number | null, number | null] = [null, null];
+  private readonly pendingSwap: [number, number] = [0, 0];
+  private readonly pendingUse: [number, number] = [0, 0];
   /** Position history per fighter, newest last — see rewindTicks(). */
   private readonly history: [Rewind[], Rewind[]] = [[], []];
   /** Each player's measured round-trip time in ms, fed in by the server. */
@@ -49,14 +52,16 @@ export class Duel {
 
   constructor(names: [string, string]) {
     this.fighters = [new Fighter('player', names[0], this.world), new Fighter('bot', names[1], this.world)];
+    this.world.fighters.push(...this.fighters);
     for (const f of this.fighters) f.networked = true;
     this.reset();
   }
 
   reset() {
     const half = SPAWN_DISTANCE / 2;
-    this.fighters[0].reset(0, half, 0, this.kit.hotbar, this.kit.armor);
-    this.fighters[1].reset(0, -half, Math.PI, this.kit.hotbar, this.kit.armor);
+    this.fighters[0].reset(0, half, 0, this.kit);
+    this.fighters[1].reset(0, -half, Math.PI, this.kit);
+    this.world.clearArrows();
     for (const f of this.fighters) f.networked = true;
     this.phase = 'countdown';
     this.phaseTicks = 0;
@@ -67,6 +72,8 @@ export class Duel {
     this.useHeld[0] = this.useHeld[1] = false;
     this.pendingAttacks[0] = this.pendingAttacks[1] = 0;
     this.pendingSlot[0] = this.pendingSlot[1] = null;
+    this.pendingSwap[0] = this.pendingSwap[1] = 0;
+    this.pendingUse[0] = this.pendingUse[1] = 0;
   }
 
   get countdownSeconds(): number {
@@ -110,7 +117,35 @@ export class Duel {
   }
 
   setUse(i: number, down: boolean) {
+    // A press is also queued as a click, so a tap shorter than a tick still registers.
+    if (down && !this.useHeld[i] && this.pendingUse[i] < 2) this.pendingUse[i]++;
     this.useHeld[i] = down;
+  }
+
+  queueSwap(i: number) {
+    if (this.pendingSwap[i] < 2) this.pendingSwap[i]++;
+  }
+
+  /**
+   * Applies an inventory rearrangement from the inventory screen. Movement is trusted but items
+   * are not: the new layout must hold exactly the same items, or it is ignored.
+   */
+  setInventory(i: number, slots: Slot[]): boolean {
+    const f = this.fighters[i];
+    if (!Array.isArray(slots) || slots.length !== SLOT_COUNT || f.dead) return false;
+    const current = Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k)));
+    const a = itemTotals(current);
+    const b = itemTotals(slots);
+    if (a.size !== b.size) return false;
+    for (const [k, n] of a) if (b.get(k) !== n) return false;
+    // Armor slots only take the matching armor piece.
+    for (let k = 36; k < 40; k++) {
+      const s = fromSlot(slots[k]);
+      if (s && ITEMS[s.id].armor?.slot !== k - 36) return false;
+    }
+    if (f.usingItem) f.stopUsingItem();
+    for (let k = 0; k < SLOT_COUNT; k++) f.setSlot(k, fromSlot(slots[k]));
+    return true;
   }
 
   setSlot(i: number, slot: number) {
@@ -134,6 +169,7 @@ export class Duel {
     a.tick();
     b.tick();
     pushApart(a, b);
+    this.world.tickArrows();
     this.collectEvents(out);
     this.record();
 
@@ -158,9 +194,14 @@ export class Duel {
       f.selectSlot(slot);
       this.pendingSlot[i] = null;
     }
+    while (this.pendingSwap[i] > 0) {
+      this.pendingSwap[i]--;
+      f.swapHands();
+    }
     if (f.usingItem) {
-      if (!this.useHeld[i]) f.stopUsingItem();
-      this.pendingAttacks[i] = 0; // clicks are swallowed while eating
+      if (!this.useHeld[i]) f.releaseUsingItem();
+      this.pendingAttacks[i] = 0; // clicks are swallowed while an item is in use
+      this.pendingUse[i] = 0;
       return;
     }
     while (this.pendingAttacks[i] > 0) {
@@ -172,7 +213,14 @@ export class Duel {
       this.swings[i]++;
       const ev = f.events.find((e) => e.type === 'attack') as Extract<FighterEvent, { type: 'attack' }> | undefined;
       const noDamage = f.events.some((e) => e.type === 'noDamage');
-      if (ev) {
+      if (r.blocked) {
+        out.push({
+          hit: {
+            on: 1 - i,
+            hit: { by: i, crit: false, sprint: false, strong: false, scale: r.scale, damage: 0, reach: r.reach, fullHit: false, blocked: true, shield: true, disabled: r.disabled },
+          },
+        });
+      } else if (ev) {
         out.push({
           hit: {
             on: 1 - i,
@@ -202,6 +250,10 @@ export class Duel {
       } else {
         out.push({ miss: { by: i } });
       }
+    }
+    while (this.pendingUse[i] > 0) {
+      this.pendingUse[i]--;
+      f.startUsingItem(true);
     }
     if (this.useHeld[i]) f.startUsingItem();
   }
@@ -274,7 +326,9 @@ export class Duel {
       food: f.food.level,
       sat: round(f.food.saturation),
       sel: f.selected,
-      bar: f.hotbar.map((s) => (s ? ([s.id, s.count] as const) : null)) as Slot[],
+      inv: Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k))),
+      sc: f.shieldCooldown,
+      uh: f.useHand === 'off' ? 1 : 0,
       ht: f.hurtTime,
       iv: f.invulnerableTime,
       hd: round(f.hurtDir),

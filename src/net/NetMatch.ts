@@ -1,12 +1,11 @@
 import { clamp, lerp, lerpAngle } from '../core/math';
 import { pushApart } from '../game/combat';
-import { Fighter } from '../game/Fighter';
+import { Fighter, SLOT_COUNT } from '../game/Fighter';
 import { kitById } from '../game/kits';
-import type { ItemId } from '../game/items';
 import { World } from '../game/World';
 import { COUNTDOWN_TICKS, SPAWN_DISTANCE } from '../game/Match';
 import type { NetClient } from './Client';
-import { INTERP_TICKS, type NetFighter, type NetPhase, type ServerMsg } from './protocol';
+import { INTERP_TICKS, fromSlot, toSlot, type NetFighter, type NetPhase, type ServerMsg } from './protocol';
 
 /** One received snapshot of the opponent, kept so playback can interpolate between them. */
 interface RemoteSample {
@@ -44,6 +43,8 @@ export class NetMatch {
   useHeld = false;
   /** Set while the remote snapshot has not arrived yet. */
   ready = false;
+  /** The inventory screen is open: keep our local layout instead of the server's snapshot. */
+  holdInventory = false;
 
   private lastUseHeld = false;
   private lastSlot = -1;
@@ -65,8 +66,8 @@ export class NetMatch {
     this.bot.networked = true;
     const half = SPAWN_DISTANCE / 2;
     const mine = you === 0 ? half : -half;
-    this.player.reset(0, mine, you === 0 ? 0 : Math.PI, this.kit.hotbar, this.kit.armor);
-    this.bot.reset(0, -mine, you === 0 ? Math.PI : 0, this.kit.hotbar, this.kit.armor);
+    this.player.reset(0, mine, you === 0 ? 0 : Math.PI, this.kit);
+    this.bot.reset(0, -mine, you === 0 ? Math.PI : 0, this.kit);
     this.bot.networked = true;
   }
 
@@ -87,6 +88,22 @@ export class NetMatch {
     if (i === this.player.selected) return;
     this.player.selectSlot(i);
     this.net.send({ t: 'slot', i });
+  }
+
+  queueUse() {
+    // The server treats the press itself as a click; nothing extra to send.
+  }
+
+  queueSwapHands() {
+    if (this.phase !== 'fight' || this.player.dead) return;
+    this.player.swapHands();
+    this.net.send({ t: 'swap' });
+  }
+
+  /** The inventory screen changed something: send the whole layout for the server to check. */
+  syncInventory() {
+    const p = this.player;
+    this.net.send({ t: 'inv', slots: Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(p.getSlot(k))) });
   }
 
   requestRematch() {
@@ -120,8 +137,8 @@ export class NetMatch {
   private resetLocal() {
     const half = SPAWN_DISTANCE / 2;
     const mine = this.you === 0 ? half : -half;
-    this.player.reset(0, mine, this.you === 0 ? 0 : Math.PI, this.kit.hotbar, this.kit.armor);
-    this.bot.reset(0, -mine, this.you === 0 ? Math.PI : 0, this.kit.hotbar, this.kit.armor);
+    this.player.reset(0, mine, this.you === 0 ? 0 : Math.PI, this.kit);
+    this.bot.reset(0, -mine, this.you === 0 ? Math.PI : 0, this.kit);
     this.bot.networked = true;
     this.lastSwing = 0;
     this.hasRemote = false;
@@ -189,13 +206,11 @@ export class NetMatch {
     f.hurtDir = s.hd;
     f.attackStrengthTicker = s.ast;
     f.selected = s.sel;
-    for (let i = 0; i < 9; i++) {
-      const slot = s.bar[i];
-      f.hotbar[i] = slot ? { id: slot[0] as ItemId, count: slot[1] } : null;
+    if (Array.isArray(s.inv) && !(f === this.player && this.holdInventory)) {
+      for (let k = 0; k < SLOT_COUNT; k++) f.setSlot(k, fromSlot(s.inv[k]));
     }
-    f.usingItem = s.ui;
-    f.useItemRemaining = s.ur;
-    f.useItemDuration = s.ud;
+    f.shieldCooldown = s.sc ?? 0;
+    f.applyUseState(s.ui, s.uh === 1 ? 'off' : 'main', s.ur, s.ud);
     f.effects.clear();
     for (const [id, amplifier, duration] of s.eff) {
       f.effects.set(id as 'regeneration' | 'absorption', { amplifier, duration });

@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import appleUrl from '../assets/models/golden_apple.glb?url';
 import playerUrl from '../assets/models/player.glb?url';
-import swordUrl from '../assets/models/diamond_sword.glb?url';
+import { loadPack } from './pack';
 
 export type PartName = 'head' | 'body' | 'rightArm' | 'leftArm' | 'rightLeg' | 'leftLeg';
 export const PART_NAMES: PartName[] = ['head', 'body', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'];
@@ -17,19 +16,12 @@ export const CANONICAL_PIVOTS: Record<PartName, [number, number, number]> = {
   leftLeg: [1.9, 12, 0],
 };
 
-export interface ItemModel {
-  geometry: THREE.BufferGeometry;
-  texture: THREE.Texture;
-}
-
 export interface PlayerRig {
   parts: Record<PartName, THREE.BufferGeometry>;
   texture: THREE.Texture;
 }
 
 export interface Assets {
-  sword: ItemModel;
-  apple: ItemModel;
   rig: PlayerRig;
 }
 
@@ -45,42 +37,6 @@ function firstTexture(root: THREE.Object3D): THREE.Texture {
   });
   if (!tex) throw new Error('model has no texture');
   return tex;
-}
-
-/**
- * Bakes a flat (extruded-sprite) item model into a geometry centred on the origin, 1 unit wide
- * (= 16 px), lying in the XY plane and facing +Z — the same space Minecraft item models use
- * after their translate(-0.5, -0.5, -0.5).
- */
-function normalizeItem(gltf: GLTF, spin = 0): ItemModel {
-  const root = gltf.scene;
-  root.updateMatrixWorld(true);
-  const geos: THREE.BufferGeometry[] = [];
-  root.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    const g = mesh.geometry.clone();
-    g.applyMatrix4(mesh.matrixWorld);
-    for (const name of Object.keys(g.attributes)) {
-      if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
-    }
-    geos.push(g.index ? g.toNonIndexed() : g);
-  });
-  const g = geos[0];
-  g.computeBoundingBox();
-  const size = new THREE.Vector3();
-  g.boundingBox!.getSize(size);
-  if (size.y < size.x && size.y < size.z) g.rotateX(-Math.PI / 2);
-  else if (size.x < size.y && size.x < size.z) g.rotateY(Math.PI / 2);
-  if (spin) g.rotateZ(spin);
-  g.computeBoundingBox();
-  g.boundingBox!.getSize(size);
-  g.center();
-  const s = 1 / Math.max(size.x, size.y);
-  g.scale(s, s, s);
-  const texture = firstTexture(root);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return { geometry: g, texture };
 }
 
 const BONE_TO_PART: Record<string, PartName> = {
@@ -182,13 +138,8 @@ function buildRig(gltf: GLTF): PlayerRig {
 }
 
 export async function loadAssets(): Promise<Assets> {
-  const [sword, apple, player] = await Promise.all([load(swordUrl), load(appleUrl), load(playerUrl)]);
-  return {
-    // The GLB's sword points the wrong way down the sprite diagonal (handle top-right, tip
-    // bottom-left). Vanilla item sprites put the tip top-right, which is what every display
-    // transform in itemTransforms.ts assumes.
-    sword: normalizeItem(sword, Math.PI),
-    apple: normalizeItem(apple),
-    rig: buildRig(player),
-  };
+  // Items, armor, the shield, arrows, blocks and HUD sprites all come from the resource pack;
+  // only the rigged player body is still a model file.
+  const [player] = await Promise.all([load(playerUrl), loadPack()]);
+  return { rig: buildRig(player) };
 }

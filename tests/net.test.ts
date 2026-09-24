@@ -195,3 +195,37 @@ describe('lag compensation', () => {
     expect(d.rewindTicksFor(0)).toBe(10); // clamped
   });
 });
+
+describe('online inventory', () => {
+  it('accepts a rearrangement but rejects one that creates items', async () => {
+    const { SLOT_COUNT } = await import('../src/game/Fighter');
+    const { toSlot } = await import('../src/net/protocol');
+    const d = new Duel(['A', 'B']);
+    const f = d.fighters[0];
+    const layout = Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k)));
+    // Move the golden apples from hotbar 1 to main slot 20.
+    const moved = [...layout];
+    moved[20] = moved[1];
+    moved[1] = null;
+    expect(d.setInventory(0, moved)).toBe(true);
+    expect(f.inventory[20]?.id).toBe('golden_apple');
+    // Doubling the apples is refused.
+    const dup = Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k)));
+    dup[5] = dup[20];
+    expect(d.setInventory(0, dup)).toBe(false);
+    expect(f.countItem('golden_apple')).toBe(5);
+    // Armor slots only take the matching piece.
+    const bad = Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k)));
+    [bad[36], bad[39]] = [bad[39], bad[36]];
+    expect(d.setInventory(0, bad)).toBe(false);
+  });
+
+  it('swaps hands on F', () => {
+    const d = new Duel(['A', 'B']);
+    runTo(d, 'fight');
+    d.queueSwap(0);
+    d.tick();
+    expect(d.fighters[0].offhand?.id).toBe('diamond_sword');
+    expect(d.fighters[0].heldStack()).toBeNull();
+  });
+});

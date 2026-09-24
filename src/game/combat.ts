@@ -1,7 +1,7 @@
 import * as C from '../core/constants';
-import { V3, rayAABB } from '../core/math';
+import { V3, rayAABB, type AABB } from '../core/math';
 import { applyKnockback, type Fighter } from './Fighter';
-import { sharpnessBonus } from './items';
+import { defOf, sharpnessBonus } from './items';
 
 /** Damage after armor points and toughness (CombatRules.getDamageAfterAbsorb). */
 export function damageAfterArmor(damage: number, armor: number, toughness: number): number {
@@ -18,14 +18,30 @@ export function damageAfterProtection(damage: number, epf: number): number {
 
 const tmpEye = new V3();
 const tmpDir = new V3();
+const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 
 /** Distance along the attacker's crosshair ray to the target hitbox, or -1 if out of reach. */
 export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = C.ATTACK_REACH): number {
   if (target.dead) return -1;
   attacker.eyePos(tmpEye);
   attacker.look(tmpDir);
-  const t = rayAABB(tmpEye, tmpDir, target.aabb());
+  const t = rayAABB(tmpEye, tmpDir, target.aabbInto(tmpBox));
   return t >= 0 && t <= reach ? t : -1;
+}
+
+/**
+ * LivingEntity.isDamageSourceBlocked: a raised shield covers the whole front half — the source
+ * (attacker, or the arrow itself) only has to be in front of the defender's horizontal facing.
+ */
+export function shieldFaces(defender: Fighter, fromX: number, fromZ: number): boolean {
+  let dx = defender.pos.x - fromX;
+  let dz = defender.pos.z - fromZ;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-7) return false;
+  dx /= len;
+  dz /= len;
+  // View vector with pitch 0: (-sin yaw, -cos yaw) in our convention.
+  return dx * -Math.sin(defender.yaw) + dz * -Math.cos(defender.yaw) < 0;
 }
 
 export interface HurtResult {
@@ -82,6 +98,12 @@ export interface AttackOutcome {
   sprint: boolean;
   scale: number;
   damage: number;
+  /** The swing landed on a raised shield. */
+  blocked: boolean;
+  /** ...and it was an axe, so that shield is now on cooldown. */
+  disabled: boolean;
+  /** Used the previous item's attack attributes (hotbar swap on the same tick). */
+  swap: boolean;
 }
 
 /**
@@ -89,7 +111,7 @@ export interface AttackOutcome {
  * the attack cooldown, even when it misses — that is what punishes spam-clicking in 1.9+.
  */
 export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome {
-  const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0 };
+  const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0, blocked: false, disabled: false, swap: false };
   if (attacker.dead || attacker.usingItem) return miss;
   attacker.stats.swings++;
   const reach = rayDistanceToTarget(attacker, target);
@@ -100,14 +122,22 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
     return miss;
   }
 
-  const def = attacker.heldDef();
+  // Attack damage and the cooldown come from the attribute item (what was held at the last
+  // tick); enchantments and special effects come from the weapon in hand right now.
+  const weapon = attacker.heldStack();
+  const attr = attacker.attrDef();
+  const swap = (weapon?.id ?? null) !== attacker.attrId;
   const scale = attacker.attackStrengthScale(0.5);
-  let base = def.attackDamage * (0.2 + scale * scale * 0.8);
-  const ench = sharpnessBonus(def.sharpness) * scale;
+  let base = attr.attackDamage * (0.2 + scale * scale * 0.8);
+  const ench = sharpnessBonus(weapon?.ench?.sharpness ?? 0) * scale;
   attacker.resetAttackStrength();
 
+  if (target.isBlocking() && shieldFaces(target, attacker.pos.x, attacker.pos.z)) {
+    return hitShield(attacker, target, reach, scale, swap);
+  }
+
   const strong = scale > C.STRONG_ATTACK_SCALE;
-  let kbLevel = def.knockback;
+  let kbLevel = 0;
   let sprint = false;
   if (attacker.serverSprinting && strong) {
     kbLevel++;
@@ -124,7 +154,7 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
   attacker.swing();
   if (!res.damaged) {
     attacker.events.push({ type: 'noDamage', target });
-    return { ...miss, reach };
+    return { ...miss, reach, scale };
   }
 
   const resist = 1 - target.armor.knockbackResistance;
@@ -177,6 +207,7 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
   s.maxCombo = Math.max(s.maxCombo, s.combo);
   s.reachSum += reach;
   s.maxReach = Math.max(s.maxReach, reach);
+  if (swap) s.attributeSwaps++;
   attacker.events.push({
     type: 'attack',
     target,
@@ -188,15 +219,45 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
     damage: res.dealt,
     reach,
     fullHit: res.fullHit,
+    swap,
   });
-  return { hit: true, reach, crit, sprint, scale, damage: res.dealt };
+  return { hit: true, reach, crit, sprint, scale, damage: res.dealt, blocked: false, disabled: false, swap };
 }
+
+/**
+ * A melee hit that lands on a raised shield (LivingEntity.hurt with the damage fully blocked):
+ * no damage and no knockback reach the defender's client, the attacker keeps their sprint, and
+ * an axe in the attacker's hand disables the shield. The defender still gets fresh i-frames
+ * with lastHurt = 0, so a follow-up inside half a second deals full damage without knockback.
+ */
+function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: number, swap: boolean): AttackOutcome {
+  const weapon = defOf(attacker.heldStack());
+  attacker.swing();
+  if (target.invulnerableTime <= C.IFRAME_WINDOW) {
+    target.lastHurt = 0;
+    target.invulnerableTime = C.INVULNERABLE_TICKS;
+    // The server still knocks its own copy back; it is simply never sent to the client.
+    applyKnockback(target.serverVel, C.BASE_KNOCKBACK, attacker.pos.x - target.pos.x, attacker.pos.z - target.pos.z, target.onGround);
+  }
+  const disabled = !!weapon.disablesShield;
+  if (disabled) {
+    target.disableShield();
+    attacker.stats.shieldsDisabled++;
+  }
+  target.stats.blocked++;
+  target.events.push({ type: 'shieldBlock', attacker });
+  attacker.events.push({ type: 'hitShield', target, disabled, swap });
+  return { hit: false, reach, crit: false, sprint: false, scale, damage: 0, blocked: true, disabled, swap };
+}
+
+const boxA: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
+const boxB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 
 /** Soft entity push when two hitboxes overlap (Entity.push). */
 export function pushApart(a: Fighter, b: Fighter) {
   if (a.dead || b.dead) return;
-  const A = a.aabb();
-  const B = b.aabb();
+  const A = a.aabbInto(boxA);
+  const B = b.aabbInto(boxB);
   if (A.maxX <= B.minX || A.minX >= B.maxX || A.maxY <= B.minY || A.minY >= B.maxY || A.maxZ <= B.minZ || A.minZ >= B.maxZ) {
     return;
   }

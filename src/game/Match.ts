@@ -29,6 +29,8 @@ export class Match {
   // Player controls fed by the input layer
   private queuedClicks = 0;
   private queuedSlot: number | null = null;
+  private queuedUse = 0;
+  private queuedSwap = 0;
   useHeld = false;
   /** Last outcome of a player click (for HUD feedback). */
   lastPlayerAttack: AttackOutcome | null = null;
@@ -41,6 +43,8 @@ export class Match {
     this.rng = new Rng(seed);
     this.player = new Fighter('player', 'You', this.world);
     this.bot = new Fighter('bot', `${profile.name} Bot`, this.world);
+    this.world.fighters.push(this.player, this.bot);
+    this.world.rng = new Rng(this.rng.int(0, 2 ** 30));
     this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () =>
       performAttack(this.bot, this.player),
     );
@@ -49,16 +53,30 @@ export class Match {
 
   reset() {
     const half = SPAWN_DISTANCE / 2;
-    this.player.reset(0, half, 0, this.kit.hotbar, this.kit.armor);
-    this.bot.reset(0, -half, Math.PI, this.kit.hotbar, this.kit.armor);
+    this.player.reset(0, half, 0, this.kit);
+    this.bot.reset(0, -half, Math.PI, this.kit);
+    this.world.clearArrows();
+    this.brain.resetRound();
     this.phase = 'countdown';
     this.phaseTicks = 0;
     this.fightTicks = 0;
     this.winner = null;
     this.queuedClicks = 0;
     this.queuedSlot = null;
+    this.queuedUse = 0;
+    this.queuedSwap = 0;
     this.useHeld = false;
     this.lastPlayerAttack = null;
+  }
+
+  /** A fresh right-click press (so a tap shorter than a tick still fires a crossbow). */
+  queueUse() {
+    this.queuedUse++;
+  }
+
+  /** F: swap main hand and off hand. */
+  queueSwapHands() {
+    this.queuedSwap++;
   }
 
   queueClick() {
@@ -86,6 +104,7 @@ export class Match {
       this.brain.tick();
     } else {
       this.queuedClicks = 0;
+      this.queuedUse = 0;
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
       if (this.phase === 'countdown') {
         b.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
@@ -96,6 +115,7 @@ export class Match {
     p.tick();
     b.tick();
     pushApart(p, b);
+    this.world.tickArrows();
 
     this.phaseTicks++;
     if (this.phase === 'countdown' && this.phaseTicks >= COUNTDOWN_TICKS) {
@@ -108,20 +128,33 @@ export class Match {
     }
   }
 
-  /** Mirrors Minecraft.handleKeybinds for the local player. */
+  /**
+   * Mirrors Minecraft.handleKeybinds for the local player: hotbar keys, then swap-hands, then
+   * either the item in use or attacks and use clicks. The fixed order is what makes attribute
+   * swapping work — a number key and a click inside the same tick always switch first.
+   */
   private handlePlayerActions() {
     const p = this.player;
     if (this.queuedSlot !== null) {
       p.selectSlot(this.queuedSlot);
       this.queuedSlot = null;
     }
+    while (this.queuedSwap > 0) {
+      this.queuedSwap--;
+      p.swapHands();
+    }
     if (p.usingItem) {
-      if (!this.useHeld) p.stopUsingItem();
-      this.queuedClicks = 0; // clicks are swallowed while eating
+      if (!this.useHeld) p.releaseUsingItem();
+      this.queuedClicks = 0; // clicks are swallowed while an item is in use
+      this.queuedUse = 0;
     } else {
       while (this.queuedClicks > 0) {
         this.queuedClicks--;
         this.lastPlayerAttack = performAttack(p, this.bot);
+      }
+      while (this.queuedUse > 0) {
+        this.queuedUse--;
+        p.startUsingItem(true);
       }
       if (this.useHeld) p.startUsingItem();
     }
