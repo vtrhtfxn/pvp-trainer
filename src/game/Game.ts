@@ -165,7 +165,9 @@ export class Game {
   }
 
   private makeDemoBrain(m: Match): BotBrain {
-    return new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.ht3, new Rng(11), () => performAttack(m.player, m.bot));
+    const brain = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.ht3, new Rng(11), () => performAttack(m.player, m.bot));
+    brain.resetRound();
+    return brain;
   }
 
   /** Debounced so the macOS ⌘M menu item and the in-page key handler can't double-fire. */
