@@ -54,6 +54,31 @@ export interface BotProfile {
   neth: NethSkill;
   /** Blocks, buckets and webs for UHC. */
   uhc: UhcSkill;
+  /** End crystals, respawn anchors and pearls for the Crystal kit. */
+  crystal: CrystalSkill;
+}
+
+export interface CrystalSkill {
+  /** Ticks between two clicks of a combo (obsidian → crystal → hit, anchor → glowstone → blow). */
+  clickGap: number;
+  /** Ticks it holds its aim on a block or crystal before it clicks. */
+  aimSettle: number;
+  /** Ticks between two crystal or anchor combos. */
+  comboGap: number;
+  /** Ticks between looking for a new spot (it re-thinks only this often). */
+  thinkTicks: number;
+  /** How much its own damage counts against a spot (0 = ignores it). */
+  selfWeight: number;
+  /** Least damage (after armor) a spot must do to the opponent to be worth it. */
+  minDamage: number;
+  /** Uses respawn anchors (place, charge with glowstone, blow up). */
+  anchors: boolean;
+  /** Waits for the opponent's hurt immunity to run out before it blows something up. */
+  iframeTiming: boolean;
+  /** Hits crystals the opponent placed when that hurts them more than itself. */
+  breakTheirs: boolean;
+  /** 0 = no pearls, 1 = pearls in from far away, 2 = also pearls out when it is about to die. */
+  pearls: 0 | 1 | 2;
 }
 
 export interface UhcSkill {
@@ -164,6 +189,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     axe: { shieldChance: 0.85, shieldLead: 5, shieldReact: 4, swap: false, axeDelay: [12, 20], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
     neth: { potHP: 8, potNoiseDeg: 14, potGap: 6, invTicks: 30, totemReact: 20, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 6 },
     uhc: { lava: 0, lavaPickup: false, web: 0, water: true, pillar: false, mine: true, headHP: 8, aimSettle: 8 },
+    crystal: { clickGap: 10, aimSettle: 8, comboGap: 40, thinkTicks: 10, selfWeight: 1, minDamage: 99, anchors: false, iframeTiming: false, breakTheirs: false, pearls: 0 },
   },
   easy: {
     id: 'easy',
@@ -206,6 +232,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     axe: { shieldChance: 0.35, shieldLead: 2, shieldReact: 6, swap: false, axeDelay: [10, 18], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
     neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 24, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7 },
     uhc: { lava: 0.15, lavaPickup: false, web: 0, water: false, pillar: false, mine: false, headHP: 6, aimSettle: 8 },
+    crystal: { clickGap: 8, aimSettle: 6, comboGap: 30, thinkTicks: 8, selfWeight: 0.3, minDamage: 1, anchors: false, iframeTiming: false, breakTheirs: false, pearls: 0 },
   },
   normal: {
     id: 'normal',
@@ -248,6 +275,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 4, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
     neth: { potHP: 9, potNoiseDeg: 9, potGap: 4, invTicks: 14, totemReact: 10, hotbarTotem: true, rebuff: true, mendAt: 0.5, pcrit: 0.25, gapDist: 6.5 },
     uhc: { lava: 0.4, lavaPickup: true, web: 0.25, water: true, pillar: false, mine: true, headHP: 9, aimSettle: 5 },
+    crystal: { clickGap: 4, aimSettle: 3, comboGap: 14, thinkTicks: 5, selfWeight: 0.7, minDamage: 1.5, anchors: true, iframeTiming: false, breakTheirs: true, pearls: 1 },
   },
   hard: {
     id: 'hard',
@@ -290,6 +318,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 2, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
     neth: { potHP: 10, potNoiseDeg: 4, potGap: 3, invTicks: 8, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.7, pcrit: 0.55, gapDist: 6 },
     uhc: { lava: 0.7, lavaPickup: true, web: 0.5, water: true, pillar: true, mine: true, headHP: 11, aimSettle: 3 },
+    crystal: { clickGap: 2, aimSettle: 2, comboGap: 6, thinkTicks: 3, selfWeight: 0.9, minDamage: 2, anchors: true, iframeTiming: true, breakTheirs: true, pearls: 2 },
   },
   expert: {
     id: 'expert',
@@ -332,6 +361,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     axe: { shieldChance: 0.95, shieldLead: 6, shieldReact: 1, swap: true, axeDelay: [1, 2], readAxe: 0.85, ranged: 2, rangedNoiseDeg: 0.6 },
     neth: { potHP: 11, potNoiseDeg: 2, potGap: 2, invTicks: 5, totemReact: 3, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.8, gapDist: 5.5 },
     uhc: { lava: 0.9, lavaPickup: true, web: 0.7, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 1 },
+    crystal: { clickGap: 1, aimSettle: 1, comboGap: 3, thinkTicks: 2, selfWeight: 1, minDamage: 2, anchors: true, iframeTiming: true, breakTheirs: true, pearls: 2 },
   },
 };
 

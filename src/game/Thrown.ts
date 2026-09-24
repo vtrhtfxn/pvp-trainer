@@ -3,6 +3,8 @@ import { V3, rayAABB, type AABB } from '../core/math';
 import type { Fighter } from './Fighter';
 import { POTIONS, type PotionId } from './items';
 import type { RayHit } from './Blocks';
+import { detonateCrystal } from './crystals';
+import type { EndCrystal } from './EndCrystal';
 import type { World } from './World';
 
 const tmpDir = new V3();
@@ -27,7 +29,7 @@ export class Thrown {
 
   constructor(
     readonly owner: Fighter,
-    readonly kind: 'potion' | 'xp',
+    readonly kind: 'potion' | 'xp' | 'pearl',
     readonly potion: PotionId | null,
     x: number,
     y: number,
@@ -38,15 +40,15 @@ export class Thrown {
   }
 
   get gravity() {
-    return this.kind === 'potion' ? C.POTION_GRAVITY : C.XP_BOTTLE_GRAVITY;
+    return this.kind === 'potion' ? C.POTION_GRAVITY : this.kind === 'pearl' ? C.PEARL_GRAVITY : C.XP_BOTTLE_GRAVITY;
   }
 
   /**
    * Projectile.shootFromRotation(shooter, xRot, yRot, -20, speed, 1): the vertical part is
    * aimed 20° higher than the crosshair, then the thrower's own motion is added on top.
    */
-  throwFrom(f: Fighter, speed: number, rng: { next(): number }) {
-    const off = C.THROW_PITCH_OFFSET_DEG * (Math.PI / 180);
+  throwFrom(f: Fighter, speed: number, rng: { next(): number }, pitchOffsetDeg = C.THROW_PITCH_OFFSET_DEG) {
+    const off = pitchOffsetDeg * (Math.PI / 180);
     const cp = Math.cos(f.pitch);
     let dx = -Math.sin(f.yaw) * cp;
     let dy = Math.sin(f.pitch + off);
@@ -107,8 +109,32 @@ export class Thrown {
         }
       }
     }
-    if (victim || hitsBlock) {
+    // Pearls (like snowballs) "hurt" what they hit for 0 — enough to set off an end crystal.
+    let crystal: EndCrystal | null = null;
+    if (this.kind === 'pearl' && speed > 1e-6 && world.crystals.length) {
+      for (const c of world.crystals) {
+        if (c.removed) continue;
+        const t = rayAABB(this.pos, tmpDir, c.aabbInto(tmpBox));
+        if (t >= 0 && t / speed <= travel) {
+          travel = t / speed;
+          crystal = c;
+          victim = null;
+        }
+      }
+    }
+    if (victim || hitsBlock || crystal) {
+      // Where it was at the start of this tick: a pearl teleports you there, not into the wall.
+      const lastX = this.pos.x;
+      const lastY = this.pos.y;
+      const lastZ = this.pos.z;
       this.pos.set(this.pos.x + v.x * travel, this.pos.y + v.y * travel, this.pos.z + v.z * travel);
+      if (crystal) detonateCrystal(world, crystal, this.owner);
+      if (this.kind === 'pearl') {
+        this.removed = true;
+        this.owner.pearlTeleport(lastX, lastY, lastZ);
+        world.emit({ type: 'pearl', x: lastX, y: lastY, z: lastZ });
+        return;
+      }
       this.impact(world, victim);
       return;
     }

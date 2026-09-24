@@ -170,6 +170,16 @@ const PACK_BLOCKS: Record<string, { tex: string; tint?: string; overlay?: string
   oak_leaves: { tex: 'block/oak_leaves', tint: FOLIAGE_TINT },
   oak_planks: { tex: 'block/oak_planks' },
   cobblestone: { tex: 'block/cobblestone' },
+  glowstone_block: { tex: 'block/glowstone' },
+  bedrock: { tex: 'block/bedrock' },
+  respawn_anchor_top: { tex: 'block/respawn_anchor_top' },
+  respawn_anchor_top_off: { tex: 'block/respawn_anchor_top_off' },
+  respawn_anchor_bottom: { tex: 'block/respawn_anchor_bottom' },
+  respawn_anchor_side0: { tex: 'block/respawn_anchor_side0' },
+  respawn_anchor_side1: { tex: 'block/respawn_anchor_side1' },
+  respawn_anchor_side2: { tex: 'block/respawn_anchor_side2' },
+  respawn_anchor_side3: { tex: 'block/respawn_anchor_side3' },
+  respawn_anchor_side4: { tex: 'block/respawn_anchor_side4' },
   obsidian: { tex: 'block/obsidian' },
   stone: { tex: 'block/stone' },
   glowstone: { tex: 'block/glowstone' },
@@ -197,7 +207,8 @@ function packCanvas(name: string): HTMLCanvasElement | null {
   const c = document.createElement('canvas');
   c.width = c.height = 16;
   const ctx = c.getContext('2d')!;
-  ctx.drawImage(img, 0, 0, 16, 16);
+  // Animated textures are vertical strips of square frames: take the first.
+  ctx.drawImage(img, 0, 0, img.width, img.width, 0, 0, 16, 16);
   const over = spec.overlay && packImage(spec.overlay);
   if (over) ctx.drawImage(tinted(over, GRASS_TINT), 0, 0);
   return c;

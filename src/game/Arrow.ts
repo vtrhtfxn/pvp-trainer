@@ -3,6 +3,9 @@ import { V3, rayAABB, type AABB } from '../core/math';
 import { hurt, shieldFaces } from './combat';
 import { applyKnockback, type Fighter } from './Fighter';
 import { isSolid, type RayHit } from './Blocks';
+import { detonateCrystal } from './crystals';
+import type { EndCrystal } from './EndCrystal';
+import { POTIONS, type PotionId } from './items';
 import type { World } from './World';
 
 const tmpDir = new V3();
@@ -27,6 +30,10 @@ export class Arrow {
   baseDamage = C.ARROW_BASE_DAMAGE;
   /** Piercing level: a pierce arrow goes straight through a raised shield. */
   pierce = 0;
+  /** Tipped arrows: the potion whose effect (an eighth of its duration) the target gets. */
+  potion: PotionId | null = null;
+  /** Multishot's side arrows can't be picked up. */
+  pickup = true;
   /** The block it is stuck in; if that block is broken the arrow falls again. */
   private stuck = { x: 0, y: 0, z: 0 };
   /** Ticks since it stuck (for despawn and the pickup delay). */
@@ -77,7 +84,7 @@ export class Arrow {
     if (this.inGround) {
       this.groundTicks++;
       if (this.groundTicks >= C.ARROW_DESPAWN_TICKS) this.removed = true;
-      else if (this.groundTicks > 7) this.tryPickup(world);
+      else if (this.groundTicks > 7 && this.pickup) this.tryPickup(world);
       return;
     }
     if (this.age > 400) {
@@ -119,6 +126,25 @@ export class Arrow {
       }
     }
 
+    // End crystals: an arrow sets one off (and is used up doing it).
+    let crystal: EndCrystal | null = null;
+    if (speed > 1e-6 && world.crystals.length) {
+      for (const c of world.crystals) {
+        if (c.removed) continue;
+        const t = rayAABB(this.pos, tmpDir, c.aabbInto(tmpBox));
+        if (t >= 0 && t / speed <= travel) {
+          travel = t / speed;
+          crystal = c;
+          victim = null;
+        }
+      }
+    }
+    if (crystal) {
+      this.pos.set(this.pos.x + v.x * travel, this.pos.y + v.y * travel, this.pos.z + v.z * travel);
+      this.removed = true;
+      detonateCrystal(world, crystal, this.owner);
+      return;
+    }
     if (victim) {
       this.pos.set(this.pos.x + v.x * travel, this.pos.y + v.y * travel, this.pos.z + v.z * travel);
       this.hitEntity(victim, speed, world);
@@ -160,6 +186,10 @@ export class Arrow {
       this.bounce();
       return;
     }
+    if (this.potion) {
+      const p = POTIONS[this.potion];
+      if (p.effect !== 'instant_health') target.addEffect(p.effect, p.amplifier, Math.max(1, Math.floor(p.duration / 8)));
+    }
     if (res.fullHit) {
       // Projectile knockback pushes along the arrow's flight, not away from the shooter.
       applyKnockback(kbVel, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), -this.vel.x, -this.vel.z, target.onGround);
@@ -188,7 +218,7 @@ export class Arrow {
         Math.abs(this.pos.z - f.pos.z) <= hw + 0.25 &&
         this.pos.y >= f.pos.y - 0.5 - 0.25 &&
         this.pos.y <= f.pos.y + f.height() + 0.5 + 0.25 &&
-        f.addItem({ id: 'arrow', count: 1 })
+        f.addItem(this.potion ? { id: 'tipped_arrow', count: 1, potion: this.potion } : { id: 'arrow', count: 1 })
       ) {
         f.events.push({ type: 'pickup' });
         this.removed = true;

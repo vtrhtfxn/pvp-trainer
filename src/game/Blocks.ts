@@ -14,12 +14,34 @@ export const B = {
   STONE: 5,
   WATER: 6,
   LAVA: 7,
+  GLOWSTONE: 8,
+  /** Respawn anchor; its charge (0–4) lives in the amount array. */
+  RESPAWN_ANCHOR: 9,
+  ENDER_CHEST: 10,
+  /** Fire (from respawn-anchor explosions); its age lives in the amount array. */
+  FIRE: 11,
+  /** A diggable floor (Crystal): grass on top, dirt below. */
+  GRASS: 12,
+  DIRT: 13,
   /** Floor and walls: solid, unbreakable, never stored. */
   BEDROCK: 255,
 } as const;
 export type FluidId = typeof B.WATER | typeof B.LAVA;
 
-export type BlockName = 'oak_planks' | 'cobweb' | 'cobblestone' | 'obsidian' | 'stone' | 'water' | 'lava';
+export type BlockName =
+  | 'oak_planks'
+  | 'cobweb'
+  | 'cobblestone'
+  | 'obsidian'
+  | 'stone'
+  | 'water'
+  | 'lava'
+  | 'glowstone'
+  | 'respawn_anchor'
+  | 'ender_chest'
+  | 'fire'
+  | 'grass_block'
+  | 'dirt';
 
 export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.PLANKS]: 'oak_planks',
@@ -29,6 +51,12 @@ export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.STONE]: 'stone',
   [B.WATER]: 'water',
   [B.LAVA]: 'lava',
+  [B.GLOWSTONE]: 'glowstone',
+  [B.RESPAWN_ANCHOR]: 'respawn_anchor',
+  [B.ENDER_CHEST]: 'ender_chest',
+  [B.FIRE]: 'fire',
+  [B.GRASS]: 'grass_block',
+  [B.DIRT]: 'dirt',
 };
 
 export interface BlockProps {
@@ -39,7 +67,43 @@ export interface BlockProps {
   /** Drops nothing unless mined with that tool (requiresCorrectToolForDrops). */
   needsTool: boolean;
   /** Item it drops (null: nothing). */
-  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | null;
+  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | null;
+}
+
+/**
+ * Explosion resistance (Block.getExplosionResistance). An explosion ray loses
+ * (resistance + 0.3) × 0.3 per 0.3-block step through a block, so obsidian, anchors and ender
+ * chests shrug off crystals while planks and glowstone are blown away.
+ */
+export function blastResistance(id: number): number {
+  switch (id) {
+    case B.AIR:
+    case B.FIRE:
+      return 0;
+    case B.GLOWSTONE:
+      return 0.3;
+    case B.DIRT:
+      return 0.5;
+    case B.GRASS:
+      return 0.6;
+    case B.PLANKS:
+      return 3;
+    case B.COBWEB:
+      return 4;
+    case B.COBBLESTONE:
+    case B.STONE:
+      return 6;
+    case B.WATER:
+    case B.LAVA:
+      return 100;
+    case B.ENDER_CHEST:
+      return 600;
+    case B.OBSIDIAN:
+    case B.RESPAWN_ANCHOR:
+      return 1200;
+    default:
+      return 3600000; // the floor and the walls
+  }
 }
 
 export const BLOCK_PROPS: Record<number, BlockProps> = {
@@ -49,10 +113,28 @@ export const BLOCK_PROPS: Record<number, BlockProps> = {
   [B.COBBLESTONE]: { hardness: 2, tool: 'pickaxe', needsTool: true, drop: 'cobblestone' },
   [B.STONE]: { hardness: 1.5, tool: 'pickaxe', needsTool: true, drop: 'cobblestone' },
   [B.OBSIDIAN]: { hardness: 50, tool: 'pickaxe', needsTool: true, drop: 'obsidian' },
+  [B.GLOWSTONE]: { hardness: 0.3, tool: null, needsTool: false, drop: 'glowstone' },
+  [B.RESPAWN_ANCHOR]: { hardness: 50, tool: 'pickaxe', needsTool: true, drop: 'respawn_anchor' },
+  // The kit's pickaxe has Silk Touch, so an ender chest comes back whole.
+  [B.ENDER_CHEST]: { hardness: 22.5, tool: 'pickaxe', needsTool: true, drop: 'ender_chest' },
+  // The kit has no shovel: the ground is dug by hand (grass 0.9 s, dirt 0.75 s).
+  [B.GRASS]: { hardness: 0.6, tool: null, needsTool: false, drop: null },
+  [B.DIRT]: { hardness: 0.5, tool: null, needsTool: false, drop: null },
 };
 
 export function isSolid(id: number): boolean {
-  return id === B.PLANKS || id === B.COBBLESTONE || id === B.OBSIDIAN || id === B.STONE || id === B.BEDROCK;
+  return (
+    id === B.PLANKS ||
+    id === B.COBBLESTONE ||
+    id === B.OBSIDIAN ||
+    id === B.STONE ||
+    id === B.GLOWSTONE ||
+    id === B.RESPAWN_ANCHOR ||
+    id === B.ENDER_CHEST ||
+    id === B.GRASS ||
+    id === B.DIRT ||
+    id === B.BEDROCK
+  );
 }
 export function isFluid(id: number): boolean {
   return id === B.WATER || id === B.LAVA;
@@ -79,6 +161,9 @@ const FLUID = {
   [B.LAVA]: { delay: 30, drop: 2, slope: 2 },
 } as const;
 
+/** Remesh granularity: 16×16 block columns. */
+export const CHUNK = 16;
+
 const DIRS: [number, number][] = [
   [1, 0],
   [-1, 0],
@@ -103,16 +188,22 @@ export class Blocks {
   /** Called when a block is replaced by fluid or converted (e.g. lava + water) — for particles/sound. */
   onChange: ((x: number, y: number, z: number, from: number, to: number) => void) | null = null;
 
+  /** Chunks (16×16 columns) changed since the renderer last looked. */
+  readonly dirty = new Set<number>();
+
   constructor(
     readonly half: number,
     readonly height: number,
+    /** Layers of diggable ground under y = 0 (Crystal); 0 keeps the floor unbreakable. */
+    readonly depth = 0,
   ) {
     this.sx = half * 2;
     this.sz = half * 2;
-    const n = this.sx * this.sz * height;
+    const n = this.sx * this.sz * (height + depth);
     this.id = new Uint8Array(n);
     this.amount = new Uint8Array(n);
     this.flags = new Uint8Array(n);
+    this.clear();
   }
 
   clear() {
@@ -121,20 +212,42 @@ export class Blocks {
     this.flags.fill(0);
     this.scheduled.clear();
     this.count = 0;
+    // Ground: grass on top, dirt under it (bedrock below that).
+    const layer = this.sx * this.sz;
+    for (let d = 1; d <= this.depth; d++) this.id.fill(d === 1 ? B.GRASS : B.DIRT, (this.depth - d) * layer, (this.depth - d + 1) * layer);
+    this.count = this.depth * layer;
+    for (let cx = 0; cx < this.sx / CHUNK; cx++) for (let cz = 0; cz < this.sz / CHUNK; cz++) this.dirty.add(cx * 1024 + cz);
     this.version++;
   }
 
+  /** Chunk key of a cell (for partial remeshing). */
+  static chunkKey(x: number, z: number, half: number): number {
+    return Math.floor((x + half) / CHUNK) * 1024 + Math.floor((z + half) / CHUNK);
+  }
+
+  private markDirty(x: number, z: number) {
+    const h = this.half;
+    this.dirty.add(Blocks.chunkKey(x, z, h));
+    // Faces are culled against neighbours: a change on a chunk edge touches the next chunk too.
+    const lx = (x + h) % CHUNK;
+    const lz = (z + h) % CHUNK;
+    if (lx === 0 && x > -h) this.dirty.add(Blocks.chunkKey(x - 1, z, h));
+    if (lx === CHUNK - 1 && x < h - 1) this.dirty.add(Blocks.chunkKey(x + 1, z, h));
+    if (lz === 0 && z > -h) this.dirty.add(Blocks.chunkKey(x, z - 1, h));
+    if (lz === CHUNK - 1 && z < h - 1) this.dirty.add(Blocks.chunkKey(x, z + 1, h));
+  }
+
   inside(x: number, y: number, z: number): boolean {
-    return x >= -this.half && x < this.half && z >= -this.half && z < this.half && y >= 0 && y < this.height;
+    return x >= -this.half && x < this.half && z >= -this.half && z < this.half && y >= -this.depth && y < this.height;
   }
 
   private index(x: number, y: number, z: number): number {
-    return ((y * this.sz + (z + this.half)) * this.sx + (x + this.half)) | 0;
+    return (((y + this.depth) * this.sz + (z + this.half)) * this.sx + (x + this.half)) | 0;
   }
 
-  /** Block at a cell; the floor below 0 and everything outside the walls is BEDROCK, the sky is air. */
+  /** Block at a cell; below the ground and outside the walls is BEDROCK, the sky is air. */
   get(x: number, y: number, z: number): number {
-    if (y < 0) return B.BEDROCK;
+    if (y < -this.depth) return B.BEDROCK;
     if (x < -this.half || x >= this.half || z < -this.half || z >= this.half) return B.BEDROCK;
     if (y >= this.height) return B.AIR;
     return this.id[this.index(x, y, z)];
@@ -165,11 +278,26 @@ export class Blocks {
     if (before === B.AIR && id !== B.AIR) this.count++;
     else if (before !== B.AIR && id === B.AIR) this.count--;
     this.id[i] = id;
-    this.amount[i] = isFluid(id) ? amount : 0;
+    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE ? amount : 0;
     this.flags[i] = isFluid(id) ? (source ? 1 : 0) | (falling ? 2 : 0) : 0;
     this.version++;
+    this.markDirty(x, z);
     // Wake up this cell's fluid and any fluid next to it.
     this.scheduleAround(x, y, z);
+  }
+
+  /**
+   * Swaps a cell's id without marking anything changed, for "what if" checks (the bot's damage
+   * estimates). Returns the old id; put it back with another call before anything else runs.
+   */
+  swapTemp(x: number, y: number, z: number, id: number): number {
+    if (!this.inside(x, y, z)) return this.get(x, y, z);
+    const i = this.index(x, y, z);
+    const before = this.id[i];
+    if (before === B.AIR && id !== B.AIR) this.count++;
+    else if (before !== B.AIR && id === B.AIR) this.count--;
+    this.id[i] = id;
+    return before;
   }
 
   placeSource(x: number, y: number, z: number, fluid: FluidId) {
@@ -178,11 +306,29 @@ export class Blocks {
     else this.wakeLavaAround(x, y, z);
   }
 
+  /** Respawn anchor charge, 0–4. */
+  anchorCharge(x: number, y: number, z: number): number {
+    return this.get(x, y, z) === B.RESPAWN_ANCHOR ? this.amount[this.index(x, y, z)] : 0;
+  }
+  setAnchorCharge(x: number, y: number, z: number, charge: number) {
+    if (this.get(x, y, z) !== B.RESPAWN_ANCHOR) return;
+    this.amount[this.index(x, y, z)] = charge;
+    this.version++;
+    this.markDirty(x, z);
+  }
+
+  private seed = 12345;
+  private rand(n: number): number {
+    this.seed = (Math.imul(this.seed, 1103515245) + 12345) >>> 0;
+    return (this.seed >>> 16) % n;
+  }
+
   private schedule(x: number, y: number, z: number) {
     const id = this.get(x, y, z);
-    if (!isFluid(id) || !this.inside(x, y, z)) return;
+    if ((!isFluid(id) && id !== B.FIRE) || !this.inside(x, y, z)) return;
     const k = this.index(x, y, z);
-    const due = this.now + FLUID[id as FluidId].delay;
+    // FireBlock ticks every 30–39 ticks.
+    const due = this.now + (id === B.FIRE ? 30 + this.rand(10) : FLUID[id as FluidId].delay);
     const cur = this.scheduled.get(k);
     if (cur === undefined || cur > due) this.scheduled.set(k, due);
   }
@@ -242,14 +388,37 @@ export class Blocks {
     for (const k of due) {
       const x = (k % this.sx) - this.half;
       const z = (Math.floor(k / this.sx) % this.sz) - this.half;
-      const y = Math.floor(k / (this.sx * this.sz));
+      const y = Math.floor(k / (this.sx * this.sz)) - this.depth;
       this.tickFluid(x, y, z);
     }
+  }
+
+  /**
+   * FireBlock.tick on a non-flammable surface: the fire ages by 0–1 every run and goes out once
+   * it is older than 3 (about 20 seconds), or at once with nothing solid under it.
+   */
+  private tickFire(x: number, y: number, z: number) {
+    if (!isSolid(this.get(x, y - 1, z))) {
+      this.set(x, y, z, B.AIR);
+      return;
+    }
+    const i = this.index(x, y, z);
+    const age = this.amount[i];
+    if (age > 3) {
+      this.set(x, y, z, B.AIR);
+      return;
+    }
+    this.amount[i] = Math.min(15, age + (this.rand(3) >> 1));
+    this.schedule(x, y, z);
   }
 
   /** FlowingFluid.tick: settle this cell's level from its neighbours, then spread. */
   private tickFluid(x: number, y: number, z: number) {
     const id = this.get(x, y, z);
+    if (id === B.FIRE) {
+      this.tickFire(x, y, z);
+      return;
+    }
     if (!isFluid(id)) return;
     if (id === B.LAVA && this.checkLavaMeetsWater(x, y, z)) return;
     if (!this.isSource(x, y, z)) {
@@ -287,7 +456,7 @@ export class Blocks {
 
   private canHold(x: number, y: number, z: number): boolean {
     const id = this.get(x, y, z);
-    return this.inside(x, y, z) && (id === B.AIR || id === B.COBWEB || isFluid(id));
+    return this.inside(x, y, z) && (id === B.AIR || id === B.COBWEB || id === B.FIRE || isFluid(id));
   }
 
   /** FlowingFluid.spread: down first; sideways only for sources or when it cannot fall. */
@@ -370,7 +539,7 @@ export class Blocks {
     if (!this.count) return false;
     const x0 = Math.floor(minX);
     const x1 = Math.floor(maxX - 1e-7);
-    const y0 = Math.max(0, Math.floor(minY));
+    const y0 = Math.max(-this.depth, Math.floor(minY));
     const y1 = Math.min(this.height - 1, Math.floor(maxY - 1e-7));
     const z0 = Math.floor(minZ);
     const z1 = Math.floor(maxZ - 1e-7);
@@ -402,7 +571,7 @@ export class Blocks {
     if (!this.count) return out;
     const x0 = Math.floor(minX);
     const x1 = Math.floor(maxX - 1e-7);
-    const y0 = Math.max(0, Math.floor(minY));
+    const y0 = Math.max(-this.depth, Math.floor(minY));
     const y1 = Math.min(this.height - 1, Math.floor(maxY - 1e-7));
     const z0 = Math.floor(minZ);
     const z1 = Math.floor(maxZ - 1e-7);
@@ -583,7 +752,9 @@ export class Blocks {
         nz = -stepZ;
         nx = ny = 0;
       }
-      if (t > maxT) return null;
+      // Entering a block exactly where the ray ends is not a hit (AABB.clip needs t < 1): an
+      // explosion centred on a crystal's obsidian is still visible from above.
+      if (t >= maxT - 1e-7) return null;
     }
     return null;
   }

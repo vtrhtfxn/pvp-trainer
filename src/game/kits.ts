@@ -5,7 +5,13 @@ export interface ArmorStats {
   toughness: number;
   /** Enchantment protection factor: Protection IV gives 4 per piece, capped at 20. */
   protectionEpf: number;
+  /** Extra EPF against explosions only: Blast Protection gives 2 per level. */
+  blastEpf: number;
+  /** Extra EPF against falls only: Feather Falling gives 3 per level. */
+  fallEpf: number;
   knockbackResistance: number;
+  /** explosion_knockback_resistance: Blast Protection adds 0.15 per level, stacking (1.21). */
+  explosionKnockbackResistance: number;
 }
 
 export type KitId = 'sword' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace';
@@ -39,11 +45,13 @@ export interface KitDef extends Loadout {
   naturalRegen?: boolean;
   /** mcpvp.club "stuns": a shield disable clears hurt immunity for an instant follow-up. */
   shieldStuns?: boolean;
+  /** Layers of diggable ground (grass over dirt) that explosions crater; 0 = unbreakable floor. */
+  floorDepth?: number;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
 export function armorStatsOf(pieces: readonly (ItemStack | null)[]): ArmorStats {
-  const out: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, knockbackResistance: 0 };
+  const out: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, blastEpf: 0, fallEpf: 0, knockbackResistance: 0, explosionKnockbackResistance: 0 };
   for (const s of pieces) {
     const a = s ? ITEMS[s.id].armor : undefined;
     if (!s || !a) continue;
@@ -51,6 +59,9 @@ export function armorStatsOf(pieces: readonly (ItemStack | null)[]): ArmorStats 
     out.toughness += a.toughness;
     out.knockbackResistance += a.knockbackResistance;
     out.protectionEpf += s.ench?.protection ?? 0;
+    out.blastEpf += 2 * (s.ench?.blastProtection ?? 0);
+    out.fallEpf += 3 * (s.ench?.featherFalling ?? 0);
+    out.explosionKnockbackResistance += 0.15 * (s.ench?.blastProtection ?? 0);
   }
   return out;
 }
@@ -152,6 +163,66 @@ function uhcLoadout(): Loadout {
   return { hotbar, main, armor, offhand: { id: 'shield', count: 1 } };
 }
 
+/**
+ * The Crystal layout from the tier-test screenshot: sword, obsidian, crystals, anchors,
+ * glowstone, gapples, pearls, crossbow and a totem in the hotbar; the rest of the pearls,
+ * Slow Falling arrows, XP, spare anchors/glowstone/obsidian/crystals, an ender chest, the
+ * pickaxe, eight splash potions and six more totems in the inventory; a totem in the off hand.
+ * Enchantments follow the standard crystal kit (Blast Protection IV legs and boots).
+ */
+function crystalLoadout(): Loadout {
+  const keep = { unbreaking: 3, mending: 1 };
+  const armor: ItemStack[] = [
+    { id: 'netherite_helmet', count: 1, ench: { protection: 4, ...keep } },
+    { id: 'netherite_chestplate', count: 1, ench: { protection: 4, ...keep } },
+    { id: 'netherite_leggings', count: 1, ench: { blastProtection: 4, ...keep } },
+    { id: 'netherite_boots', count: 1, ench: { blastProtection: 4, featherFalling: 4, ...keep } },
+  ];
+  const pearls = (): ItemStack => ({ id: 'ender_pearl', count: 16 });
+  const totem = (): ItemStack => ({ id: 'totem_of_undying', count: 1 });
+  const hotbar: ItemStack[] = [
+    { id: 'netherite_sword', count: 1, ench: { sharpness: 5, knockback: 1, ...keep } },
+    { id: 'obsidian', count: 64 },
+    { id: 'end_crystal', count: 64 },
+    { id: 'respawn_anchor', count: 64 },
+    { id: 'glowstone', count: 64 },
+    { id: 'golden_apple', count: 64 },
+    pearls(),
+    { id: 'crossbow', count: 1, ench: { multishot: 1, quickCharge: 3, ...keep } },
+    totem(),
+  ];
+  const main: ItemStack[] = [
+    pearls(),
+    pearls(),
+    { id: 'tipped_arrow', count: 64, potion: 'slow_falling' },
+    { id: 'experience_bottle', count: 64 },
+    { id: 'experience_bottle', count: 64 },
+    totem(),
+    totem(),
+    totem(),
+    totem(),
+    pearls(),
+    pearls(),
+    { id: 'respawn_anchor', count: 64 },
+    { id: 'glowstone', count: 64 },
+    pot('swiftness'),
+    pot('strength'),
+    pot('swiftness'),
+    pot('strength'),
+    totem(),
+    { id: 'netherite_pickaxe', count: 1, ench: { efficiency: 5, silkTouch: 1, ...keep } },
+    { id: 'ender_chest', count: 32 },
+    { id: 'obsidian', count: 64 },
+    { id: 'end_crystal', count: 64 },
+    pot('swiftness'),
+    pot('strength'),
+    pot('swiftness'),
+    pot('strength'),
+    totem(),
+  ];
+  return { hotbar, main, armor, offhand: totem() };
+}
+
 function soon(id: KitId, name: string, icon: KitIcon, summary: string): KitDef {
   return { id, name, icon, available: false, summary, contents: [], hotbar: [], armor: [], offhand: null, armorLabel: '' };
 }
@@ -246,7 +317,23 @@ export const KITS: KitDef[] = [
     ...nethPotLoadout(),
     armorLabel: 'Netherite · Prot IV',
   },
-  soon('crystal', 'Crystal', 'crystal', 'End crystals and anchors.'),
+  {
+    id: 'crystal',
+    name: 'Crystal',
+    icon: 'crystal',
+    available: true,
+    summary: 'End crystals, respawn anchors, obsidian, pearls and totems.',
+    contents: [
+      'Netherite armor — Prot IV / Blast Prot IV legs & boots (Feather Falling IV)',
+      'Netherite Sword (Sharp V, KB I) · Pickaxe (Eff V, Silk Touch)',
+      '128× End Crystal · 128× Obsidian · 128× Respawn Anchor · 128× Glowstone',
+      '8× Totem · 64× Golden Apple · 80× Ender Pearl · 32× Ender Chest',
+      'Crossbow (Multishot, Quick Charge III) · 64× Slow Falling Arrow · 128× XP · 4× Strength II · 4× Speed II',
+    ],
+    ...crystalLoadout(),
+    armorLabel: 'Netherite · Prot IV / Blast IV',
+    floorDepth: 4,
+  },
   soon('smp', 'SMP', 'smp', 'Full SMP loadout, no explosives.'),
   soon('mace', 'Mace', 'mace', 'Wind charges and smash attacks.'),
 ];

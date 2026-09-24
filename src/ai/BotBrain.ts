@@ -6,6 +6,10 @@ import { B, isSolid as isSolidBlock, type RayHit } from '../game/Blocks';
 import { SLOT_ARMOR, SLOT_OFFHAND, type Fighter, type MoveInput } from '../game/Fighter';
 import { ITEMS, durabilityFraction, type ItemId, type PotionId } from '../game/items';
 import type { World } from '../game/World';
+import type { EndCrystal } from '../game/EndCrystal';
+import { explosionDamageTo } from '../game/Explosion';
+import { ANCHOR_POWER, CRYSTAL_POWER, attackCrystal, canPlaceCrystal, crosshairCrystal } from '../game/crystals';
+import { Blocks } from '../game/Blocks';
 import type { BotProfile } from './difficulty';
 
 export type BotState = 'engage' | 'retreat' | 'eat';
@@ -34,6 +38,30 @@ type UhcPlan =
   | { kind: 'pillar'; baseY: number; height: number; timer: number; phase: 'build' | 'eat' }
   | { kind: 'head'; timer: number; count: number };
 
+/**
+ * A Crystal-kit combo, one click per phase. (x, y, z) is the obsidian or anchor cell; (sx, sy,
+ * sz) + (nx, ny, nz) the block face clicked to place it.
+ */
+type CrystalPlan =
+  | {
+      kind: 'crystal' | 'anchor';
+      phase: 'place' | 'crystal' | 'charge' | 'blow';
+      x: number;
+      y: number;
+      z: number;
+      sx: number;
+      sy: number;
+      sz: number;
+      nx: number;
+      ny: number;
+      nz: number;
+      crystal: EndCrystal | null;
+      timer: number;
+      wait: number;
+    }
+  | { kind: 'hit'; crystal: EndCrystal; timer: number; wait: number }
+  | { kind: 'pearl'; yaw: number; pitch: number; timer: number };
+
 /** An open inventory: a delay, then slot swaps (number key / F over a slot) one by one. */
 interface InvPlan {
   timer: number;
@@ -54,6 +82,14 @@ interface Perceived extends Seen {
  * from the same simulation the player uses.
  */
 const uhcRay: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
+const FACES: [number, number, number][] = [
+  [0, 1, 0],
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+  [0, -1, 0],
+];
 
 export class BotBrain {
   state: BotState = 'engage';
@@ -129,6 +165,12 @@ export class BotBrain {
   /** Ticks before it tries to rescue itself again (water, cutting a web) after a failed attempt. */
   private selfHelpCooldown = 0;
 
+  // ---- Crystal
+  private crystalKit = false;
+  private cplan: CrystalPlan | null = null;
+  private crystalCooldown = 0;
+  private thinkTimer = 0;
+
   constructor(
     private readonly bot: Fighter,
     private readonly target: Fighter,
@@ -202,6 +244,10 @@ export class BotBrain {
     this.settle = 0;
     this.uhcLabel = '';
     this.selfHelpCooldown = 0;
+    this.crystalKit = b.countItem('end_crystal') > 0;
+    this.cplan = null;
+    this.crystalCooldown = 0;
+    this.thinkTimer = 0;
   }
 
   tick() {
@@ -225,6 +271,13 @@ export class BotBrain {
     }
     if (this.retreatCooldown > 0) this.retreatCooldown--;
 
+    if (this.crystalKit) {
+      this.potLabel = '';
+      this.crystalStep(per, dist, trueDist, justHurt, input);
+      this.avoidLava(input);
+      b.input = input;
+      return;
+    }
     if (this.potKit) {
       this.potLabel = '';
       this.engagePot(per, dist, trueDist, justHurt, input);
@@ -746,47 +799,8 @@ export class BotBrain {
     if (this.throwGap > 0) this.throwGap--;
     if (this.gapCooldown > 0) this.gapCooldown--;
 
-    // ---- 0. Inventory open: no movement, no clicks, just the moves.
-    if (this.inv) {
-      this.potLabel = 'Inventory';
-      if (b.usingItem) b.stopUsingItem();
-      if (--this.inv.timer <= 0) {
-        const mv = this.inv.moves.shift();
-        if (mv) b.swapSlots(mv[0], mv[1]);
-        if (this.inv.moves.length) this.inv.timer = 2;
-        else this.inv = null;
-      }
-      return;
-    }
-
-    // ---- 1. Re-totem.
-    const hasTotem = b.offhand?.id === 'totem_of_undying';
-    if (this.hadTotem && !hasTotem) this.totemReact = N.totemReact;
-    this.hadTotem = hasTotem;
-    if (!hasTotem && b.countItem('totem_of_undying') > 0 && this.totemReact >= 0) {
-      if (this.totemReact > 0) this.totemReact--;
-      else {
-        this.potLabel = 'Re-totem';
-        const hs = b.slotOf('totem_of_undying');
-        if (hs >= 0 && N.hotbarTotem) {
-          if (b.usingItem) b.stopUsingItem();
-          // Two keys: the totem's slot, then F on the next tick.
-          if (b.selected !== hs) b.selectSlot(hs);
-          else {
-            b.swapHands();
-            this.totemReact = -1;
-          }
-          this.backOff(per, dist, input);
-          return;
-        }
-        const is = b.invSlotOf('totem_of_undying');
-        if (is >= 0) {
-          this.openInv([[is, SLOT_OFFHAND]]);
-          this.totemReact = -1;
-          return;
-        }
-      }
-    }
+    if (this.invStep()) return;
+    if (this.retotemStep(per, dist, input)) return;
 
     const safe = trueDist > 4.8 && !per.using;
 
@@ -817,34 +831,7 @@ export class BotBrain {
       this.eating = this.eatId !== null;
       if (this.eatId) this.eatStartCount = b.countItem(this.eatId);
     }
-    if (this.eating && this.eatId) {
-      this.potLabel = 'Eating';
-      // Food in the off hand (steak) is eaten behind the sword: right click falls through to it.
-      const inOff = b.offhand?.id === this.eatId;
-      const ready = inOff ? this.equip(this.weapon) : this.equip(this.eatId);
-      const left = b.countItem(this.eatId);
-      if (!ready || left === 0 || left < this.eatStartCount) {
-        // Out of food, or the one we started on is finished.
-        this.eating = false;
-        this.gapCooldown = 20;
-      } else {
-        if (!b.usingItem && !b.startUsingItem()) {
-          this.eating = false;
-          this.gapCooldown = 20;
-          return;
-        }
-        if (this.comboStyle) this.runOff(per, input);
-        else this.backOff(per, dist, input);
-        const progress = b.usingItem ? 1 - b.useItemRemaining / Math.max(1, b.useItemDuration) : 0;
-        // Too close to finish it: stop eating and fight.
-        if (trueDist < 3 && progress < 0.6) {
-          b.stopUsingItem();
-          this.eating = false;
-          this.gapCooldown = 60;
-        }
-        return;
-      }
-    }
+    if (this.eating && this.eatId && this.eatingStep(per, dist, trueDist, input)) return;
 
     // ---- 5a. Diamond Pot: getting comboed low on health — use Speed to get out of range.
     if (this.comboStyle && !P.passive) {
@@ -869,6 +856,87 @@ export class BotBrain {
       return;
     }
     this.engage(per, dist, justHurt, input);
+  }
+
+  /** An open inventory: no movement, no clicks, just the moves. True while it owns the tick. */
+  private invStep(): boolean {
+    const b = this.bot;
+    if (!this.inv) return false;
+    this.potLabel = 'Inventory';
+    if (b.usingItem) b.stopUsingItem();
+    if (--this.inv.timer <= 0) {
+      const mv = this.inv.moves.shift();
+      if (mv) b.swapSlots(mv[0], mv[1]);
+      if (this.inv.moves.length) this.inv.timer = 2;
+      else this.inv = null;
+    }
+    return true;
+  }
+
+  /** Puts a new totem in the off hand after one pops: hotbar key + F, or through the inventory. */
+  private retotemStep(per: Perceived, dist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    const N = this.profile.neth;
+    const hasTotem = b.offhand?.id === 'totem_of_undying';
+    if (this.hadTotem && !hasTotem) this.totemReact = N.totemReact;
+    this.hadTotem = hasTotem;
+    if (hasTotem || b.countItem('totem_of_undying') === 0 || this.totemReact < 0) return false;
+    if (this.totemReact > 0) {
+      this.totemReact--;
+      return false;
+    }
+    this.potLabel = 'Re-totem';
+    const hs = b.slotOf('totem_of_undying');
+    if (hs >= 0 && N.hotbarTotem) {
+      if (b.usingItem) b.stopUsingItem();
+      // Two keys: the totem's slot, then F on the next tick.
+      if (b.selected !== hs) b.selectSlot(hs);
+      else {
+        b.swapHands();
+        this.totemReact = -1;
+      }
+      this.backOff(per, dist, input);
+      return true;
+    }
+    const is = b.invSlotOf('totem_of_undying');
+    if (is >= 0) {
+      this.openInv([[is, SLOT_OFFHAND]]);
+      this.totemReact = -1;
+      return true;
+    }
+    return false;
+  }
+
+  /** Keeps eating `eatId` while backing off. True while it owns the tick. */
+  private eatingStep(per: Perceived, dist: number, trueDist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    const id = this.eatId!;
+    this.potLabel = 'Eating';
+    // Food in the off hand (steak) is eaten behind the sword: right click falls through to it.
+    const inOff = b.offhand?.id === id;
+    const ready = inOff ? this.equip(this.weapon) : this.equip(id);
+    const left = b.countItem(id);
+    if (!ready || left === 0 || left < this.eatStartCount) {
+      // Out of food, or the one we started on is finished.
+      this.eating = false;
+      this.gapCooldown = 20;
+      return false;
+    }
+    if (!b.usingItem && !b.startUsingItem()) {
+      this.eating = false;
+      this.gapCooldown = 20;
+      return true;
+    }
+    if (this.comboStyle) this.runOff(per, input);
+    else this.backOff(per, dist, input);
+    const progress = b.usingItem ? 1 - b.useItemRemaining / Math.max(1, b.useItemDuration) : 0;
+    // Too close to finish it: stop eating and fight (unless it is an emergency).
+    if (trueDist < 3 && progress < 0.6 && !(this.crystalKit && b.health <= 8)) {
+      b.stopUsingItem();
+      this.eating = false;
+      this.gapCooldown = 60;
+    }
+    return true;
   }
 
   /** Everything to throw at our own feet, most urgent first. */
@@ -1001,6 +1069,8 @@ export class BotBrain {
       if (p && p !== 'healing' && b.effects.has(p === 'swiftness' ? 'speed' : p)) return i;
     }
     for (let i = 8; i >= 0; i--) if (b.inventory[i]?.id === 'splash_potion') return i;
+    // The Crystal hotbar is full; the bot never uses its crossbow, so that slot takes turns.
+    if (this.crystalKit) return b.slotOf('crossbow');
     return -1;
   }
 
@@ -1041,6 +1111,431 @@ export class BotBrain {
       }
     }
     return moves;
+  }
+
+  // ------------------------------------------------------------ Crystal
+
+  /**
+   * The Crystal game. Priorities: inventory and re-totem; a combo in progress; pearl in from
+   * far away (or out when it is about to die); buffs and mending; restock; golden apples; a new
+   * crystal or anchor combo at the spot that hurts them most for what it costs us; otherwise the
+   * sword.
+   */
+  private crystalStep(per: Perceived, dist: number, trueDist: number, justHurt: boolean, input: MoveInput) {
+    const b = this.bot;
+    const T = this.target;
+    const P = this.profile;
+    const K = P.crystal;
+    if (this.crystalCooldown > 0) this.crystalCooldown--;
+    if (this.potCooldown > 0) this.potCooldown--;
+    if (this.throwGap > 0) this.throwGap--;
+    if (this.gapCooldown > 0) this.gapCooldown--;
+
+    if (this.invStep()) return;
+    if (this.retotemStep(per, dist, input)) {
+      this.cplan = null;
+      return;
+    }
+    if (this.cplan && this.runCrystal(per, dist, input)) return;
+
+    // Pearls: in when they are far away, out when the next hit would kill us.
+    if (!P.passive && K.pearls > 0 && b.countItem('ender_pearl') > 0 && !b.cooldowns.has('ender_pearl') && !this.eating) {
+      const totems = b.countItem('totem_of_undying'); // off hand included
+      if (trueDist > 14 && b.onGround) {
+        const dh = trueDist;
+        const shot = ballistic(dh, T.pos.y - (b.pos.y + b.eyeHeight() - 0.1), C.PEARL_THROW_SPEED, C.PEARL_GRAVITY);
+        if (shot) {
+          this.cplan = { kind: 'pearl', yaw: yawTowards(T.pos.x - b.pos.x, T.pos.z - b.pos.z), pitch: shot.pitch, timer: 0 };
+          this.settle = 0;
+          if (this.runCrystal(per, dist, input)) return;
+        }
+      } else if (K.pearls >= 2 && totems === 0 && b.effectiveHealth() < 7 && trueDist < 6) {
+        this.cplan = { kind: 'pearl', yaw: this.fleeDirection(per), pitch: 0.45, timer: 0 };
+        this.settle = 0;
+        if (this.runCrystal(per, dist, input)) return;
+      }
+    }
+
+    // Buffs at the start (and again when they run out), mending when there is a gap.
+    if (!this.throwing && !this.eating && this.potCooldown === 0) this.throwing = this.pickThrow(trueDist);
+    if (this.throwing) {
+      this.throwStep(per, dist, input);
+      return;
+    }
+
+    // Restock the hotbar: a spare totem, and whatever ran out.
+    if (trueDist > 4.5 && !this.eating && !per.using) {
+      const moves = this.restockMoves(0);
+      const used = new Set(moves.map((m) => m[1]));
+      const empty: number[] = [];
+      for (let i = 0; i < 9; i++) if (!b.inventory[i] && !used.has(i)) empty.push(i);
+      for (const id of ['end_crystal', 'obsidian', 'golden_apple', 'respawn_anchor', 'glowstone', 'ender_pearl'] as ItemId[]) {
+        if (!empty.length) break;
+        const from = b.invSlotOf(id);
+        if (b.slotOf(id) < 0 && from >= 0) moves.push([from, empty.shift()!]);
+      }
+      if (moves.length) {
+        this.openInv(moves);
+        return;
+      }
+    }
+
+    // Golden apples: keep absorption up when there is a gap, and always when low.
+    if (!this.eating && this.gapCooldown === 0 && !P.passive && b.countItem('golden_apple') > 0) {
+      const low = b.health <= 10 && !b.effects.has('regeneration');
+      if (low || (!b.effects.has('absorption') && trueDist > 4.5)) {
+        this.eating = true;
+        this.eatId = 'golden_apple';
+        this.eatStartCount = b.countItem('golden_apple');
+      }
+    }
+    if (this.eating && this.eatId && this.eatingStep(per, dist, trueDist, input)) return;
+
+    // A new combo.
+    if (!P.passive && this.crystalCooldown === 0 && --this.thinkTimer <= 0) {
+      this.thinkTimer = K.thinkTicks;
+      const plan = this.pickCrystalPlan(per);
+      if (plan) {
+        this.cplan = plan;
+        this.settle = 0;
+        if (this.runCrystal(per, dist, input)) return;
+      }
+    }
+
+    // Nothing worth blowing up: the sword.
+    this.engage(per, dist, justHurt, input);
+    if (b.horizontalCollision && b.onGround) input.jump = true; // out of craters
+  }
+
+  /** Damage (after armor) to them and to us from a blast, and how good a trade that is. */
+  private blastScore(cx: number, cy: number, cz: number, power: number, per: Perceived): number | null {
+    const b = this.bot;
+    const T = this.target;
+    const K = this.profile.crystal;
+    const theirs = explosionDamageTo(this.world, T, cx, cy, cz, power, per.x, per.y, per.z);
+    if (theirs < K.minDamage) return null;
+    const ours = explosionDamageTo(this.world, b, cx, cy, cz, power, b.pos.x, b.pos.y, b.pos.z);
+    const ourHp = b.effectiveHealth();
+    const ourTotem = b.offhand?.id === 'totem_of_undying';
+    if (ours >= ourHp - 0.5 && !ourTotem) return null;
+    let score = theirs - K.selfWeight * ours;
+    const theirTotem = T.offhand?.id === 'totem_of_undying' || T.heldStack()?.id === 'totem_of_undying';
+    if (theirs >= T.effectiveHealth()) score += theirTotem ? 4 : 50;
+    if (ours >= ourHp) score -= 20 * K.selfWeight;
+    return score;
+  }
+
+  /**
+   * A point on block face (sx, sy, sz)+(nx, ny, nz) that our crosshair can reach and click
+   * (nothing in front of it, not hidden by the opponent), or null.
+   */
+  private facePoint(sx: number, sy: number, sz: number, nx: number, ny: number, nz: number): [number, number, number] | null {
+    const b = this.bot;
+    const eye = b.eyePos();
+    const cx = sx + 0.5 + nx * 0.5;
+    const cy = sy + 0.5 + ny * 0.5;
+    const cz = sz + 0.5 + nz * 0.5;
+    if ((eye.x - cx) * nx + (eye.y - cy) * ny + (eye.z - cz) * nz <= 0.01) return null; // facing away
+    const box = this.target.aabb();
+    // Two axes along the face.
+    const ux = nx === 0 ? 1 : 0;
+    const uz = nx === 0 ? 0 : 1;
+    const vx = 0;
+    const vy = ny === 0 ? 1 : 0;
+    const vz = ny === 0 ? 0 : nx === 0 ? 1 : 0;
+    for (const [u, v] of [
+      [0, 0],
+      [0.3, 0.3],
+      [-0.3, 0.3],
+      [0.3, -0.3],
+      [-0.3, -0.3],
+    ]) {
+      const px = cx + ux * u + vx * v;
+      const py = cy + vy * v;
+      const pz = cz + uz * u + vz * v;
+      const dx = px - eye.x;
+      const dy = py - eye.y;
+      const dz = pz - eye.z;
+      const len = Math.hypot(dx, dy, dz);
+      if (len > C.BLOCK_REACH - 0.05) continue;
+      const hit = this.world.blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, len + 0.05, 'outline', uhcRay);
+      if (!hit || hit.x !== sx || hit.y !== sy || hit.z !== sz || hit.nx !== nx || hit.ny !== ny || hit.nz !== nz) continue;
+      const t = rayAABB(eye, new V3(dx / len, dy / len, dz / len), box);
+      if (t >= 0 && t <= C.ATTACK_REACH && t < hit.t) continue;
+      return [px, py, pz];
+    }
+    return null;
+  }
+
+  /** A visible face of solid block (sx, sy, sz) — for crystals on obsidian and anchor clicks. */
+  private anyFacePoint(x: number, y: number, z: number): [number, number, number] | null {
+    for (const [nx, ny, nz] of FACES) {
+      if (isSolidBlock(this.world.blocks.get(x + nx, y + ny, z + nz))) continue;
+      const p = this.facePoint(x, y, z, nx, ny, nz);
+      if (p) return p;
+    }
+    return null;
+  }
+
+  /** A support face we can click to put a block into (x, y, z), or null. */
+  private supportFace(x: number, y: number, z: number): [number, number, number, number, number, number] | null {
+    const blocks = this.world.blocks;
+    for (const [nx, ny, nz] of FACES) {
+      const sx = x - nx;
+      const sy = y - ny;
+      const sz = z - nz;
+      const id = blocks.get(sx, sy, sz);
+      // Clicking an anchor would charge or blow it instead of placing against it.
+      if (!isSolidBlock(id) || id === B.RESPAWN_ANCHOR) continue;
+      if (!blocks.inside(sx, sy, sz) && sy >= 0) continue; // the walls
+      if (this.facePoint(sx, sy, sz, nx, ny, nz)) return [sx, sy, sz, nx, ny, nz];
+    }
+    return null;
+  }
+
+  private cellHasFighter(x: number, y: number, z: number, h = 1): boolean {
+    for (const f of this.world.fighters) {
+      if (f.dead) continue;
+      const bb = f.aabb();
+      for (let i = 0; i < h; i++) if (Blocks.boxOverlapsCell(bb.minX, bb.minY, bb.minZ, bb.maxX, bb.maxY, bb.maxZ, x, y + i, z)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Scores every option near the opponent and returns the best: hit a crystal already there,
+   * put a crystal on obsidian already there, place obsidian then a crystal, or an anchor.
+   * Each extra click costs a little, since they may move in the meantime.
+   */
+  private pickCrystalPlan(per: Perceived): CrystalPlan | null {
+    const b = this.bot;
+    const K = this.profile.crystal;
+    const world = this.world;
+    const blocks = world.blocks;
+    const eye = b.eyePos();
+    let best: CrystalPlan | null = null;
+    let bestScore = 0;
+    const consider = (score: number | null, plan: () => CrystalPlan) => {
+      if (score !== null && score > bestScore) {
+        bestScore = score;
+        best = plan();
+      }
+    };
+
+    // 1. Crystals already standing (ours, or theirs when it hurts them more).
+    for (const c of world.crystals) {
+      if (c.removed || (c.owner !== b && !K.breakTheirs)) continue;
+      const d = Math.hypot(c.x - eye.x, c.y + 1 - eye.y, c.z - eye.z);
+      if (d > C.ATTACK_REACH + 1) continue;
+      const s = this.blastScore(c.x, c.y, c.z, CRYSTAL_POWER, per);
+      consider(s === null ? null : s + 1, () => ({ kind: 'hit', crystal: c, timer: 0, wait: 0 }));
+    }
+
+    const hasObsidian = b.slotOf('obsidian') >= 0;
+    const hasCrystal = b.slotOf('end_crystal') >= 0;
+    const anchors = K.anchors && b.slotOf('respawn_anchor') >= 0 && b.slotOf('glowstone') >= 0;
+    const tx = Math.floor(per.x);
+    const ty = Math.floor(per.y + 0.01);
+    const tz = Math.floor(per.z);
+    for (let dy = -2; dy <= 1; dy++)
+      for (let dx = -2; dx <= 2; dx++)
+        for (let dz = -2; dz <= 2; dz++) {
+          const x = tx + dx;
+          const y = ty + dy;
+          const z = tz + dz;
+          if (!blocks.inside(x, y, z)) continue;
+          if (Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z) > C.BLOCK_REACH + 0.5) continue;
+          const id = blocks.get(x, y, z);
+          const above = blocks.get(x, y + 1, z);
+          // 2. A crystal on obsidian that is already there.
+          if (hasCrystal && id === B.OBSIDIAN && above === B.AIR) {
+            if (!canPlaceCrystal(world, x, y, z) || !this.anyFacePoint(x, y, z)) continue;
+            const s = this.blastScore(x + 0.5, y + 1, z + 0.5, CRYSTAL_POWER, per);
+            consider(s === null ? null : s + 0.5, () => ({
+              kind: 'crystal', phase: 'crystal', x, y, z, sx: 0, sy: 0, sz: 0, nx: 0, ny: 0, nz: 0, crystal: null, timer: 0, wait: 0,
+            }));
+            continue;
+          }
+          if (id !== B.AIR || this.cellHasFighter(x, y, z)) continue;
+          const face = this.supportFace(x, y, z);
+          if (!face) continue;
+          const [sx, sy, sz, nx, ny, nz] = face;
+          // 3. Obsidian first, then the crystal on it.
+          if (hasObsidian && hasCrystal && above === B.AIR && !this.cellHasFighter(x, y + 1, z, 2)) {
+            const was = blocks.swapTemp(x, y, z, B.OBSIDIAN);
+            const s = this.blastScore(x + 0.5, y + 1, z + 0.5, CRYSTAL_POWER, per);
+            blocks.swapTemp(x, y, z, was);
+            consider(s, () => ({ kind: 'crystal', phase: 'place', x, y, z, sx, sy, sz, nx, ny, nz, crystal: null, timer: 0, wait: 0 }));
+          }
+          // 4. An anchor: placed, charged, blown up (the block is gone by then).
+          if (anchors && dy >= -1) {
+            const s = this.blastScore(x + 0.5, y + 0.5, z + 0.5, ANCHOR_POWER, per);
+            consider(s === null ? null : s - 0.5, () => ({ kind: 'anchor', phase: 'place', x, y, z, sx, sy, sz, nx, ny, nz, crystal: null, timer: 0, wait: 0 }));
+          }
+        }
+    return best;
+  }
+
+  /** Keeps crystal range while a combo runs: close enough to place, not in their face. */
+  private crystalMove(dist: number, input: MoveInput) {
+    const b = this.bot;
+    const P = this.profile;
+    if (--this.strafeTimer <= 0) {
+      this.strafeDir = this.rng.chance(P.strafeChance) ? (this.rng.chance(0.5) ? 1 : -1) : 0;
+      this.strafeTimer = this.rng.int(P.strafeSwitch[0], P.strafeSwitch[1]);
+    }
+    input.forward = dist > 4.3 ? 1 : dist < 2.4 ? -1 : 0;
+    input.sprint = false;
+    input.strafe = this.world.wallDistance(b.pos.x, b.pos.z) < 3 ? this.roomySide() : this.strafeDir;
+    if (b.horizontalCollision && b.onGround && input.forward > 0) input.jump = true;
+  }
+
+  /** One tick of the current combo. False when it ended (and something else may run). */
+  private runCrystal(per: Perceived, dist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    const T = this.target;
+    const K = this.profile.crystal;
+    const blocks = this.world.blocks;
+    const plan = this.cplan!;
+    plan.timer++;
+    const end = (ok: boolean): false => {
+      this.cplan = null;
+      this.crystalCooldown = ok ? K.comboGap : 4;
+      this.thinkTimer = 0;
+      return false;
+    };
+    if (b.usingItem) b.stopUsingItem();
+    this.eating = false;
+
+    if (plan.kind === 'pearl') {
+      this.potLabel = 'Pearl';
+      if (plan.timer > 20 || !this.equip('ender_pearl') || b.cooldowns.has('ender_pearl')) return end(false);
+      this.turnTo(plan.yaw, plan.pitch, 2.5);
+      const err = Math.abs(wrapAngle(b.yaw - plan.yaw)) + Math.abs(b.pitch - plan.pitch);
+      this.settle = err < 3 * DEG ? this.settle + 1 : 0;
+      if (this.settle >= K.aimSettle && b.startUsingItem(true)) {
+        this.cplan = null;
+        return true;
+      }
+      return true;
+    }
+
+    this.crystalMove(dist, input);
+    if ('wait' in plan && plan.wait > 0) plan.wait--;
+    // Hurt immunity: a blast within 10 ticks of their last hit only deals what it exceeds it by.
+    const immune = K.iframeTiming && T.invulnerableTime > C.IFRAME_WINDOW;
+
+    const hitCrystal = (c: EndCrystal): boolean => {
+      this.potLabel = 'Crystal';
+      if (c.removed) return end(true);
+      if (plan.timer > 30) return end(false);
+      // Would it kill us now (no totem)? Leave it.
+      if (this.blastScore(c.x, c.y, c.z, CRYSTAL_POWER, per) === null && c.owner === b && b.offhand?.id !== 'totem_of_undying') {
+        const ours = explosionDamageTo(this.world, b, c.x, c.y, c.z, CRYSTAL_POWER, b.pos.x, b.pos.y, b.pos.z);
+        if (ours >= b.effectiveHealth() - 0.5) return end(false);
+      }
+      this.aimPoint(c.x, c.y + 0.5, c.z);
+      if (plan.wait > 0 || this.settle < K.aimSettle || (immune && plan.timer < 12)) return true;
+      const cr = crosshairCrystal(b);
+      const tT = rayDistanceToTarget(b, T);
+      if (cr && cr.crystal === c && (tT < 0 || cr.t < tT)) {
+        attackCrystal(b, c);
+        return end(true);
+      }
+      return true;
+    };
+
+    if (plan.kind === 'hit') return hitCrystal(plan.crystal);
+
+    if (plan.phase === 'place') {
+      this.potLabel = plan.kind === 'anchor' ? 'Anchor' : 'Obsidian';
+      const want: ItemId = plan.kind === 'anchor' ? 'respawn_anchor' : 'obsidian';
+      const id = blocks.get(plan.x, plan.y, plan.z);
+      if (plan.kind === 'crystal' && id === B.OBSIDIAN) {
+        plan.phase = 'crystal';
+        plan.timer = 0;
+        return true;
+      }
+      if (id !== B.AIR || plan.timer > 20 || !this.equip(want)) return end(false);
+      const p = this.facePoint(plan.sx, plan.sy, plan.sz, plan.nx, plan.ny, plan.nz);
+      if (!p) return plan.timer > 6 ? end(false) : true;
+      this.aimPoint(p[0], p[1], p[2]);
+      if (plan.wait > 0 || this.settle < K.aimSettle) return true;
+      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      if (hit && hit.x === plan.sx && hit.y === plan.sy && hit.z === plan.sz && hit.nx === plan.nx && hit.ny === plan.ny && hit.nz === plan.nz) {
+        if (b.startUsingItem(true) && blocks.get(plan.x, plan.y, plan.z) !== B.AIR) {
+          plan.phase = plan.kind === 'anchor' ? 'charge' : 'crystal';
+          plan.timer = 0;
+          plan.wait = K.clickGap;
+          this.settle = 0;
+        }
+      }
+      return true;
+    }
+
+    if (plan.phase === 'crystal') {
+      this.potLabel = 'Crystal';
+      if (plan.crystal) return hitCrystal(plan.crystal);
+      if (plan.timer > 20 || blocks.get(plan.x, plan.y, plan.z) !== B.OBSIDIAN || !canPlaceCrystal(this.world, plan.x, plan.y, plan.z)) return end(false);
+      if (!this.equip('end_crystal')) return end(false);
+      const p = this.anyFacePoint(plan.x, plan.y, plan.z);
+      if (!p) return plan.timer > 6 ? end(false) : true;
+      this.aimPoint(p[0], p[1], p[2]);
+      if (plan.wait > 0 || this.settle < K.aimSettle) return true;
+      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
+        const n = this.world.crystals.length;
+        if (b.startUsingItem(true) && this.world.crystals.length > n) {
+          plan.crystal = this.world.crystals[this.world.crystals.length - 1];
+          plan.timer = 0;
+          plan.wait = K.clickGap;
+          this.settle = 0;
+        }
+      }
+      return true;
+    }
+
+    // Anchor: charge with glowstone, then click it with anything else.
+    this.potLabel = 'Anchor';
+    if (blocks.get(plan.x, plan.y, plan.z) !== B.RESPAWN_ANCHOR || plan.timer > 25) return end(false);
+    const charge = blocks.anchorCharge(plan.x, plan.y, plan.z);
+    if (plan.phase === 'charge' && charge > 0) {
+      plan.phase = 'blow';
+      plan.timer = 0;
+    }
+    if (plan.phase === 'charge') {
+      if (!this.equip('glowstone')) return end(false);
+    } else {
+      // A totem (or the sword) in the main hand: anything that isn't glowstone sets it off.
+      const tot = b.slotOf('totem_of_undying');
+      if (tot >= 0) {
+        if (b.selected !== tot) b.selectSlot(tot);
+      } else this.equip(this.weapon);
+      if (b.heldStack()?.id === 'glowstone') return end(false);
+      const ours = explosionDamageTo(this.world, b, plan.x + 0.5, plan.y + 0.5, plan.z + 0.5, ANCHOR_POWER, b.pos.x, b.pos.y, b.pos.z);
+      if (ours >= b.effectiveHealth() - 0.5 && b.offhand?.id !== 'totem_of_undying') return true; // step back first
+      if (immune && plan.timer < 12) {
+        const p = this.anyFacePoint(plan.x, plan.y, plan.z);
+        if (p) this.aimPoint(p[0], p[1], p[2]);
+        return true;
+      }
+    }
+    const p = this.anyFacePoint(plan.x, plan.y, plan.z);
+    if (!p) return plan.timer > 6 ? end(false) : true;
+    this.aimPoint(p[0], p[1], p[2]);
+    if (plan.wait > 0 || this.settle < K.aimSettle) return true;
+    const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+    if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z && b.startUsingItem(true)) {
+      if (plan.phase === 'blow') {
+        end(true);
+        return true;
+      }
+      plan.phase = 'blow';
+      plan.timer = 0;
+      plan.wait = K.clickGap;
+      this.settle = 0;
+    }
+    return true;
   }
 
   // ------------------------------------------------------------ UHC
@@ -1417,7 +1912,8 @@ export class BotBrain {
     for (const k of [0.6, 1.2]) {
       const px = Math.floor(b.pos.x + (mx / len) * k);
       const pz = Math.floor(b.pos.z + (mz / len) * k);
-      if (blocks.get(px, y, pz) === B.LAVA || blocks.get(px, y - 1, pz) === B.LAVA) {
+      const here = blocks.get(px, y, pz);
+      if (here === B.LAVA || here === B.FIRE || blocks.get(px, y - 1, pz) === B.LAVA) {
         input.forward = input.forward > 0 ? 0 : input.forward;
         input.strafe = -input.strafe;
         input.sprint = false;
@@ -1549,7 +2045,7 @@ export class BotBrain {
  * Pitch that lands an arrow `dh` blocks away and `dy` up, simulating AbstractArrow's own
  * integration (move, then ×0.99 drag and −0.05 gravity). Null if it cannot reach.
  */
-export function ballistic(dh: number, dy: number, speed: number): { pitch: number; ticks: number } | null {
+export function ballistic(dh: number, dy: number, speed: number, gravity = C.ARROW_GRAVITY): { pitch: number; ticks: number } | null {
   const flight = (pitch: number) => {
     let x = 0;
     let y = 0;
@@ -1565,7 +2061,7 @@ export function ballistic(dh: number, dy: number, speed: number): { pitch: numbe
       x = nx;
       y = ny;
       vx *= C.ARROW_DRAG;
-      vy = vy * C.ARROW_DRAG - C.ARROW_GRAVITY;
+      vy = vy * C.ARROW_DRAG - gravity;
     }
     return { y: -Infinity, ticks: 100 };
   };

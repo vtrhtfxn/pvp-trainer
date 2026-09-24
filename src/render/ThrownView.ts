@@ -47,10 +47,16 @@ export class ThrownView {
   }
 
   private itemMat(t: Thrown): THREE.SpriteMaterial {
-    const key = t.kind === 'xp' ? 'xp' : (t.potion ?? 'healing');
+    const key = t.kind === 'potion' ? (t.potion ?? 'healing') : t.kind;
     let m = this.itemMats.get(key);
     if (!m) {
-      const icon = itemIcon(t.kind === 'xp' ? { id: 'experience_bottle', count: 1 } : { id: 'splash_potion', count: 1, potion: t.potion ?? 'healing' });
+      const icon = itemIcon(
+        t.kind === 'xp'
+          ? { id: 'experience_bottle', count: 1 }
+          : t.kind === 'pearl'
+            ? { id: 'ender_pearl', count: 1 }
+            : { id: 'splash_potion', count: 1, potion: t.potion ?? 'healing' },
+      );
       const tex = icon ? new THREE.CanvasTexture(icon) : null;
       if (tex) {
         tex.magFilter = THREE.NearestFilter;

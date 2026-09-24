@@ -321,6 +321,43 @@ export class Sound {
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.45, 'highpass', 5000, 2000, 0.6, 0.6);
   }
 
+  /** entity.generic.explode: a deep boom with a noisy tail (louder and longer for bigger blasts). */
+  explosion(pos: { x: number; y: number; z: number }, power: number) {
+    const d = this.out(pos, 1.4);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.9 + power * 0.08, 'lowpass', 900, 60, 0.9, 1);
+    this.tone(d, t, 0.6, 'sine', 70, 30, 0.9);
+    this.noiseBurst(d, t + 0.02, 0.35, 'bandpass', 2400, 400, 0.7, 0.5);
+  }
+
+  /** Placing an end crystal: a glassy chime. */
+  crystalPlace(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.5);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 0.25, 'sine', 1500, 1900, 0.18);
+    this.tone(d, t + 0.03, 0.2, 'triangle', 2250, 2600, 0.1);
+  }
+
+  /** block.respawn_anchor.charge: a rising hum. */
+  anchorCharge(pos: { x: number; y: number; z: number }, charge: number) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 0.35, 'sawtooth', 110 + charge * 40, 220 + charge * 60, 0.15);
+    this.noiseBurst(d, t, 0.3, 'bandpass', 500, 1400, 2, 0.3);
+  }
+
+  /** Ender pearl throw / teleport: a portal whoosh. */
+  pearl(pos: { x: number; y: number; z: number }, land: boolean) {
+    const d = this.out(pos, land ? 0.8 : 0.4);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, land ? 0.45 : 0.2, 'bandpass', land ? 300 : 1200, land ? 1600 : 600, 1.5, 0.5);
+    if (land) this.tone(d, t, 0.4, 'sine', 180, 520, 0.2);
+  }
+
   equip() {
     const d = this.out(undefined, 0.3);
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.08, 'bandpass', 1200, 700, 1, 0.3);
