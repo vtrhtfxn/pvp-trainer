@@ -179,7 +179,7 @@ export class Menus {
       h(
         'div',
         { class: 'credits' },
-        'Not affiliated with Mojang. Models (CC-BY 4.0): Diamond Sword by Blender3D · Golden Apple by novvaas · Player rig by lewisglasgow2005.',
+        'Not affiliated with Mojang. Textures: Bare Bones resource pack. Player rig (CC-BY 4.0) by lewisglasgow2005.',
       ),
     );
     return root;
@@ -309,8 +309,10 @@ export class Menus {
       ['Ctrl', 'Sprint (toggle by default) · or double-tap W'],
       ['Shift', 'Sneak'],
       ['Left Click', 'Attack — full damage every 0.6 s, clicking early resets the cooldown'],
-      ['Right Click (hold)', 'Eat golden apple (1.5 s, you move at 20% speed)'],
-      ['1 – 9 / Scroll', 'Hotbar (switching items resets the attack cooldown)'],
+      ['Right Click (hold)', 'Use: eat, raise the shield, draw the bow, load / fire the crossbow. Main hand first, then off hand'],
+      ['1 – 9 / Scroll', 'Hotbar (switching items resets the attack cooldown on the next tick)'],
+      ['F', 'Swap main hand and off hand'],
+      ['E', 'Inventory — drag or click items, shift-click to quick-move, 1–9 / F over a slot to swap'],
       ['F5 or V', 'Toggle third person'],
       ['⌘M (or F3 + B)', 'Toggle combat hitboxes — white box, red eye line, blue 3-block reach ray'],
       ['Esc', 'Pause'],
@@ -337,7 +339,14 @@ export class Menus {
       h('li', {}, 'Jump the moment you get hit (jump-reset) to take less knockback.'),
       h('li', {}, 'Full hunger + saturation heals fast. Golden apples give Regen II + Absorption.'),
       h('li', {}, 'With hitboxes on, a box turns yellow while that fighter is inside the other one\u2019s 3-block reach.'),
-      h('li', {}, 'Practice difficulty never swings back — use it to drill combos, W-taps and reach.'),
+      h('li', {}, 'Practice difficulty never swings back — use it to drill combos, W-taps and reach. In the Axe kit it keeps its shield up, so you can drill shield disables.'),
+      h('li', {}, 'Shield: blocks everything from the front half once it has been up for 0.25 s. You cannot attack while it is raised — lower it first.'),
+      h('li', {}, 'An axe hit on a raised shield disables it for 5 s, at any charge.'),
+      h(
+        'li',
+        {},
+        'Attribute swap: press a hotbar key and click on the same tick (within 50 ms). The hit uses the OLD item\u2019s damage and cooldown with the NEW item\u2019s effect — e.g. a fully charged sword hit that still disables a shield with the axe.',
+      ),
     );
     panel.append(tips);
     panel.append(this.button('Done', () => this.show('main'), 'big'));
@@ -458,6 +467,16 @@ export class Menus {
       ['Longest combo', `${r.player.maxCombo}${r.newBestCombo ? ' ★' : ''}`, `${r.bot.maxCombo}`],
       ['Damage dealt', `${(r.player.damageDealt / 2).toFixed(1)} ❤`, `${(r.bot.damageDealt / 2).toFixed(1)} ❤`],
       ['Golden apples', `${r.player.gapplesEaten}`, `${r.bot.gapplesEaten}`],
+      ...(r.player.blocked + r.bot.blocked + r.player.shieldsDisabled + r.bot.shieldsDisabled > 0
+        ? ([
+            ['Hits blocked', `${r.player.blocked}`, `${r.bot.blocked}`],
+            ['Shields disabled', `${r.player.shieldsDisabled}`, `${r.bot.shieldsDisabled}`],
+            ['Attribute swaps', `${r.player.attributeSwaps}`, `${r.bot.attributeSwaps}`],
+          ] as [string, string, string][])
+        : []),
+      ...(r.player.arrowsShot + r.bot.arrowsShot > 0
+        ? ([['Arrows hit', `${r.player.arrowHits}/${r.player.arrowsShot}`, `${r.bot.arrowHits}/${r.bot.arrowsShot}`]] as [string, string, string][])
+        : []),
       ['Avg reach', reach(r.player), reach(r.bot)],
     ];
     const table = h('div', { class: 'stats-table' });

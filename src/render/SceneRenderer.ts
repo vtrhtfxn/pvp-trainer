@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { lerp } from '../core/math';
 import { rayDistanceToTarget } from '../game/combat';
-import type { Fighter } from '../game/Fighter';
+import { Fighter } from '../game/Fighter';
 import type { World } from '../game/World';
 import { Arena, SKY_HORIZON } from './Arena';
+import { ArrowView } from './Arrows';
 import type { Assets } from './assets';
 import { FirstPersonView } from './FirstPerson';
 import { Hitboxes } from './Hitboxes';
@@ -45,6 +46,15 @@ export class SceneRenderer {
   readonly nametag = new Nametag();
   readonly hitboxes = new Hitboxes();
   readonly firstPerson: FirstPersonView;
+  readonly arrows = new ArrowView();
+  // Inventory-screen player preview: its own tiny scene, rendered off-screen.
+  private readonly previewScene = new THREE.Scene();
+  private readonly previewCamera = new THREE.OrthographicCamera(-0.8, 0.8, 1.15, -1.15, 0.1, 10);
+  private readonly previewModel: PlayerModel;
+  private readonly previewFighter: Fighter;
+  private previewTarget: THREE.WebGLRenderTarget | null = null;
+  private previewBuf: Uint8Array | null = null;
+  private previewImg: ImageData | null = null;
   private readonly glint: THREE.CanvasTexture;
   private readonly viewShake = new THREE.Matrix4();
   cameraMode: CameraMode = 'orbit';
@@ -92,6 +102,17 @@ export class SceneRenderer {
     this.scene.add(this.nametag.sprite);
     this.scene.add(this.hitboxes.group);
     this.firstPerson = new FirstPersonView(assets, glintMat);
+    this.scene.add(this.arrows.group);
+
+    this.previewModel = new PlayerModel(assets, glintMat);
+    this.previewModel.shadow.visible = false;
+    this.previewFighter = new Fighter('player', 'preview', world);
+    this.previewScene.add(new THREE.AmbientLight(0xffffff, 0.55 * Math.PI));
+    const pl = new THREE.DirectionalLight(0xffffff, 0.5 * Math.PI);
+    pl.position.set(0.3, 0.8, -1);
+    this.previewScene.add(pl, this.previewModel.root);
+    this.previewCamera.position.set(0, 1.0, -4);
+    this.previewCamera.lookAt(0, 1.0, 0);
     this.resize();
   }
 
@@ -120,6 +141,62 @@ export class SceneRenderer {
       // Settle before reacting again, so it cannot oscillate every frame.
       this.adaptCooldown = 1.5;
     }
+  }
+
+  /**
+   * InventoryScreen.renderEntityInInventoryFollowsMouse: draws the player (with its real armor
+   * and held items) into `canvas`, turning body and head toward the mouse.
+   */
+  renderPreview(canvas: HTMLCanvasElement, p: Fighter, mouseX: number, mouseY: number) {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(8, Math.round(rect.width));
+    const h = Math.max(8, Math.round(rect.height));
+    if (canvas.width !== w || canvas.height !== h || !this.previewTarget) {
+      canvas.width = w;
+      canvas.height = h;
+      this.previewTarget?.dispose();
+      this.previewTarget = new THREE.WebGLRenderTarget(w, h);
+      this.previewTarget.texture.colorSpace = THREE.SRGBColorSpace;
+      this.previewBuf = new Uint8Array(w * h * 4);
+      this.previewImg = new ImageData(w, h);
+      // Keep the whole player (2.3 blocks with margin) in view at the window's aspect ratio.
+      const half = 1.15 * (w / h);
+      this.previewCamera.left = -half;
+      this.previewCamera.right = half;
+      this.previewCamera.updateProjectionMatrix();
+    }
+    const f = this.previewFighter;
+    f.inventory = p.inventory;
+    f.selected = p.selected;
+    f.offhand = p.offhand;
+    f.armorSlots = p.armorSlots;
+    f.pos.set(0, 0, 0);
+    f.prevPos.set(0, 0, 0);
+    const dx = (rect.left + rect.width / 2 - mouseX) / (rect.width * 0.5);
+    const dy = (rect.top + rect.height * 0.3 - mouseY) / (rect.height * 0.5);
+    // The model faces -Z at yaw 0; the camera sits on -Z, so yaw 0 looks straight out of the window.
+    const body = Math.atan(dx * 0.6) * 0.35;
+    f.bodyYaw = f.prevBodyYaw = -body;
+    f.yaw = f.prevYaw = -(body + Math.atan(dx * 0.6) * 0.6);
+    f.pitch = f.prevPitch = Math.atan(dy * 0.6) * 0.5;
+    this.previewModel.update(f, 1, 0);
+
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    const prevColor = new THREE.Color();
+    r.getClearColor(prevColor);
+    const prevAlpha = r.getClearAlpha();
+    r.setRenderTarget(this.previewTarget);
+    r.setClearColor(0x000000, 1);
+    r.clear();
+    r.render(this.previewScene, this.previewCamera);
+    r.readRenderTargetPixels(this.previewTarget!, 0, 0, w, h, this.previewBuf!);
+    r.setRenderTarget(prev);
+    r.setClearColor(prevColor, prevAlpha);
+    const img = this.previewImg!;
+    const buf = this.previewBuf!;
+    for (let y = 0; y < h; y++) img.data.set(buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+    canvas.getContext('2d')!.putImageData(img, 0, 0);
   }
 
   resize() {
@@ -239,10 +316,12 @@ export class SceneRenderer {
       alpha,
       view.showHitboxes,
       !firstPerson,
-      rayDistanceToTarget(player, bot) >= 0,
-      rayDistanceToTarget(bot, player) >= 0,
+      // Only pay for the reach tests when the boxes are actually drawn.
+      view.showHitboxes && rayDistanceToTarget(player, bot) >= 0,
+      view.showHitboxes && rayDistanceToTarget(bot, player) >= 0,
     );
 
+    this.arrows.update(player.world.arrows, alpha);
     this.particles.setViewport(this.renderer.domElement.height, this.camera.fov);
     this.particles.update(dt);
 

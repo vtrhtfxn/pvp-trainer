@@ -180,6 +180,72 @@ export class Sound {
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.09, 'lowpass', 500, 150, 0.7, 0.6);
   }
 
+  /** Wooden thunk of a hit landing on a raised shield. */
+  shieldBlock(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.9);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.09, 'lowpass', 700, 180, 1.2, 0.9);
+    this.tone(d, t, 0.12, 'triangle', 150, 70, 0.6);
+  }
+
+  /** The crack of an axe disabling a shield. */
+  shieldBreak(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.22, 'bandpass', 1800, 300, 0.8, 1);
+    this.noiseBurst(d, t + 0.04, 0.14, 'lowpass', 600, 150, 1, 0.7);
+    this.tone(d, t, 0.2, 'sawtooth', 220, 60, 0.25);
+  }
+
+  shieldRaise(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.35);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.06, 'bandpass', 500, 900, 1.5, 0.3);
+  }
+
+  bowShoot(pos: { x: number; y: number; z: number }, power: number) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 0.12, 'triangle', 420 + power * 200, 180, 0.35);
+    this.noiseBurst(d, t, 0.18, 'bandpass', 2500, 700, 1.2, 0.4);
+  }
+
+  crossbowLoad(pos: { x: number; y: number; z: number }, done: boolean) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    if (done) {
+      this.noiseBurst(d, t, 0.05, 'highpass', 3000, 2000, 1, 0.5);
+      this.tone(d, t, 0.06, 'square', 900, 700, 0.12);
+    } else this.noiseBurst(d, t, 0.25, 'bandpass', 600, 1500, 2, 0.25);
+  }
+
+  arrowHit(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.9);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.07, 'bandpass', 2200, 900, 1.5, 0.7);
+    this.tone(d, t, 0.06, 'sine', 900, 500, 0.25);
+  }
+
+  /** The little "ding" when you hit someone with an arrow (vanilla's arrow hit-player sound). */
+  arrowDing() {
+    const d = this.out(undefined, 0.45);
+    if (d) this.tone(d, this.ctx!.currentTime, 0.16, 'sine', 1250, 1240, 0.3);
+  }
+
+  pickup(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.4);
+    if (d) this.tone(d, this.ctx!.currentTime, 0.07, 'sine', 1400 + Math.random() * 400, 1800, 0.2);
+  }
+
+  equip() {
+    const d = this.out(undefined, 0.3);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.08, 'bandpass', 1200, 700, 1, 0.3);
+  }
+
   ui() {
     const d = this.out(undefined, 0.35);
     if (d) this.tone(d, this.ctx!.currentTime, 0.05, 'square', 1250, 900, 0.15);

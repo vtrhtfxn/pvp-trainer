@@ -1,8 +1,9 @@
 import * as C from '../core/constants';
 import { DEG, clamp, wrapAngle, yawTowards } from '../core/math';
 import type { Rng } from '../core/rng';
-import { rayDistanceToTarget, type AttackOutcome } from '../game/combat';
+import { rayDistanceToTarget, shieldFaces, type AttackOutcome } from '../game/combat';
 import type { Fighter, MoveInput } from '../game/Fighter';
+import { ITEMS, type ItemId } from '../game/items';
 import type { World } from '../game/World';
 import type { BotProfile } from './difficulty';
 
@@ -13,8 +14,15 @@ interface Seen {
   y: number;
   z: number;
   onGround: boolean;
+  /** Eating (a golden apple). */
   using: boolean;
+  /** Shield raised (visible from the first tick, blocking from the fifth). */
+  shield: boolean;
+  held: ItemId | null;
 }
+
+/** Sub-plans the Axe-kit bot runs at range. */
+type RangedPlan = 'none' | 'loadCrossbow' | 'fireCrossbow' | 'drawBow';
 
 interface Perceived extends Seen {
   vx: number;
@@ -48,6 +56,24 @@ export class BotBrain {
   private escapeTimer = 0;
   private retreatCooldown = 0;
 
+  // ---- Axe kit
+  private ticks = 0;
+  /** Tick the target's last swing started, to estimate when their weapon is charged again. */
+  private targetSwingTick = -100;
+  private targetHeldPrev: ItemId | null = null;
+  /** We disabled their shield: it cannot come back up before this tick. */
+  private targetShieldDownUntil = 0;
+  private shieldPlan = false;
+  private shieldPlanTimer = 0;
+  private axeWait = -1;
+  /** Bots that cannot attribute-swap keep the axe out until it has swung. */
+  private axeCommit = 0;
+  private swapBackTimer = 0;
+  private readAxeRoll = false;
+  private ranged: RangedPlan = 'none';
+  private rangedTimer = 0;
+  private rangedCooldown = 0;
+
   constructor(
     private readonly bot: Fighter,
     private readonly target: Fighter,
@@ -62,12 +88,48 @@ export class BotBrain {
   get label(): string {
     if (this.state === 'retreat') return 'Retreating';
     if (this.state === 'eat') return this.bot.usingItem ? 'Eating' : 'Healing';
+    if (this.bot.raisingShield()) return 'Blocking';
+    if (this.ranged !== 'none') return this.ranged === 'loadCrossbow' ? 'Loading' : 'Aiming';
     return this.profile.passive ? 'Passive' : 'Fighting';
+  }
+
+  /** Whether the bot is holding right click — lets Match drive a brain on the player's side. */
+  get useHeld(): boolean {
+    return this.bot.usingItem;
+  }
+
+  /** The Axe kit (or anything with a shield) switches the bot to its shield game. */
+  private get shieldKit(): boolean {
+    return this.bot.hasShield() || this.bot.slotOf('diamond_axe') >= 0;
+  }
+
+  resetRound() {
+    this.state = 'engage';
+    this.seen = [];
+    this.stateTimer = 0;
+    this.hitsTaken = 0;
+    this.escapeTimer = 0;
+    this.retreatCooldown = 0;
+    this.critPlan = false;
+    this.wtapTimer = 0;
+    this.ticks = 0;
+    this.targetSwingTick = -100;
+    this.targetHeldPrev = null;
+    this.targetShieldDownUntil = 0;
+    this.shieldPlan = false;
+    this.shieldPlanTimer = 0;
+    this.axeWait = -1;
+    this.axeCommit = 0;
+    this.swapBackTimer = 0;
+    this.ranged = 'none';
+    this.rangedTimer = 0;
+    this.rangedCooldown = 0;
   }
 
   tick() {
     const b = this.bot;
     const T = this.target;
+    this.ticks++;
     this.remember();
     const input: MoveInput = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
     if (b.dead || T.dead) {
@@ -86,7 +148,8 @@ export class BotBrain {
     if (this.retreatCooldown > 0) this.retreatCooldown--;
 
     this.updateState(trueDist);
-    if (this.state === 'engage') this.engage(per, dist, justHurt, input);
+    if (this.state === 'engage' && this.shieldKit) this.engageShield(per, dist, justHurt, input);
+    else if (this.state === 'engage') this.engage(per, dist, justHurt, input);
     else if (this.state === 'retreat') this.retreat(per, trueDist, input);
     else this.eat(per, trueDist, input);
     b.input = input;
@@ -96,8 +159,23 @@ export class BotBrain {
 
   private remember() {
     const T = this.target;
-    this.seen.push({ x: T.pos.x, y: T.pos.y, z: T.pos.z, onGround: T.onGround, using: T.usingItem });
+    const held = T.heldStack()?.id ?? null;
+    this.seen.push({
+      x: T.pos.x,
+      y: T.pos.y,
+      z: T.pos.z,
+      onGround: T.onGround,
+      using: T.usingItem && T.useKind() === 'food',
+      shield: T.raisingShield(),
+      held,
+    });
     if (this.seen.length > 48) this.seen.shift();
+    // A swing is visible the tick it starts; a new item in hand restarts their cooldown too.
+    if (T.swinging && T.swingTime <= 0) this.targetSwingTick = this.ticks;
+    if (held !== this.targetHeldPrev) {
+      this.targetSwingTick = this.ticks;
+      this.targetHeldPrev = held;
+    }
   }
 
   private perceive(): Perceived {
@@ -193,13 +271,15 @@ export class BotBrain {
 
   // ------------------------------------------------------------ behaviours
 
-  private engage(per: Perceived, dist: number, justHurt: boolean, input: MoveInput) {
+  private engage(per: Perceived, dist: number, justHurt: boolean, input: MoveInput, allowAttack = true) {
     const b = this.bot;
     const T = this.target;
     const P = this.profile;
     const rng = this.rng;
-    this.equip('diamond_sword');
-    if (b.usingItem) b.stopUsingItem();
+    if (!this.shieldKit) {
+      this.equip('diamond_sword');
+      if (b.usingItem) b.stopUsingItem();
+    }
 
     this.aimAt(per.x, per.y + (per.onGround ? 1.3 : 0.9), per.z);
     const p = b.attackStrengthScale(0.5);
@@ -243,7 +323,7 @@ export class BotBrain {
     }
 
     // Jump-reset: jump on the tick you get hit to cancel part of the knockback.
-    if (this.profile.passive) {
+    if (this.profile.passive || !allowAttack) {
       if (justHurt && b.onGround && rng.chance(P.jumpResetChance)) input.jump = true;
       return; // never plans crits, never clicks
     }
@@ -303,6 +383,249 @@ export class BotBrain {
         }
       }
     }
+  }
+
+  // ------------------------------------------------------------ Axe kit
+
+  /** What the target looked like `ago` ticks ago (a raised shield is easy to spot). */
+  private seenLate(ago: number): Seen {
+    const n = this.seen.length;
+    return this.seen[Math.max(0, n - 1 - ago)];
+  }
+
+  /**
+   * The Axe-kit game. Priorities, in order: shoot at range; break a raised shield with the axe
+   * (attribute-swapping on Hard+); block while the opponent's weapon is charged and ours is not;
+   * otherwise fight with the sword exactly like the Sword kit — W-taps, crits, spacing.
+   */
+  private engageShield(per: Perceived, dist: number, justHurt: boolean, input: MoveInput) {
+    const b = this.bot;
+    const T = this.target;
+    const P = this.profile;
+    const A = P.axe;
+    const rng = this.rng;
+    if (this.rangedCooldown > 0) this.rangedCooldown--;
+
+    if ((this.ranged !== 'none' || this.wantRanged(per, dist)) && this.rangedStep(per, dist, input)) return;
+
+    // Back to the sword after an axe swing, or whenever nothing else needs a different item.
+    if (this.swapBackTimer > 0) this.swapBackTimer--;
+    const held = b.heldStack()?.id ?? null;
+    if (this.swapBackTimer === 0 && this.axeWait < 0 && held !== 'diamond_sword') this.equip('diamond_sword');
+
+    const seen = this.seenLate(A.shieldReact);
+    const targetDown = this.targetShieldDownUntil > this.ticks;
+    const facingUs = shieldFaces(T, b.pos.x, b.pos.z);
+    const reach = rayDistanceToTarget(b, T);
+    const inReach = reach >= 0 && reach <= P.maxReach;
+
+    // ---- 1. Their shield is up and facing us: the axe disables it for 5 seconds.
+    const wantsBreak = !P.passive && seen.shield && facingUs && !targetDown && b.slotOf('diamond_axe') >= 0;
+    if (wantsBreak || this.axeCommit > 0) {
+      if (this.axeCommit > 0) this.axeCommit--;
+      this.shieldPlan = false;
+      let released = false;
+      if (b.usingItem) {
+        // Lowering our own shield takes the whole tick: vanilla swallows clicks while in use.
+        b.releaseUsingItem();
+        released = true;
+      }
+      this.engage(per, dist, false, input, false);
+      input.forward = dist > 2.4 ? 1 : 0;
+      input.sprint = dist > 3.5;
+      if (released || !inReach) return;
+      if (A.swap && wantsBreak) {
+        // Attribute swap: the axe goes in the hand and swings on the same tick, before the
+        // equipment tick refreshes attributes — sword damage and cooldown, axe disable.
+        this.equip('diamond_axe');
+        this.afterAxeSwing(this.doAttack());
+        this.swapBackTimer = 1;
+        this.axeWait = -1;
+        this.axeCommit = 0;
+        return;
+      }
+      if (b.heldStack()?.id !== 'diamond_axe') {
+        this.equip('diamond_axe');
+        this.axeWait = rng.int(A.axeDelay[0], A.axeDelay[1]);
+        this.axeCommit = 40;
+        return;
+      }
+      if (this.axeWait > 0) {
+        this.axeWait--;
+        return;
+      }
+      // Still blocking: any axe hit disables. Shield dropped: wait for a strong axe hit instead of
+      // throwing away the cooldown by switching straight back.
+      if (wantsBreak || b.attackStrengthScale(0.5) >= 0.95) {
+        this.afterAxeSwing(this.doAttack());
+        this.axeWait = -1;
+        this.axeCommit = 0;
+        this.swapBackTimer = rng.int(2, 6);
+      }
+      return;
+    }
+    if (this.axeWait >= 0) this.axeWait = -1;
+
+    // ---- 2. Block while their weapon is charged and ours is not.
+    if (--this.shieldPlanTimer <= 0) {
+      this.shieldPlanTimer = rng.int(8, 16);
+      this.shieldPlan = rng.chance(A.shieldChance);
+      this.readAxeRoll = rng.chance(A.readAxe);
+    }
+    const theirHeld = per.held;
+    const theirDelay = 20 / (theirHeld ? ITEMS[theirHeld].attackSpeed : C.FIST_ATTACK_SPEED);
+    const readyIn = this.targetSwingTick + theirDelay * 0.9 - this.ticks;
+    const lookingAtUs = Math.abs(wrapAngle(T.yaw - yawTowards(b.pos.x - T.pos.x, b.pos.z - T.pos.z))) < 1.1;
+    const threatened = dist < 4.6 && lookingAtUs && readyIn <= A.shieldLead && !per.using && !seen.shield;
+    const canShield = b.offhand?.id === 'shield' && b.shieldCooldown === 0 && ITEMS[held ?? 'arrow'].use === 'none';
+    const p = b.attackStrengthScale(0.5);
+    const myHitReady = inReach && p >= Math.min(this.swingThreshold, 0.95) && !(seen.shield && facingUs && !targetDown);
+    const axeRead = theirHeld === 'diamond_axe' && this.readAxeRoll;
+    let wantShield = canShield && this.shieldPlan && threatened && !axeRead && !myHitReady;
+    if (P.passive) wantShield = canShield && this.shieldPlan && dist < 5 && lookingAtUs;
+
+    if (wantShield) {
+      if (!b.usingItem) b.startUsingItem(true);
+      this.engage(per, dist, justHurt, input, false);
+      // Blocking walks at 20% speed and cannot sprint; hold ground just inside reach.
+      input.sprint = false;
+      input.jump = false;
+      // Spacing off where they really are: walking into them with the shield up wastes it.
+      const d = Math.hypot(T.pos.x - b.pos.x, T.pos.z - b.pos.z);
+      if (d < 2.4) input.forward = -1;
+      else if (d < 3.2) input.forward = 0;
+      return;
+    }
+
+    // ---- 3. Sword.
+    if (b.usingItem) {
+      b.releaseUsingItem();
+      this.engage(per, dist, justHurt, input, false);
+      return;
+    }
+    this.engage(per, dist, justHurt, input, true);
+  }
+
+  private afterAxeSwing(r: AttackOutcome) {
+    if (r.disabled) {
+      // Their shield is down for 5 s: go all in with the sword.
+      this.targetShieldDownUntil = this.ticks + C.SHIELD_DISABLE_TICKS - 2;
+      this.critPlan = this.rng.chance(Math.max(0.5, this.profile.critChance));
+      this.critPlanTimer = 30;
+    }
+    this.swingThreshold = this.rng.range(this.profile.chargeMin, this.profile.chargeMax);
+  }
+
+  // ---- ranged
+
+  private closingSpeed(per: Perceived): number {
+    const b = this.bot;
+    const dx = b.pos.x - per.x;
+    const dz = b.pos.z - per.z;
+    const d = Math.hypot(dx, dz) || 1;
+    return (dx * per.vx + dz * per.vz) / d;
+  }
+
+  private wantRanged(per: Perceived, dist: number): boolean {
+    const b = this.bot;
+    const A = this.profile.axe;
+    if (A.ranged === 0 || this.profile.passive || this.rangedCooldown > 0 || b.shieldCooldown > 0) return false;
+    const xb = b.slotOf('crossbow');
+    const charged = xb >= 0 && !!b.inventory[xb]?.charged;
+    if (charged && dist > 6) return true;
+    if (dist < 10 || this.closingSpeed(per) > 0.12) return false;
+    if (xb >= 0 && b.hasAmmo()) return true;
+    return A.ranged >= 2 && b.slotOf('bow') >= 0 && b.hasAmmo() && dist > 11;
+  }
+
+  /** Returns true while a ranged plan owns this tick. */
+  private rangedStep(per: Perceived, dist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    const A = this.profile.axe;
+    if (this.ranged === 'none') {
+      const xb = b.slotOf('crossbow');
+      if (xb >= 0 && b.inventory[xb]?.charged) this.ranged = 'fireCrossbow';
+      else if (xb >= 0 && b.hasAmmo()) this.ranged = 'loadCrossbow';
+      else if (b.slotOf('bow') >= 0 && b.hasAmmo()) this.ranged = 'drawBow';
+      else return false;
+      this.rangedTimer = 0;
+    }
+    this.rangedTimer++;
+    const abortAt = this.ranged === 'fireCrossbow' ? 4 : 6.5;
+    if (dist < abortAt || this.rangedTimer > 90) {
+      if (b.usingItem) b.stopUsingItem();
+      this.ranged = 'none';
+      this.rangedCooldown = 40;
+      return false;
+    }
+    // Strafe slowly while busy, keeping the distance.
+    input.strafe = this.strafeDir || 1;
+    input.forward = dist < 12 ? -1 : 0;
+
+    const T = this.target;
+    const blockedByShield = this.seenLate(A.shieldReact).shield && shieldFaces(T, b.pos.x, b.pos.z);
+    switch (this.ranged) {
+      case 'loadCrossbow':
+        this.equip('crossbow');
+        this.aimAt(per.x, per.y + 1.2, per.z, 0.6);
+        if (!b.usingItem) b.startUsingItem(true);
+        else if (b.useTicks() >= C.CROSSBOW_CHARGE_TICKS + 1) {
+          b.releaseUsingItem();
+          this.ranged = 'fireCrossbow';
+          this.rangedTimer = 0;
+        }
+        return true;
+      case 'fireCrossbow': {
+        this.equip('crossbow');
+        const aimed = this.aimArrow(per, C.CROSSBOW_SPEED);
+        if (aimed && !blockedByShield && b.heldStack()?.charged) {
+          b.startUsingItem(true);
+          this.ranged = 'none';
+          this.rangedCooldown = 30;
+        }
+        return true;
+      }
+      case 'drawBow': {
+        this.equip('bow');
+        if (!b.usingItem) {
+          b.startUsingItem(true);
+          return true;
+        }
+        const aimed = this.aimArrow(per, C.BOW_MAX_SPEED);
+        if (b.useTicks() >= C.BOW_FULL_DRAW_TICKS && aimed && !blockedByShield) {
+          b.releaseUsingItem();
+          this.ranged = 'none';
+          this.rangedCooldown = 30;
+        }
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  /** Aims a ballistic arrow at where the target will be; true once the crosshair is on it. */
+  private aimArrow(per: Perceived, speed: number): boolean {
+    const b = this.bot;
+    const ex = b.pos.x;
+    const ey = b.pos.y + b.eyeHeight() - 0.1;
+    const ez = b.pos.z;
+    let tx = per.x;
+    let tz = per.z;
+    let sol = ballistic(Math.hypot(tx - ex, tz - ez), per.y + 1.1 - ey, speed);
+    if (!sol) return false;
+    // Lead once by the flight time, then solve again for the led point.
+    tx += per.vx * sol.ticks;
+    tz += per.vz * sol.ticks;
+    sol = ballistic(Math.hypot(tx - ex, tz - ez), per.y + 1.1 - ey, speed);
+    if (!sol) return false;
+    const n = this.profile.axe.rangedNoiseDeg * DEG;
+    this.errYaw += (this.rng.gauss() * n - this.errYaw) * 0.1;
+    this.errPitch += (this.rng.gauss() * n * 0.6 - this.errPitch) * 0.1;
+    const yaw = yawTowards(tx - ex, tz - ez) + this.errYaw;
+    const pitch = sol.pitch + this.errPitch;
+    this.turnTo(yaw, pitch, 1);
+    return Math.abs(wrapAngle(b.yaw - yaw)) < 1.5 * DEG && Math.abs(b.pitch - pitch) < 1.5 * DEG;
   }
 
   private retreat(per: Perceived, trueDist: number, input: MoveInput) {
@@ -382,7 +705,7 @@ export class BotBrain {
 
   // ------------------------------------------------------------ helpers
 
-  private equip(id: 'diamond_sword' | 'golden_apple'): boolean {
+  private equip(id: ItemId): boolean {
     const slot = this.bot.slotOf(id);
     if (slot < 0) {
       if (id === 'golden_apple') this.enter('engage');
@@ -421,4 +744,40 @@ export class BotBrain {
     const left = this.world.wallDistance(b.pos.x - rx * 2, b.pos.z - rz * 2);
     return right >= left ? 1 : -1;
   }
+}
+
+/**
+ * Pitch that lands an arrow `dh` blocks away and `dy` up, simulating AbstractArrow's own
+ * integration (move, then ×0.99 drag and −0.05 gravity). Null if it cannot reach.
+ */
+export function ballistic(dh: number, dy: number, speed: number): { pitch: number; ticks: number } | null {
+  const flight = (pitch: number) => {
+    let x = 0;
+    let y = 0;
+    let vx = Math.cos(pitch) * speed;
+    let vy = Math.sin(pitch) * speed;
+    for (let t = 1; t <= 100; t++) {
+      const nx = x + vx;
+      const ny = y + vy;
+      if (nx >= dh) {
+        const f = (dh - x) / (nx - x);
+        return { y: y + (ny - y) * f, ticks: t - 1 + f };
+      }
+      x = nx;
+      y = ny;
+      vx *= C.ARROW_DRAG;
+      vy = vy * C.ARROW_DRAG - C.ARROW_GRAVITY;
+    }
+    return { y: -Infinity, ticks: 100 };
+  };
+  let lo = -0.8;
+  let hi = 0.7;
+  if (flight(hi).y < dy) return null;
+  for (let i = 0; i < 18; i++) {
+    const mid = (lo + hi) / 2;
+    if (flight(mid).y < dy) lo = mid;
+    else hi = mid;
+  }
+  const pitch = (lo + hi) / 2;
+  return { pitch, ticks: flight(pitch).ticks };
 }

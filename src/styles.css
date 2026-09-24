@@ -807,3 +807,148 @@ body {
   color: #9a9a9a;
   margin-top: -4px;
 }
+
+/* ---------------------------------------------------------------- inventory (E) */
+.inv-screen {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+  background: rgba(16, 16, 16, 0.55);
+  z-index: 30;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.inv-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--gui) * 176px);
+  height: calc(var(--gui) * 166px);
+  transform: translate(-50%, -50%);
+  background: #c6c6c6;
+  border-radius: calc(var(--gui) * 3px);
+  box-shadow:
+    inset calc(var(--gui) * 2px) calc(var(--gui) * 2px) 0 #ffffff,
+    inset calc(var(--gui) * -2px) calc(var(--gui) * -2px) 0 #555555,
+    0 0 0 calc(var(--gui) * 1px) #000000;
+}
+.inv-slot,
+.inv-preview {
+  position: absolute;
+  box-sizing: border-box;
+}
+.inv-slot {
+  width: calc(var(--gui) * 18px);
+  height: calc(var(--gui) * 18px);
+  background: #8b8b8b;
+  border-top: calc(var(--gui) * 1px) solid #373737;
+  border-left: calc(var(--gui) * 1px) solid #373737;
+  border-right: calc(var(--gui) * 1px) solid #ffffff;
+  border-bottom: calc(var(--gui) * 1px) solid #ffffff;
+}
+.inv-slot:not(.deco):hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+.inv-slot.selected {
+  background: #9f9f9f;
+}
+.inv-slot.result {
+  width: calc(var(--gui) * 26px);
+  height: calc(var(--gui) * 26px);
+}
+.inv-preview {
+  width: calc(var(--gui) * 51px);
+  height: calc(var(--gui) * 72px);
+  background: #000;
+  border-top: calc(var(--gui) * 1px) solid #373737;
+  border-left: calc(var(--gui) * 1px) solid #373737;
+  border-right: calc(var(--gui) * 1px) solid #ffffff;
+  border-bottom: calc(var(--gui) * 1px) solid #ffffff;
+  overflow: hidden;
+}
+.inv-preview canvas {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.inv-label {
+  position: absolute;
+  color: #404040;
+  font-size: calc(var(--gui) * 8px);
+  line-height: 1;
+}
+.inv-arrow {
+  position: absolute;
+  width: calc(var(--gui) * 12px);
+  height: calc(var(--gui) * 8px);
+  background:
+    linear-gradient(#8b8b8b, #8b8b8b) 0 calc(var(--gui) * 2.5px) / calc(var(--gui) * 7px) calc(var(--gui) * 3px) no-repeat,
+    conic-gradient(from 225deg at 100% 50%, #8b8b8b 90deg, transparent 0) calc(var(--gui) * 7px) 0 / calc(var(--gui) * 5px) 100% no-repeat;
+}
+.inv-icon {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--gui) * 16px);
+  height: calc(var(--gui) * 16px);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.inv-count {
+  position: absolute;
+  right: calc(var(--gui) * -1px);
+  bottom: calc(var(--gui) * -2px);
+  font-size: calc(var(--gui) * 8px);
+  line-height: 1;
+  color: #fff;
+  text-shadow: calc(var(--gui) * 1px) calc(var(--gui) * 1px) 0 #3f3f3f;
+  pointer-events: none;
+}
+.inv-cursor {
+  position: fixed;
+  left: calc(var(--gui) * -8px);
+  top: calc(var(--gui) * -8px);
+  width: calc(var(--gui) * 16px);
+  height: calc(var(--gui) * 16px);
+  pointer-events: none;
+  z-index: 2;
+}
+.inv-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: none;
+  pointer-events: none;
+  z-index: 3;
+  padding: calc(var(--gui) * 3px) calc(var(--gui) * 4px);
+  background: rgba(16, 0, 16, 0.94);
+  border: calc(var(--gui) * 1px) solid #2a0a5e;
+  outline: calc(var(--gui) * 1px) solid rgba(16, 0, 16, 0.94);
+  color: #a8a8a8;
+  font-size: calc(var(--gui) * 8px);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.inv-tooltip b {
+  display: block;
+  color: #fff;
+  font-weight: 400;
+  margin-bottom: calc(var(--gui) * 2px);
+}
+.inv-tooltip b.ench {
+  color: #55ffff;
+}
+.inv-tooltip span {
+  display: block;
+}
+.inv-tooltip span.attr {
+  color: #5555ff;
+}
+.eat-bar.full .eat-fill {
+  background: #ffffff;
+}

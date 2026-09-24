@@ -62,8 +62,9 @@ class ParticleLayer {
   }
 
   spawn(p: P) {
-    if (this.list.length >= this.capacity) this.list.shift();
-    this.list.push(p);
+    // Full: recycle a random old particle instead of shifting the whole array.
+    if (this.list.length >= this.capacity) this.list[(Math.random() * this.list.length) | 0] = p;
+    else this.list.push(p);
   }
 
   update(dt: number) {
@@ -73,7 +74,9 @@ class ParticleLayer {
       const p = this.list[i];
       p.life -= dt;
       if (p.life <= 0) {
-        this.list.splice(i, 1);
+        // Swap-remove: O(1), and draw order does not matter for additive-looking sprites.
+        const last = this.list.pop()!;
+        if (i < this.list.length) this.list[i] = last;
         continue;
       }
       const d = Math.pow(p.drag, steps);
