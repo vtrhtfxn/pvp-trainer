@@ -5,6 +5,8 @@ import { Fighter } from '../game/Fighter';
 import type { World } from '../game/World';
 import { Arena, SKY_HORIZON } from './Arena';
 import { ArrowView } from './Arrows';
+import { FireView } from './FireView';
+import { ThrownView } from './ThrownView';
 import type { Assets } from './assets';
 import { FirstPersonView } from './FirstPerson';
 import { Hitboxes } from './Hitboxes';
@@ -47,6 +49,9 @@ export class SceneRenderer {
   readonly hitboxes = new Hitboxes();
   readonly firstPerson: FirstPersonView;
   readonly arrows = new ArrowView();
+  readonly thrown = new ThrownView();
+  private readonly playerFire = new FireView();
+  private readonly botFire = new FireView();
   // Inventory-screen player preview: its own tiny scene, rendered off-screen.
   private readonly previewScene = new THREE.Scene();
   private readonly previewCamera = new THREE.OrthographicCamera(-0.8, 0.8, 1.15, -1.15, 0.1, 10);
@@ -102,7 +107,7 @@ export class SceneRenderer {
     this.scene.add(this.nametag.sprite);
     this.scene.add(this.hitboxes.group);
     this.firstPerson = new FirstPersonView(assets, glintMat);
-    this.scene.add(this.arrows.group);
+    this.scene.add(this.arrows.group, this.thrown.group, this.playerFire.group, this.botFire.group);
 
     this.previewModel = new PlayerModel(assets, glintMat);
     this.previewModel.shadow.visible = false;
@@ -322,6 +327,9 @@ export class SceneRenderer {
     );
 
     this.arrows.update(player.world.arrows, alpha);
+    this.thrown.update(player.world.thrown, player.world.orbs, alpha, time);
+    this.playerFire.update(player, alpha, this.camera, time, !firstPerson);
+    this.botFire.update(bot, alpha, this.camera, time, true);
     this.particles.setViewport(this.renderer.domElement.height, this.camera.fov);
     this.particles.update(dt);
 

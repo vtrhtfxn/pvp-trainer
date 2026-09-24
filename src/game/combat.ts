@@ -50,9 +50,16 @@ export interface HurtResult {
   dealt: number;
 }
 
-/** LivingEntity.hurt + Player.actuallyHurt for a melee hit. */
-export function hurt(target: Fighter, amount: number, attacker: Fighter, crit: boolean): HurtResult {
-  if (target.dead || amount <= 0) return { damaged: false, fullHit: false, dealt: 0 };
+const NO_DAMAGE: HurtResult = { damaged: false, fullHit: false, dealt: 0 };
+
+/**
+ * LivingEntity.hurt + Player.actuallyHurt. `fire` is burning (the on_fire damage type): Fire
+ * Resistance cancels it outright, and it skips armor points (so it doesn't wear armor either)
+ * but Protection still reduces it. Lethal damage pops a totem if one is held.
+ */
+export function hurt(target: Fighter, amount: number, attacker: Fighter | null, crit: boolean, fire = false): HurtResult {
+  if (target.dead || amount <= 0) return NO_DAMAGE;
+  if (fire && target.effects.has('fire_resistance')) return NO_DAMAGE;
   let fullHit: boolean;
   let applied: number;
   if (target.invulnerableTime > C.IFRAME_WINDOW) {
@@ -68,7 +75,11 @@ export function hurt(target: Fighter, amount: number, attacker: Fighter, crit: b
     fullHit = true;
   }
 
-  let dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness);
+  let dmg = applied;
+  if (!fire) {
+    target.damageArmor(applied);
+    dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness);
+  }
   dmg = damageAfterProtection(dmg, target.armor.protectionEpf);
   const absorbed = Math.min(target.absorption, dmg);
   target.absorption -= absorbed;
@@ -79,15 +90,15 @@ export function hurt(target: Fighter, amount: number, attacker: Fighter, crit: b
   }
   target.stats.damageTaken += dmg;
   target.stats.combo = 0;
-  if (fullHit) {
+  if (fullHit && attacker) {
     const dx = attacker.pos.x - target.pos.x;
     const dz = attacker.pos.z - target.pos.z;
     // Minecraft yaw of the victim: mcYaw = 180° - our yaw.
     const mcYawDeg = 180 - (target.yaw * 180) / Math.PI;
     target.hurtDir = (Math.atan2(dz, dx) * 180) / Math.PI - mcYawDeg;
   }
-  target.events.push({ type: 'hurt', attacker, damage: dmg, crit });
-  if (target.health <= 1e-4) target.die();
+  target.events.push({ type: 'hurt', attacker, damage: dmg, crit, fire });
+  if (target.health <= 1e-4 && !target.tryTotem()) target.die();
   return { damaged: true, fullHit, dealt: dmg };
 }
 
@@ -125,10 +136,9 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
   // Attack damage and the cooldown come from the attribute item (what was held at the last
   // tick); enchantments and special effects come from the weapon in hand right now.
   const weapon = attacker.heldStack();
-  const attr = attacker.attrDef();
   const swap = (weapon?.id ?? null) !== attacker.attrId;
   const scale = attacker.attackStrengthScale(0.5);
-  let base = attr.attackDamage * (0.2 + scale * scale * 0.8);
+  let base = attacker.attackDamage() * (0.2 + scale * scale * 0.8);
   const ench = sharpnessBonus(weapon?.ench?.sharpness ?? 0) * scale;
   attacker.resetAttackStrength();
 
@@ -155,6 +165,14 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
   if (!res.damaged) {
     attacker.events.push({ type: 'noDamage', target });
     return { ...miss, reach, scale };
+  }
+
+  // Weapon wear and Fire Aspect only follow a hit that actually did damage.
+  if (weapon) {
+    const cost = defOf(weapon).hitCost ?? 0;
+    const fa = weapon.ench?.fireAspect ?? 0;
+    if (fa > 0 && !target.dead) target.ignite(fa * C.FIRE_ASPECT_TICKS_PER_LEVEL);
+    if (cost) attacker.damageItem(attacker.selected, cost);
   }
 
   const resist = 1 - target.armor.knockbackResistance;
@@ -248,6 +266,11 @@ function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: num
   target.events.push({ type: 'shieldBlock', attacker });
   attacker.events.push({ type: 'hitShield', target, disabled, swap });
   return { hit: false, reach, crit: false, sprint: false, scale, damage: 0, blocked: true, disabled, swap };
+}
+
+/** One tick of burning (Entity.baseTick every 20 fire ticks). */
+export function burn(target: Fighter) {
+  hurt(target, C.FIRE_DAMAGE, null, false, true);
 }
 
 const boxA: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };

@@ -1,4 +1,4 @@
-import { ITEMS, type ItemStack } from './items';
+import { ITEMS, type ItemStack, type PotionId } from './items';
 
 export interface ArmorStats {
   points: number;
@@ -18,6 +18,8 @@ export interface Loadout {
   /** Head, chest, legs, feet. */
   armor: (ItemStack | null)[];
   offhand: ItemStack | null;
+  /** Main inventory slots 9–35 (index 0 = slot 9). */
+  main?: (ItemStack | null)[];
 }
 
 export interface KitDef extends Loadout {
@@ -47,6 +49,49 @@ export function armorStatsOf(pieces: readonly (ItemStack | null)[]): ArmorStats 
 function diamondArmor(protection: number): (ItemStack | null)[] {
   const ench = protection ? { protection } : undefined;
   return (['diamond_helmet', 'diamond_chestplate', 'diamond_leggings', 'diamond_boots'] as const).map((id) => ({ id, count: 1, ench }));
+}
+
+function netheriteArmor(): (ItemStack | null)[] {
+  const ench = { protection: 4, unbreaking: 3, mending: 1 };
+  return (['netherite_helmet', 'netherite_chestplate', 'netherite_leggings', 'netherite_boots'] as const).map((id) => ({ id, count: 1, ench: { ...ench } }));
+}
+
+const pot = (potion: PotionId): ItemStack => ({ id: 'splash_potion', count: 1, potion });
+
+/**
+ * The NethPot layout from a tier-test inventory: sword, totem, gapples and healing in the
+ * hotbar; a spare totem, two stacks of XP and the buff potions in the inventory; a totem in
+ * the off hand. Every empty slot is filled with Splash Healing II.
+ */
+function nethPotLoadout(): Loadout {
+  const heal = () => pot('healing');
+  const hotbar: ItemStack[] = [
+    { id: 'netherite_sword', count: 1, ench: { sharpness: 5, fireAspect: 2, unbreaking: 3, mending: 1 } },
+    { id: 'totem_of_undying', count: 1 },
+    { id: 'golden_apple', count: 64 },
+    pot('strength'),
+    pot('swiftness'),
+    heal(),
+    heal(),
+    heal(),
+    heal(),
+  ];
+  const main: ItemStack[] = [
+    { id: 'totem_of_undying', count: 1 },
+    pot('strength'),
+    pot('strength'),
+    pot('swiftness'),
+    pot('swiftness'),
+    pot('fire_resistance'),
+    pot('fire_resistance'),
+    pot('fire_resistance'),
+    heal(),
+    { id: 'experience_bottle', count: 64 },
+    ...Array.from({ length: 8 }, heal),
+    { id: 'experience_bottle', count: 64 },
+    ...Array.from({ length: 8 }, heal),
+  ];
+  return { hotbar, main, armor: netheriteArmor(), offhand: { id: 'totem_of_undying', count: 1 } };
 }
 
 function soon(id: KitId, name: string, icon: KitIcon, summary: string): KitDef {
@@ -94,7 +139,22 @@ export const KITS: KitDef[] = [
   },
   soon('uhc', 'UHC', 'uhc', 'No natural regen, lava, water and webs.'),
   soon('diamond_pot', 'Diamond Pot', 'potion', 'Splash healing in diamond gear.'),
-  soon('neth_pot', 'NethPot', 'neth_potion', 'Netherite gear with potions.'),
+  {
+    id: 'neth_pot',
+    name: 'NethPot',
+    icon: 'neth_potion',
+    available: true,
+    summary: 'Netherite, splash pots and totems: crits, P-crits, pot and re-totem.',
+    contents: [
+      'Netherite Sword — Sharp V, Fire Aspect II, Unbreaking III, Mending',
+      'Netherite Armor — Prot IV, Unbreaking III, Mending',
+      '3× Totem (one in the off hand) · 64× Golden Apple',
+      '3× Strength II · 3× Speed II · 3× Fire Res (8:00)',
+      '21× Splash Healing II · 128× Bottle o\' Enchanting',
+    ],
+    ...nethPotLoadout(),
+    armorLabel: 'Netherite · Prot IV',
+  },
   soon('crystal', 'Crystal', 'crystal', 'End crystals and anchors.'),
   soon('smp', 'SMP', 'smp', 'Full SMP loadout, no explosives.'),
   soon('mace', 'Mace', 'mace', 'Wind charges and smash attacks.'),

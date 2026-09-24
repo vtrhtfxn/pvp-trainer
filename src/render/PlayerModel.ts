@@ -104,9 +104,10 @@ export class PlayerModel {
   private readonly tilt = new THREE.Group();
   private readonly pivots = {} as Record<PartName, THREE.Group>;
   private readonly skin: THREE.MeshLambertMaterial;
-  private readonly armorMats: THREE.MeshLambertMaterial[] = [];
-  /** Per armor slot: the meshes (armor + glint) to toggle. */
-  private readonly pieces: { armor: THREE.Mesh[]; glint: THREE.Mesh[] }[] = [];
+  /** Armor materials keyed by "<material>/<layer>", e.g. "netherite/1". */
+  private readonly armorMats = new Map<string, THREE.MeshLambertMaterial>();
+  /** Per armor slot: the meshes (armor + glint) to toggle, and which layer texture they use. */
+  private readonly pieces: { armor: THREE.Mesh[]; glint: THREE.Mesh[]; layer: 1 | 2; material: string }[] = [];
   private readonly mainHand: HeldItemSlot;
   private readonly offHand: HeldItemSlot;
 
@@ -126,15 +127,8 @@ export class PlayerModel {
     }
 
     // Armor: one merged geometry per (piece, part), textured from the pack's armor layers.
-    const layerTex = {
-      1: packTexture('models/armor/diamond_layer_1') ?? blockTexture('diamond_armor'),
-      2: packTexture('models/armor/diamond_layer_2') ?? blockTexture('diamond_armor'),
-    };
-    for (const layer of [1, 2] as const) {
-      this.armorMats[layer] = new THREE.MeshLambertMaterial({ map: layerTex[layer], alphaTest: 0.1, side: THREE.DoubleSide });
-    }
     for (const piece of PIECES) {
-      const entry = { armor: [] as THREE.Mesh[], glint: [] as THREE.Mesh[] };
+      const entry = { armor: [] as THREE.Mesh[], glint: [] as THREE.Mesh[], layer: piece.layer, material: 'diamond' };
       const byPart = new Map<PartName, { pos: number[]; nrm: number[]; uv: number[] }>();
       for (const box of piece.boxes) {
         let b = byPart.get(box.part);
@@ -143,7 +137,7 @@ export class PlayerModel {
       }
       for (const [part, b] of byPart) {
         const geo = toGeometry(b);
-        const mesh = new THREE.Mesh(geo, this.armorMats[piece.layer]);
+        const mesh = new THREE.Mesh(geo, this.armorMat('diamond', piece.layer));
         const g = new THREE.Mesh(geo, glint);
         g.renderOrder = 2;
         this.pivots[part].add(mesh, g);
@@ -164,6 +158,18 @@ export class PlayerModel {
     );
     this.shadow.rotation.x = -Math.PI / 2;
     this.shadow.renderOrder = 1;
+  }
+
+  /** HumanoidArmorLayer texture for a material ("diamond", "netherite") and layer. */
+  private armorMat(material: string, layer: 1 | 2): THREE.MeshLambertMaterial {
+    const key = `${material}/${layer}`;
+    let m = this.armorMats.get(key);
+    if (!m) {
+      const map = packTexture(`models/armor/${material}_layer_${layer}`) ?? blockTexture('diamond_armor');
+      m = new THREE.MeshLambertMaterial({ map, alphaTest: 0.1, side: THREE.DoubleSide });
+      this.armorMats.set(key, m);
+    }
+    return m;
   }
 
   setVisible(v: boolean) {
@@ -213,14 +219,19 @@ export class PlayerModel {
     const hurt = f.hurtTime > 0 || f.dead;
     this.skin.color.setRGB(1, hurt ? 0.55 : 1, hurt ? 0.55 : 1);
     this.skin.emissive.setRGB(hurt ? 0.3 : 0, 0, 0);
-    for (const m of this.armorMats) {
-      if (!m) continue;
+    for (const m of this.armorMats.values()) {
       m.color.copy(this.skin.color);
       m.emissive.copy(this.skin.emissive);
     }
     for (let i = 0; i < 4; i++) {
       const st = f.armorSlots[i];
       const e = this.pieces[i];
+      const material = st ? st.id.slice(0, st.id.indexOf('_')) : e.material;
+      if (material !== e.material) {
+        e.material = material;
+        const mat = this.armorMat(material, e.layer);
+        for (const m of e.armor) m.material = mat;
+      }
       for (const m of e.armor) m.visible = !!st;
       for (const m of e.glint) m.visible = !!st && isEnchanted(st);
     }

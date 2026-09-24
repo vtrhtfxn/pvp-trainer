@@ -18,7 +18,9 @@ import { NetMatch } from '../net/NetMatch';
 import type { NetHit, ServerMsg } from '../net/protocol';
 import { performAttack, rayDistanceToTarget } from './combat';
 import type { Fighter, FighterEvent } from './Fighter';
+import { EFFECT_COLORS, ITEMS } from './items';
 import { KITS, kitById } from './kits';
+import type { World } from './World';
 import { Match } from './Match';
 
 type State = 'menu' | 'playing' | 'paused' | 'results';
@@ -64,10 +66,10 @@ export class Game {
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view = new SceneRenderer(canvas, this.match.world, assets);
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple') => itemIcon({ id, count: 1 });
+    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'splash_potion') => itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
-      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_apple') : undefined;
+      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_apple') : kit.icon === 'neth_potion' ? packIcon('splash_potion') : undefined;
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
     this.hud = new HUD(uiRoot);
@@ -508,6 +510,7 @@ export class Game {
         botStatus: m.brain.label,
         lastReach: this.lastReach,
         now: performance.now(),
+        firstPerson: this.view.cameraMode === 'first',
       });
     }
     if (this.inventory.open) {
@@ -539,6 +542,7 @@ export class Game {
       }
       this.handleEvents(m.player, false);
       this.handleEvents(m.bot, false);
+      this.handleWorldEvents(m.world);
       return;
     }
 
@@ -561,6 +565,7 @@ export class Game {
 
     this.handleEvents(m.player, true);
     this.handleEvents(m.bot, true);
+    this.handleWorldEvents(m.world);
 
     for (const f of [m.player, m.bot]) {
       if (f.dead && f.deathTime === 20) this.view.particles.poof(f.pos.x, f.pos.y, f.pos.z);
@@ -600,6 +605,27 @@ export class Game {
       if (f.dead && f.deathTime === 20) this.view.particles.poof(f.pos.x, f.pos.y, f.pos.z);
     }
     if (this.resultTimer > 0 && --this.resultTimer === 0) this.finishOnlineDuel();
+  }
+
+  /** Splashes and other events that belong to the world rather than a fighter. */
+  private handleWorldEvents(w: World) {
+    const fx = this.view.particles;
+    for (const e of w.events) {
+      if (e.type === 'splash') {
+        fx.splash(e.x, e.y, e.z, e.color, e.xp);
+        this.sound.glassBreak(e);
+      }
+    }
+    w.events.length = 0;
+    // Ambient potion swirls around anyone with an effect (not our own first-person camera).
+    for (const f of w.fighters) {
+      if (f.dead || !f.effects.size || Math.random() > 0.35) continue;
+      if (f === this.match.player && this.view.cameraMode === 'first') continue;
+      let color = 0;
+      let n = 0;
+      for (const id of f.effects.keys()) if (Math.random() * ++n < 1) color = EFFECT_COLORS[id];
+      fx.swirl(f.pos.x, f.pos.y, f.pos.z, color);
+    }
   }
 
   private handleEvents(f: Fighter, live: boolean) {
@@ -673,7 +699,28 @@ export class Game {
           if (isPlayer && live && this.settings.hitFeedback) this.hud.showFeedback('NO DAMAGE', 'weak');
           break;
         case 'hurt':
+          if (e.fire) this.sound.sizzle(f.pos);
           this.sound.hurt(f.pos, isPlayer && live);
+          break;
+        case 'throw':
+          this.sound.throwItem(f.pos);
+          break;
+        case 'splashed':
+          if (isPlayer && live && this.settings.hitFeedback && !e.own) this.hud.showFeedback(`SPLASHED · ${Math.round(e.scale * 100)}%`, 'weak');
+          else if (isPlayer && live && this.settings.hitFeedback && e.potion === 'healing') this.hud.showFeedback(`POT ${Math.round(e.scale * 100)}%`, e.scale > 0.85 ? 'crit' : 'hit');
+          break;
+        case 'totem':
+          this.sound.totem(f.pos);
+          fx.totem(f.pos.x, f.pos.y, f.pos.z);
+          if (isPlayer && live) this.hud.showTotem();
+          else if (live && this.settings.hitFeedback) this.hud.showFeedback('TOTEM POPPED!', 'crit');
+          break;
+        case 'itemBreak':
+          this.sound.itemBreak(f.pos);
+          if (isPlayer && live) this.hud.showFeedback(`${ITEMS[e.id].name.toUpperCase()} BROKE`, 'weak');
+          break;
+        case 'xpPickup':
+          this.sound.xp(f.pos);
           break;
         case 'miss':
           this.sound.swing(f.pos);

@@ -241,6 +241,52 @@ export class Sound {
     if (d) this.tone(d, this.ctx!.currentTime, 0.07, 'sine', 1400 + Math.random() * 400, 1800, 0.2);
   }
 
+  /** Throwing a splash potion or XP bottle (entity.splash_potion.throw). */
+  throwItem(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.5);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.14, 'bandpass', 900, 2400, 1.2, 0.35);
+  }
+
+  /** Glass breaking (entity.splash_potion.break). */
+  glassBreak(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.18, 'highpass', 5000, 2500, 0.8, 0.7);
+    for (let i = 0; i < 3; i++) this.tone(d, t + i * 0.025, 0.07, 'sine', 2600 + Math.random() * 1800, 2000, 0.12);
+  }
+
+  /** item.totem.use: a rising magical whoosh. */
+  totem(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.9, 'bandpass', 400, 3200, 2, 0.5);
+    this.tone(d, t, 0.6, 'triangle', 330, 990, 0.3);
+    this.tone(d, t + 0.1, 0.6, 'sine', 495, 1480, 0.2);
+  }
+
+  /** entity.experience_orb.pickup: a high random chime. */
+  xp(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.25);
+    if (d) this.tone(d, this.ctx!.currentTime, 0.09, 'sine', 1600 + Math.random() * 1200, 2400, 0.18);
+  }
+
+  /** entity.item.break */
+  itemBreak(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.2, 'bandpass', 1200, 400, 1, 0.8);
+    this.tone(d, t, 0.15, 'square', 300, 120, 0.15);
+  }
+
+  /** Burning damage tick (entity.player.hurt_on_fire). */
+  sizzle(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.5);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.25, 'highpass', 3000, 1500, 0.7, 0.45);
+  }
+
   equip() {
     const d = this.out(undefined, 0.3);
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.08, 'bandpass', 1200, 700, 1, 0.3);

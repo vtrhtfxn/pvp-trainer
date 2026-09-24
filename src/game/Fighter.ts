@@ -1,8 +1,10 @@
 import * as C from '../core/constants';
 import { V3, clamp, forwardX, forwardZ, lookDir, wrapAngle, type AABB } from '../core/math';
 import { Arrow } from './Arrow';
-import { FIST, ITEMS, cloneStack, defOf, type EffectId, type ItemDef, type ItemId, type ItemStack, type UseKind } from './items';
+import { FIST, ITEMS, cloneStack, defOf, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
+import { burn } from './combat';
+import { Thrown } from './Thrown';
 import type { World } from './World';
 
 /** Inventory slot addresses: 0–8 hotbar, 9–35 main inventory, 36–39 armor (head → feet), 40 off hand. */
@@ -49,6 +51,11 @@ export interface FighterStats {
   arrowHits: number;
   /** Hits landed with the previous item's attributes (hotbar swap on the same tick). */
   attributeSwaps: number;
+  potsThrown: number;
+  totemsPopped: number;
+  xpBottles: number;
+  /** Durability Mending restored. */
+  repaired: number;
 }
 
 export type FighterEvent =
@@ -86,7 +93,14 @@ export type FighterEvent =
   | { type: 'arrowHit'; target: Fighter; damage: number; crit: boolean }
   | { type: 'pickup' }
   | { type: 'swapHands' }
-  | { type: 'hurt'; attacker: Fighter; damage: number; crit: boolean }
+  | { type: 'throw'; kind: 'potion' | 'xp' }
+  /** A splash potion's effect reached you (`own`: you threw it). */
+  | { type: 'splashed'; potion: PotionId; scale: number; own: boolean }
+  | { type: 'totem' }
+  | { type: 'itemBreak'; id: ItemId }
+  | { type: 'xpPickup'; value: number }
+  /** `attacker` is null for damage without a source entity (burning). */
+  | { type: 'hurt'; attacker: Fighter | null; damage: number; crit: boolean; fire?: boolean }
   | { type: 'death' }
   | { type: 'heal'; amount: number };
 
@@ -108,6 +122,10 @@ export function newStats(): FighterStats {
     arrowsShot: 0,
     arrowHits: 0,
     attributeSwaps: 0,
+    potsThrown: 0,
+    totemsPopped: 0,
+    xpBottles: 0,
+    repaired: 0,
   };
 }
 
@@ -256,6 +274,10 @@ export class Fighter {
   rightClickDelay = 0;
   /** Ticks left before any shield can be raised again (after an axe disabled it). */
   shieldCooldown = 0;
+  /** Entity.remainingFireTicks: burning while > 0. */
+  fireTicks = 0;
+  /** Player.takeXpDelay: an orb can only be absorbed when this is 0. */
+  takeXpDelay = 0;
 
   armor: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, knockbackResistance: 0 };
 
@@ -313,6 +335,7 @@ export class Fighter {
     this.attackAnim = this.oAttackAnim = 0;
     this.inventory = new Array(INV_SIZE).fill(null);
     kit.hotbar.forEach((s, i) => (this.inventory[i] = cloneStack(s)));
+    kit.main?.forEach((s, i) => (this.inventory[9 + i] = cloneStack(s)));
     this.armorSlots = [0, 1, 2, 3].map((i) => cloneStack(kit.armor[i]));
     this.offhand = cloneStack(kit.offhand);
     this.selected = 0;
@@ -322,6 +345,8 @@ export class Fighter {
     this.useId = null;
     this.useItemRemaining = this.useItemDuration = this.rightClickDelay = 0;
     this.shieldCooldown = 0;
+    this.fireTicks = 0;
+    this.takeXpDelay = 0;
     this.recomputeArmor();
     this.walkDist = this.walkDistO = this.moveDist = 0;
     this.nextStep = 1;
@@ -402,17 +427,41 @@ export class Fighter {
   attackStrengthScale(partial: number): number {
     return clamp((this.attackStrengthTicker + partial) / this.attackDelay(), 0, 1);
   }
+  /** movement_speed: sprinting ×1.3 and Speed ×(1 + 0.2 per level) are separate multipliers. */
   movementSpeed(): number {
-    return C.WALK_SPEED * (this.sprinting ? C.SPRINT_SPEED_MULT : 1);
+    let v = C.WALK_SPEED * (this.sprinting ? C.SPRINT_SPEED_MULT : 1);
+    const sp = this.effects.get('speed');
+    if (sp) v *= 1 + 0.2 * (sp.amplifier + 1);
+    return v;
   }
-  countItem(id: ItemId): number {
-    let n = this.offhand?.id === id ? this.offhand.count : 0;
-    for (const s of this.inventory) if (s && s.id === id) n += s.count;
+  /** attack_damage attribute: the attribute item's damage plus Strength's +3 per level. */
+  attackDamage(): number {
+    const st = this.effects.get('strength');
+    return this.attrDef().attackDamage + (st ? 3 * (st.amplifier + 1) : 0);
+  }
+  get onFire(): boolean {
+    return this.fireTicks > 0;
+  }
+  countItem(id: ItemId, potion?: PotionId): number {
+    const match = (s: ItemStack | null) => !!s && s.id === id && (potion === undefined || s.potion === potion);
+    let n = match(this.offhand) ? this.offhand!.count : 0;
+    for (const s of this.inventory) if (match(s)) n += s!.count;
     return n;
   }
-  /** Hotbar index holding `id`, or -1. */
-  slotOf(id: ItemId): number {
-    for (let i = 0; i < 9; i++) if (this.inventory[i]?.id === id) return i;
+  /** Hotbar index holding `id` (and that potion), or -1. */
+  slotOf(id: ItemId, potion?: PotionId): number {
+    for (let i = 0; i < 9; i++) {
+      const s = this.inventory[i];
+      if (s?.id === id && (potion === undefined || s.potion === potion)) return i;
+    }
+    return -1;
+  }
+  /** Main-inventory index (9–35) holding `id` (and that potion), or -1. */
+  invSlotOf(id: ItemId, potion?: PotionId): number {
+    for (let i = 9; i < INV_SIZE; i++) {
+      const s = this.inventory[i];
+      if (s?.id === id && (potion === undefined || s.potion === potion)) return i;
+    }
     return -1;
   }
 
@@ -435,6 +484,106 @@ export class Fighter {
 
   recomputeArmor() {
     this.armor = armorStatsOf(this.armorSlots);
+  }
+
+  /** Swaps two slots (a number key over a slot in the inventory screen). */
+  swapSlots(a: number, b: number) {
+    if (a === b) return;
+    const sa = this.getSlot(a);
+    this.setSlot(a, this.getSlot(b));
+    this.setSlot(b, sa);
+  }
+
+  /**
+   * ItemStack.hurtAndBreak: Unbreaking skips each point with probability level/(level+1) —
+   * for armor only 60% of that chance applies. The stack breaks when damage reaches its max.
+   */
+  damageItem(slot: number, amount: number) {
+    const s = this.getSlot(slot);
+    const max = s ? ITEMS[s.id].maxDamage : undefined;
+    if (!s || !max || amount <= 0) return;
+    const ub = s.ench?.unbreaking ?? 0;
+    const isArmor = !!ITEMS[s.id].armor;
+    let n = 0;
+    for (let i = 0; i < amount; i++) {
+      if (ub > 0) {
+        const r = this.world.rng;
+        const ignore = isArmor ? r.next() >= 0.6 && r.int(0, ub) > 0 : r.int(0, ub) > 0;
+        if (ignore) continue;
+      }
+      n++;
+    }
+    if (!n) return;
+    s.damage = (s.damage ?? 0) + n;
+    if (s.damage >= max) {
+      this.setSlot(slot, null);
+      this.events.push({ type: 'itemBreak', id: s.id });
+    }
+  }
+
+  /** LivingEntity.doHurtEquipment for armor: each piece loses max(1, damage / 4). */
+  damageArmor(amount: number) {
+    const per = Math.max(1, Math.floor(amount / 4));
+    for (let i = 0; i < 4; i++) if (this.armorSlots[i]) this.damageItem(SLOT_ARMOR + i, per);
+  }
+
+  /** The slot index the hand holds (main hand = selected hotbar slot). */
+  handSlot(hand: Hand): number {
+    return hand === 'main' ? this.selected : SLOT_OFFHAND;
+  }
+
+  /**
+   * ExperienceOrb.repairPlayerItems: a random equipped (hands and armor), damaged Mending item
+   * soaks up the orb at 2 durability per point; whatever is left over goes to the next one.
+   */
+  pickUpXp(value: number) {
+    this.events.push({ type: 'xpPickup', value });
+    let xp = value;
+    while (xp > 0) {
+      let pick = -1;
+      let seen = 0;
+      for (const slot of [this.selected, SLOT_OFFHAND, SLOT_ARMOR, SLOT_ARMOR + 1, SLOT_ARMOR + 2, SLOT_ARMOR + 3]) {
+        const s = this.getSlot(slot);
+        if (s?.ench?.mending && (s.damage ?? 0) > 0 && this.world.rng.int(0, seen++) === 0) pick = slot;
+      }
+      if (pick < 0) return;
+      const s = this.getSlot(pick)!;
+      const can = xp * C.MENDING_DURABILITY_PER_XP;
+      const k = Math.min(can, s.damage!);
+      s.damage! -= k;
+      if (!s.damage) delete s.damage;
+      this.stats.repaired += k;
+      xp -= Math.floor((k * xp) / can);
+      if (k <= 0) return;
+    }
+  }
+
+  /** Entity.igniteForTicks: only ever extends the current fire. */
+  ignite(ticks: number) {
+    if (this.fireTicks < ticks) this.fireTicks = ticks;
+  }
+
+  /**
+   * LivingEntity.checkTotemDeathProtection: a totem in either hand (main hand first) is used
+   * up instead of dying — health 1, every effect cleared, then Regeneration II (45 s),
+   * Absorption II (5 s) and Fire Resistance (40 s).
+   */
+  tryTotem(): boolean {
+    for (const hand of ['main', 'off'] as const) {
+      const s = this.stackIn(hand);
+      if (s?.id !== 'totem_of_undying') continue;
+      this.setSlot(this.handSlot(hand), null);
+      this.health = 1;
+      this.effects.clear();
+      this.absorption = 0;
+      this.addEffect('regeneration', 1, C.TOTEM_REGEN_TICKS);
+      this.addEffect('absorption', 1, C.TOTEM_ABSORPTION_TICKS);
+      this.addEffect('fire_resistance', 0, C.TOTEM_FIRE_RES_TICKS);
+      this.stats.totemsPopped++;
+      this.events.push({ type: 'totem' });
+      return true;
+    }
+    return false;
   }
 
   /** Inventory.add: tops up matching stacks first, then fills the first empty slot. */
@@ -579,9 +728,26 @@ export class Fighter {
         this.beginUse(hand, s.id, C.USE_FOREVER);
         this.events.push({ type: 'crossbowLoading' });
         return true;
+      case 'throw':
+        this.throwItem(s, hand);
+        return true;
       default:
         return false;
     }
+  }
+
+  /** Splash potions and XP bottles leave the hand the moment you click. */
+  private throwItem(s: ItemStack, hand: Hand) {
+    const xp = s.id === 'experience_bottle';
+    const t = new Thrown(this, xp ? 'xp' : 'potion', s.potion ?? null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
+    t.throwFrom(this, xp ? C.XP_BOTTLE_THROW_SPEED : C.POTION_THROW_SPEED, this.world.rng);
+    this.world.spawnThrown(t);
+    s.count--;
+    if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+    if (hand === 'main') this.swing();
+    if (xp) this.stats.xpBottles++;
+    else this.stats.potsThrown++;
+    this.events.push({ type: 'throw', kind: xp ? 'xp' : 'potion' });
   }
 
   /** Letting go of right click: looses a drawn bow, or finishes loading a crossbow. */
@@ -697,6 +863,11 @@ export class Fighter {
     if (this.hurtTime > 0) this.hurtTime--;
     if (this.shieldCooldown > 0) this.shieldCooldown--;
     if (this.invulnerableTime > 0) this.invulnerableTime--;
+    if (this.takeXpDelay > 0) this.takeXpDelay--;
+    if (this.fireTicks > 0 && !this.dead) {
+      if (this.fireTicks % 20 === 0) burn(this);
+      this.fireTicks--;
+    }
     if (this.dead) {
       this.deathTime++;
       this.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };

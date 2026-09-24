@@ -2,8 +2,8 @@ import * as C from '../core/constants';
 import { DEG, clamp, wrapAngle, yawTowards } from '../core/math';
 import type { Rng } from '../core/rng';
 import { rayDistanceToTarget, shieldFaces, type AttackOutcome } from '../game/combat';
-import type { Fighter, MoveInput } from '../game/Fighter';
-import { ITEMS, type ItemId } from '../game/items';
+import { SLOT_ARMOR, SLOT_OFFHAND, type Fighter, type MoveInput } from '../game/Fighter';
+import { ITEMS, durabilityFraction, type ItemId, type PotionId } from '../game/items';
 import type { World } from '../game/World';
 import type { BotProfile } from './difficulty';
 
@@ -19,6 +19,15 @@ interface Seen {
   /** Shield raised (visible from the first tick, blocking from the fifth). */
   shield: boolean;
   held: ItemId | null;
+}
+
+/** Something the NethPot bot is throwing at its own feet. */
+type ThrowPlan = { what: PotionId | 'xp'; left: number };
+
+/** An open inventory: a delay, then slot swaps (number key / F over a slot) one by one. */
+interface InvPlan {
+  timer: number;
+  moves: [from: number, to: number][];
 }
 
 /** Sub-plans the Axe-kit bot runs at range. */
@@ -74,6 +83,22 @@ export class BotBrain {
   private rangedTimer = 0;
   private rangedCooldown = 0;
 
+  // ---- NethPot
+  /** Spawned with splash potions: runs the pot/totem/mending game. */
+  private potKit = false;
+  /** Best melee weapon in the kit. */
+  private weapon: ItemId = 'diamond_sword';
+  private inv: InvPlan | null = null;
+  private throwing: ThrowPlan | null = null;
+  private throwGap = 0;
+  private throwAim = 0;
+  private potCooldown = 0;
+  private hadTotem = false;
+  private totemReact = -1;
+  private eating = false;
+  private gapCooldown = 0;
+  private potLabel = '';
+
   constructor(
     private readonly bot: Fighter,
     private readonly target: Fighter,
@@ -86,6 +111,7 @@ export class BotBrain {
   }
 
   get label(): string {
+    if (this.potLabel) return this.potLabel;
     if (this.state === 'retreat') return 'Retreating';
     if (this.state === 'eat') return this.bot.usingItem ? 'Eating' : 'Healing';
     if (this.bot.raisingShield()) return 'Blocking';
@@ -124,6 +150,18 @@ export class BotBrain {
     this.ranged = 'none';
     this.rangedTimer = 0;
     this.rangedCooldown = 0;
+    const b = this.bot;
+    this.potKit = b.countItem('splash_potion') > 0;
+    this.weapon = b.countItem('netherite_sword') > 0 ? 'netherite_sword' : 'diamond_sword';
+    this.inv = null;
+    this.throwing = null;
+    this.throwGap = 0;
+    this.potCooldown = 0;
+    this.hadTotem = b.offhand?.id === 'totem_of_undying';
+    this.totemReact = -1;
+    this.eating = false;
+    this.gapCooldown = 0;
+    this.potLabel = '';
   }
 
   tick() {
@@ -147,6 +185,12 @@ export class BotBrain {
     }
     if (this.retreatCooldown > 0) this.retreatCooldown--;
 
+    if (this.potKit) {
+      this.potLabel = '';
+      this.engagePot(per, dist, trueDist, justHurt, input);
+      b.input = input;
+      return;
+    }
     this.updateState(trueDist);
     if (this.state === 'engage' && this.shieldKit) this.engageShield(per, dist, justHurt, input);
     else if (this.state === 'engage') this.engage(per, dist, justHurt, input);
@@ -186,7 +230,10 @@ export class BotBrain {
     const prev = this.seen[Math.max(0, i - 1)];
     const vx = s.x - prev.x;
     const vz = s.z - prev.z;
-    const lead = P.reactionTicks * P.predict;
+    // Speed II (NethPot) makes a strafing target move 40% further per tick; without leading its
+    // reaction delay even a Normal bot's crosshair trails 40° behind. Everyone learns to track
+    // that, so pot fights lead by at least three quarters of the delay.
+    const lead = P.reactionTicks * (this.potKit ? Math.max(P.predict, 0.75) : P.predict);
     return { ...s, x: s.x + vx * lead, z: s.z + vz * lead, vx, vz };
   }
 
@@ -202,7 +249,9 @@ export class BotBrain {
     const n = P.aimNoiseDeg * DEG;
     this.errYaw += (this.rng.gauss() * n * 2 - this.errYaw) * 0.15;
     this.errPitch += (this.rng.gauss() * n * 1.2 - this.errPitch) * 0.15;
-    this.turnTo(wantYaw + this.errYaw, wantPitch + this.errPitch, gain);
+    // Pot fights are fought at Speed II; keeping the crosshair on a sped-up strafe takes faster
+    // mouse movement from everyone.
+    this.turnTo(wantYaw + this.errYaw, wantPitch + this.errPitch, this.potKit ? gain * 1.6 : gain);
   }
 
   private turnTo(yaw: number, pitch: number, gain = 1) {
@@ -277,7 +326,7 @@ export class BotBrain {
     const P = this.profile;
     const rng = this.rng;
     if (!this.shieldKit) {
-      this.equip('diamond_sword');
+      this.equip(this.weapon);
       if (b.usingItem) b.stopUsingItem();
     }
 
@@ -628,10 +677,278 @@ export class BotBrain {
     return Math.abs(wrapAngle(b.yaw - yaw)) < 1.5 * DEG && Math.abs(b.pitch - pitch) < 1.5 * DEG;
   }
 
+  // ------------------------------------------------------------ NethPot
+
+  /**
+   * The NethPot game, in priority order: finish what the open inventory is doing; re-totem after
+   * a pop; pot when low; keep Strength, Speed and Fire Resistance up; mend armor with XP and eat
+   * a golden apple for absorption when there is room; otherwise fight for crits — jump crits and
+   * P-crits (punish crits: the knockback from their hit lifts you, and you crit on the way down).
+   */
+  private engagePot(per: Perceived, dist: number, trueDist: number, justHurt: boolean, input: MoveInput) {
+    const b = this.bot;
+    const P = this.profile;
+    const N = P.neth;
+    const rng = this.rng;
+    if (this.potCooldown > 0) this.potCooldown--;
+    if (this.throwGap > 0) this.throwGap--;
+    if (this.gapCooldown > 0) this.gapCooldown--;
+
+    // ---- 0. Inventory open: no movement, no clicks, just the moves.
+    if (this.inv) {
+      this.potLabel = 'Inventory';
+      if (b.usingItem) b.stopUsingItem();
+      if (--this.inv.timer <= 0) {
+        const mv = this.inv.moves.shift();
+        if (mv) b.swapSlots(mv[0], mv[1]);
+        if (this.inv.moves.length) this.inv.timer = 2;
+        else this.inv = null;
+      }
+      return;
+    }
+
+    // ---- 1. Re-totem.
+    const hasTotem = b.offhand?.id === 'totem_of_undying';
+    if (this.hadTotem && !hasTotem) this.totemReact = N.totemReact;
+    this.hadTotem = hasTotem;
+    if (!hasTotem && b.countItem('totem_of_undying') > 0 && this.totemReact >= 0) {
+      if (this.totemReact > 0) this.totemReact--;
+      else {
+        this.potLabel = 'Re-totem';
+        const hs = b.slotOf('totem_of_undying');
+        if (hs >= 0 && N.hotbarTotem) {
+          if (b.usingItem) b.stopUsingItem();
+          // Two keys: the totem's slot, then F on the next tick.
+          if (b.selected !== hs) b.selectSlot(hs);
+          else {
+            b.swapHands();
+            this.totemReact = -1;
+          }
+          this.backOff(per, dist, input);
+          return;
+        }
+        const is = b.invSlotOf('totem_of_undying');
+        if (is >= 0) {
+          this.openInv([[is, SLOT_OFFHAND]]);
+          this.totemReact = -1;
+          return;
+        }
+      }
+    }
+
+    const safe = trueDist > 4.8 && !per.using;
+
+    // ---- 2. Decide what, if anything, to throw.
+    if (!this.throwing && !this.eating && this.potCooldown === 0) this.throwing = this.pickThrow(trueDist);
+
+    if (this.throwing) {
+      this.throwStep(per, dist, input);
+      return;
+    }
+
+    // ---- 3. Keep a spare totem and some healing in the hotbar when there is time.
+    if (safe && !this.eating && this.potCooldown === 0) {
+      const moves = this.restockMoves();
+      if (moves.length) {
+        this.openInv(moves);
+        return;
+      }
+    }
+
+    // ---- 4. Golden apple for absorption while they are away.
+    if (!this.eating && this.potCooldown === 0 && this.gapCooldown === 0 && !b.effects.has('absorption') && b.countItem('golden_apple') > 0 && trueDist > N.gapDist && !P.passive) {
+      this.eating = true;
+    }
+    if (this.eating) {
+      this.potLabel = 'Eating';
+      if (!this.equip('golden_apple')) {
+        this.eating = false;
+      } else {
+        if (!b.usingItem) b.startUsingItem();
+        this.backOff(per, dist, input);
+        const progress = b.usingItem ? 1 - b.useItemRemaining / Math.max(1, b.useItemDuration) : 0;
+        // Too close to finish it: bin the apple and fight.
+        if ((trueDist < 3 && progress < 0.6) || b.effects.has('absorption')) {
+          if (b.usingItem && !b.effects.has('absorption')) b.stopUsingItem();
+          this.eating = false;
+          this.gapCooldown = 60;
+        }
+        return;
+      }
+    }
+
+    // ---- 5. Fight. A hit on us is a P-crit chance: no sprint, hop, crit on the way down.
+    if (justHurt && !P.passive && rng.chance(N.pcrit)) {
+      this.critPlan = true;
+      this.critPlanTimer = 16;
+      this.engage(per, dist, false, input);
+      input.sprint = false;
+      if (b.onGround) input.jump = true;
+      return;
+    }
+    this.engage(per, dist, justHurt, input);
+  }
+
+  /** Everything to throw at our own feet, most urgent first. */
+  private pickThrow(trueDist: number): ThrowPlan | null {
+    const b = this.bot;
+    const T = this.target;
+    const N = this.profile.neth;
+    const has = (p: PotionId) => b.countItem('splash_potion', p) > 0;
+    const low = (id: 'strength' | 'speed' | 'fire_resistance') => (b.effects.get(id)?.duration ?? 0) < 60;
+    if (b.health <= N.potHP && has('healing')) return { what: 'healing', left: b.health <= N.potHP - 5 ? 2 : 1 };
+    const opening = this.ticks < 80;
+    const buffOk = (opening || N.rebuff) && trueDist > 3.6;
+    const theirSword = T.heldStack();
+    const burns = (theirSword?.ench?.fireAspect ?? 0) > 0 || b.onFire;
+    if (buffOk && burns && low('fire_resistance') && has('fire_resistance')) return { what: 'fire_resistance', left: 1 };
+    if (buffOk && !this.profile.passive && low('strength') && has('strength')) return { what: 'strength', left: 1 };
+    if (buffOk && low('speed') && has('swiftness')) return { what: 'swiftness', left: 1 };
+    // Mending: in bursts whenever a knockback opens a gap.
+    if (N.mendAt > 0 && trueDist > 4.5 && b.countItem('experience_bottle') > 0) {
+      let worst = 1;
+      let missing = 0;
+      for (let i = 0; i < 4; i++) {
+        const st = b.armorSlots[i];
+        const f = durabilityFraction(st);
+        if (f !== null) {
+          worst = Math.min(worst, f);
+          missing += st!.damage ?? 0;
+        }
+      }
+      if (worst < N.mendAt) return { what: 'xp', left: Math.min(16, Math.ceil(missing / 14)) };
+    }
+    return null;
+  }
+
+  /** Select the item, look down, back away and throw; an XP bottle repeats on the held button. */
+  private throwStep(per: Perceived, dist: number, input: MoveInput) {
+    const b = this.bot;
+    const t = this.throwing!;
+    const N = this.profile.neth;
+    const id: ItemId = t.what === 'xp' ? 'experience_bottle' : 'splash_potion';
+    const potion = t.what === 'xp' ? undefined : t.what;
+    this.potLabel = t.what === 'xp' ? 'Mending' : t.what === 'healing' ? 'Potting' : 'Buffing';
+    // Mending stops once they come back.
+    if (t.what === 'xp' && Math.hypot(this.target.pos.x - b.pos.x, this.target.pos.z - b.pos.z) < 3.5) {
+      this.throwing = null;
+      return;
+    }
+    let slot = b.slotOf(id, potion);
+    if (slot < 0) {
+      const from = b.invSlotOf(id, potion);
+      const to = this.freeHotbarSlot();
+      if (from < 0 || to < 0) {
+        this.throwing = null;
+        return;
+      }
+      // Out of healing in the hotbar: shift-click a row of pots in while the inventory is open.
+      const moves: [number, number][] = [[from, to]];
+      if (t.what === 'healing') for (const mv of this.restockMoves(2, from, to)) moves.push(mv);
+      this.openInv(moves);
+      return;
+    }
+    if (b.usingItem) b.stopUsingItem();
+    if (b.selected !== slot) b.selectSlot(slot);
+    slot = b.selected;
+    if (this.throwAim === 0) this.throwAim = Math.abs(this.rng.gauss()) * N.potNoiseDeg * DEG + 1e-4;
+    // Straight down, give or take the skill's error; the flick is fast but not instant.
+    this.turnTo(b.yaw, -Math.PI / 2 + this.throwAim, 2.5);
+    this.backOff(per, dist, input);
+    input.jump = false;
+    if (b.pitch > -Math.PI / 2 + this.throwAim + 0.35 || this.throwGap > 0) return;
+    if (t.what === 'xp') {
+      if (!b.startUsingItem()) return; // held button: one bottle every 4 ticks
+    } else if (!b.startUsingItem(true)) return;
+    this.throwAim = 0;
+    this.throwGap = t.what === 'xp' ? 0 : N.potGap;
+    if (--t.left <= 0) {
+      this.throwing = null;
+      // Give the potion time to land (about 3 ticks) before judging what we need again.
+      this.potCooldown = t.what === 'xp' ? 2 : 6;
+    }
+  }
+
+  /** Walk backwards away from the target (keeps facing them, so the fight resumes instantly). */
+  private backOff(per: Perceived, dist: number, input: MoveInput) {
+    const b = this.bot;
+    const yaw = yawTowards(per.x - b.pos.x, per.z - b.pos.z);
+    // Keep the body turned to them even while the head looks down.
+    b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(yaw - b.yaw), -0.6, 0.6));
+    input.forward = dist < 9 ? -1 : 0;
+    input.strafe = this.world.wallDistance(b.pos.x, b.pos.z) < 3 ? this.roomySide() : this.strafeDir;
+    input.sprint = false;
+  }
+
+  private openInv(moves: [number, number][]) {
+    const b = this.bot;
+    if (b.usingItem) b.stopUsingItem();
+    this.inv = { timer: this.profile.neth.invTicks, moves };
+    this.eating = false;
+  }
+
+  /**
+   * A hotbar slot we can swap something into: empty first, then a spare healing pot (it just goes
+   * back to the inventory), then a buff whose effect is already running. Never the sword, apples
+   * or totem.
+   */
+  private freeHotbarSlot(): number {
+    const b = this.bot;
+    for (let i = 0; i < 9; i++) if (!b.inventory[i]) return i;
+    let heals = 0;
+    for (let i = 0; i < 9; i++) if (b.inventory[i]?.potion === 'healing') heals++;
+    if (heals >= 2) for (let i = 8; i >= 0; i--) if (b.inventory[i]?.potion === 'healing') return i;
+    for (let i = 8; i >= 0; i--) {
+      const p = b.inventory[i]?.potion;
+      if (p && p !== 'healing' && b.effects.has(p === 'swiftness' ? 'speed' : p)) return i;
+    }
+    for (let i = 8; i >= 0; i--) if (b.inventory[i]?.id === 'splash_potion') return i;
+    return -1;
+  }
+
+  /**
+   * Inventory moves that put a spare totem and healing pots back into empty hotbar slots
+   * (skipping `usedFrom` / `usedTo`, a move already planned). Healing is only topped up once
+   * the hotbar is down to `minHeals`.
+   */
+  private restockMoves(minHeals = 2, usedFrom = -1, usedTo = -1): [number, number][] {
+    const b = this.bot;
+    const N = this.profile.neth;
+    const moves: [number, number][] = [];
+    const empty: number[] = [];
+    for (let i = 1; i < 9; i++) if (!b.inventory[i] && i !== usedTo) empty.push(i);
+    if (!empty.length) return moves;
+    const taken = new Set<number>([usedFrom]);
+    const take = (id: ItemId, potion?: PotionId) => {
+      for (let i = 9; i < SLOT_ARMOR; i++) {
+        const s = b.inventory[i];
+        if (!taken.has(i) && s?.id === id && (potion === undefined || s.potion === potion)) {
+          taken.add(i);
+          return i;
+        }
+      }
+      return -1;
+    };
+    if (N.hotbarTotem && b.slotOf('totem_of_undying') < 0 && b.offhand?.id === 'totem_of_undying') {
+      const from = take('totem_of_undying');
+      if (from >= 0) moves.push([from, empty.shift()!]);
+    }
+    let heals = 0;
+    for (let i = 0; i < 9; i++) if (b.inventory[i]?.potion === 'healing') heals++;
+    if (heals <= minHeals) {
+      while (empty.length && moves.length < 6) {
+        const from = take('splash_potion', 'healing');
+        if (from < 0) break;
+        moves.push([from, empty.shift()!]);
+      }
+    }
+    return moves;
+  }
+
   private retreat(per: Perceived, trueDist: number, input: MoveInput) {
     const b = this.bot;
     const P = this.profile;
-    this.equip('diamond_sword');
+    this.equip(this.weapon);
     if (b.usingItem) b.stopUsingItem();
 
     // Parting shot: land one more sprint hit to knock them away before turning around.

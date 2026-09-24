@@ -50,6 +50,31 @@ export interface BotProfile {
   comboEscape: 'none' | 'jumpreset' | 'shold';
   /** Shield, axe and ranged play for the Axe kit. */
   axe: AxeSkill;
+  /** Potions, totems and mending for NethPot. */
+  neth: NethSkill;
+}
+
+export interface NethSkill {
+  /** Health at which it throws Splash Healing (a second pot below this − 5). */
+  potHP: number;
+  /** Degrees it misses "straight down" by when potting — a sloppier pot lands further away and heals less. */
+  potNoiseDeg: number;
+  /** Ticks between two pots thrown back to back. */
+  potGap: number;
+  /** Ticks to open the inventory and make the first move (then 2 ticks per extra move). */
+  invTicks: number;
+  /** Ticks before it notices its off-hand totem popped. */
+  totemReact: number;
+  /** Keeps a totem in the hotbar and re-totems with slot key + F instead of the inventory. */
+  hotbarTotem: boolean;
+  /** Re-applies Strength / Speed / Fire Resistance when they run out (otherwise only at the start). */
+  rebuff: boolean;
+  /** Mends armor with XP bottles once any piece drops below this fraction of durability (0 = never). */
+  mendAt: number;
+  /** Chance to go for a punish crit (P-crit) when it gets hit. */
+  pcrit: number;
+  /** Eats a golden apple for absorption when the opponent is at least this far away. */
+  gapDist: number;
 }
 
 export interface AxeSkill {
@@ -116,6 +141,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     maxGapsPerRetreat: 1,
     comboEscape: 'none',
     axe: { shieldChance: 0.85, shieldLead: 5, shieldReact: 4, swap: false, axeDelay: [12, 20], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
+    neth: { potHP: 8, potNoiseDeg: 14, potGap: 6, invTicks: 30, totemReact: 20, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 6 },
   },
   easy: {
     id: 'easy',
@@ -156,6 +182,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     maxGapsPerRetreat: 1,
     comboEscape: 'none',
     axe: { shieldChance: 0.35, shieldLead: 2, shieldReact: 6, swap: false, axeDelay: [10, 18], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
+    neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 24, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7 },
   },
   normal: {
     id: 'normal',
@@ -196,6 +223,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     maxGapsPerRetreat: 1,
     comboEscape: 'jumpreset',
     axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 4, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
+    neth: { potHP: 9, potNoiseDeg: 9, potGap: 4, invTicks: 14, totemReact: 10, hotbarTotem: true, rebuff: true, mendAt: 0.5, pcrit: 0.25, gapDist: 6.5 },
   },
   hard: {
     id: 'hard',
@@ -236,6 +264,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     maxGapsPerRetreat: 2,
     comboEscape: 'jumpreset',
     axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 2, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
+    neth: { potHP: 10, potNoiseDeg: 4, potGap: 3, invTicks: 8, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.7, pcrit: 0.55, gapDist: 6 },
   },
   expert: {
     id: 'expert',
@@ -276,6 +305,7 @@ export const DIFFICULTIES: Record<DifficultyId, BotProfile> = {
     maxGapsPerRetreat: 2,
     comboEscape: 'shold',
     axe: { shieldChance: 0.95, shieldLead: 6, shieldReact: 1, swap: true, axeDelay: [1, 2], readAxe: 0.85, ranged: 2, rangedNoiseDeg: 0.6 },
+    neth: { potHP: 11, potNoiseDeg: 2, potGap: 2, invTicks: 5, totemReact: 3, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.8, gapDist: 5.5 },
   },
 };
 
