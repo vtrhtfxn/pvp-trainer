@@ -60,6 +60,7 @@ const NO_DAMAGE: HurtResult = { damaged: false, fullHit: false, dealt: 0 };
 export function hurt(target: Fighter, amount: number, attacker: Fighter | null, crit: boolean, fire = false): HurtResult {
   if (target.dead || amount <= 0) return NO_DAMAGE;
   if (fire && target.effects.has('fire_resistance')) return NO_DAMAGE;
+  amount *= target.world.damageMultiplier;
   let fullHit: boolean;
   let applied: number;
   if (target.invulnerableTime > C.IFRAME_WINDOW) {

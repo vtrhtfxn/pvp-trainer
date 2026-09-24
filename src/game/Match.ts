@@ -44,6 +44,7 @@ export class Match {
     this.player = new Fighter('player', 'You', this.world);
     this.bot = new Fighter('bot', `${profile.name} Bot`, this.world);
     this.world.fighters.push(this.player, this.bot);
+    this.world.damageMultiplier = kit.damageMultiplier ?? 1;
     this.world.rng = new Rng(this.rng.int(0, 2 ** 30));
     this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () =>
       performAttack(this.bot, this.player),

@@ -66,10 +66,11 @@ export class Game {
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view = new SceneRenderer(canvas, this.match.world, assets);
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'splash_potion') => itemIcon({ id, count: 1, potion: 'healing' });
+    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'splash_potion' | 'netherite_sword') =>
+      itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
-      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_apple') : kit.icon === 'neth_potion' ? packIcon('splash_potion') : undefined;
+      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_apple') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : undefined;
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
     this.hud = new HUD(uiRoot);
