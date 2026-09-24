@@ -90,6 +90,16 @@ what a phone hotspot hands out) and link-local addresses, which nobody can route
 open the printed URL in a browser, then **Multiplayer → Host a new room** / **Join room code**
 with a 4-letter code. Two per room, unlimited rooms.
 
+**Every kit works online.** Whoever creates the room picks the kit (the one selected on the main
+menu); whoever joins plays that kit. The server runs the whole world — blocks, water and lava,
+fire, arrows, potions, pearls, wind charges, end crystals, anchors, explosions, dropped items and
+XP — with the same code as single player, and each tick sends the clients the changed block
+cells, every entity and every sound/particle event. Mining and item use (placing blocks,
+buckets, crystals, anchors, pearls, wind charges, armor swaps) happen on the server; knockback,
+explosions and wind launches reach you as a velocity packet and a pearl as a teleport (moves you
+sent before applying it are ignored). Your client still predicts your own movement, elytra
+gliding included, and reports its fall distance — crits, mace smashes and fall damage use it.
+
 **Hits are lag-compensated.** Your client draws the opponent `INTERP_TICKS` (100 ms) behind the
 newest snapshot and interpolates between the two snapshots either side of that moment, so remote
 movement is smooth and — more importantly — delayed by a known amount. When you swing, the server
@@ -135,9 +145,9 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **UHC** (mcpvp.club tier-test kit) — Diamond Sword (Sharp III), Diamond Axe (Eff III), Shield, Diamond armor (Prot III/II/II/III), 8 golden apples, 2 golden heads, 4 water + 2 lava buckets, 8 cobwebs, 2 stacks of oak planks, Diamond Pickaxe (Eff III), Bow (Power I), Crossbow (Piercing I), 10 arrows · no natural regeneration, stuns on | ✅ Playable (vs bot) |
 | **Crystal** — Netherite armor (Prot IV helmet and chestplate, Blast Protection IV leggings and boots, Feather Falling IV boots; all Unbreaking III + Mending), Netherite Sword (Sharpness V, Knockback I), Netherite Pickaxe (Efficiency V, Silk Touch), 128 end crystals, 128 obsidian, 128 respawn anchors, 128 glowstone, 8 totems (one in the off hand), 64 golden apples, 80 ender pearls, 32 ender chests, Crossbow (Multishot, Quick Charge III) with 64 Slow Falling arrows, 128 XP bottles, 4× Strength II, 4× Speed II · diggable ground | ✅ Playable (vs bot) |
 | **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
-| Mace | Coming soon (card shown in the menu) |
+| **Mace** — Netherite armor (Protection IV, Unbreaking III), Elytra, Mace (Density V, Wind Burst III), Mace (Breach IV), Netherite Sword and Axe (Sharpness V), Shield, 2 totems (one in the off hand), 128 wind charges, 64 ender pearls, 128 golden apples, 13× Strength II and 8× Speed II splash (as laid out in the reference inventory) | ✅ Playable (vs bot) |
 
-The arena is 80 × 80 blocks (walls 16 high). Online duels use the Sword kit; the inventory screen and F work online too.
+The arena is 80 × 80 blocks (walls 16 high). Every kit also works online (see Multiplayer).
 
 ### Bot tiers
 
@@ -301,6 +311,22 @@ nametag reads *Passive*.
   — is a sweep (arc and sound). It would also hit anyone within a block of your target; in a duel there
   is no one else, so it changes nothing else.
 - **Swift Sneak III**: sneaking at 75% of walking speed instead of 30%.
+- **Mace**: 6 damage, 0.6 attack speed. A hit while falling more than 1.5 blocks (and not gliding)
+  is a **smash**: +4 per block for the first 3 blocks, +2 per block up to 8, then +1 per block,
+  added after the cooldown and crit multipliers; **Density** adds 0.5 per level per block. The hit
+  stops your fall (no fall damage). **Breach** takes 0.15 per level straight off the target's
+  armor reduction fraction. **Wind Burst** (after a smash) is a knockback-only gust at your feet:
+  ×1.2 / ×1.75 / ×2.2 — Wind Burst III throws you ~24 blocks up — which also pushes the target.
+  The HUD's next-hit line shows `SMASH +N` while a smash is on.
+- **Wind charges**: thrown straight along the crosshair at 1.5 blocks/tick (no gravity), 0.5 s
+  cooldown; they burst on impact (power 1.2, knockback ×1.22, 1 damage on a direct hit). One at
+  your feet launches you ~7 blocks. A fall that ends above the height a gust launched you from
+  deals no fall damage.
+- **Elytra**: right click an armor piece in your hand to swap it with the one you wear (the elytra
+  goes in the chest slot — no armor points). Jump in mid-air to glide: vanilla elytra physics
+  (look down to gain speed, up to trade it for height), a 0.6-block hitbox, fall distance held at 1
+  unless you dive faster than 0.5 blocks/tick, 1 durability per second, and (speed lost × 10) − 3
+  damage for flying into a wall. Swap the chestplate back on to stop gliding — then smash.
 - **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
   `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
   Absorption I for 2 min, 4 hunger and 9.6 saturation.
@@ -398,6 +424,15 @@ In **SMP** it plays the Axe-kit shield game with the netherite axe (attribute-sw
 - has one totem, which only works from a hand: at 7 HP or less with you close it swaps the totem into
   its off hand in place of the shield, and puts the shield back once it is safe (or the totem popped)
 - pearls in when you run far (HT5+) and pearls out once per retreat when you are still on it (HT3+)
+
+In **Mace** it sprints in and throws a wind charge at its feet (looking straight down) to get
+above you, steers over you in the air and smashes on the way down with whichever mace does more
+against your armor from that height (Density V from high up, Breach IV from low — LT4+). Wind
+Burst throws it back up for the next one. From up there, if you have moved away (LT3+), it swaps
+the elytra on at the top, glides over, dives steeply so the fall distance builds, swaps the
+chestplate back and smashes. Against your smashes it sidesteps (LT4+) or raises its shield
+(LT2+). On the ground it fights with the sword and axe, buffs, eats and re-totems. Higher tiers
+launch more often, steer better and wait for a bigger fall before hitting.
 
 ## Project layout
 

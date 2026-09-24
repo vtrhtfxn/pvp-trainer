@@ -183,6 +183,8 @@ export class Blocks {
   version = 0;
   /** Number of non-air cells: 0 lets collision take the flat-arena fast path. */
   count = 0;
+  /** Online server: indices of cells changed since the clients last heard (null = not logging). */
+  changeLog: Set<number> | null = null;
   private readonly scheduled = new Map<number, number>();
   now = 0;
   /** Called when a block is replaced by fluid or converted (e.g. lava + water) — for particles/sound. */
@@ -282,6 +284,7 @@ export class Blocks {
     this.flags[i] = isFluid(id) ? (source ? 1 : 0) | (falling ? 2 : 0) : 0;
     this.version++;
     this.markDirty(x, z);
+    this.changeLog?.add(i);
     // Wake up this cell's fluid and any fluid next to it.
     this.scheduleAround(x, y, z);
   }
@@ -300,6 +303,26 @@ export class Blocks {
     return before;
   }
 
+  /** One cell as [index, id, amount, flags] for the wire. */
+  cellData(i: number): [number, number, number, number] {
+    return [i, this.id[i], this.amount[i], this.flags[i]];
+  }
+
+  /** Online client: writes a cell exactly as the server has it (no fluid updates scheduled). */
+  applyCell(i: number, id: number, amount: number, flags: number) {
+    if (!(i >= 0 && i < this.id.length)) return;
+    const before = this.id[i];
+    if (before === B.AIR && id !== B.AIR) this.count++;
+    else if (before !== B.AIR && id === B.AIR) this.count--;
+    this.id[i] = id;
+    this.amount[i] = amount;
+    this.flags[i] = flags;
+    this.version++;
+    const x = (i % this.sx) - this.half;
+    const z = (Math.floor(i / this.sx) % this.sz) - this.half;
+    this.markDirty(x, z);
+  }
+
   placeSource(x: number, y: number, z: number, fluid: FluidId) {
     this.set(x, y, z, fluid, 8, true, false);
     if (fluid === B.LAVA) this.checkLavaMeetsWater(x, y, z);
@@ -312,9 +335,11 @@ export class Blocks {
   }
   setAnchorCharge(x: number, y: number, z: number, charge: number) {
     if (this.get(x, y, z) !== B.RESPAWN_ANCHOR) return;
-    this.amount[this.index(x, y, z)] = charge;
+    const i = this.index(x, y, z);
+    this.amount[i] = charge;
     this.version++;
     this.markDirty(x, z);
+    this.changeLog?.add(i);
   }
 
   private seed = 12345;

@@ -13,6 +13,19 @@ function place(d: Duel, i: number, x: number, z: number, yaw: number, opts: { sp
 const FACE_NEG_Z = 0;
 const FACE_POS_Z = Math.PI;
 
+/** One server tick: the motion pushes it produced, and the hit / miss fighter events. */
+function step(d: Duel) {
+  const out = d.tick();
+  const ev = d.takeEvents();
+  const attack = ev.find((e) => e.e.type === 'attack');
+  const miss = ev.find((e) => e.e.type === 'miss');
+  return {
+    motion: out.find((e) => e.motion)?.motion,
+    hit: attack ? { by: attack.on, ...(attack.e as { fullHit: boolean; damage: number; sprint: boolean; target: { f: number } }) } : undefined,
+    miss: miss ? { by: miss.on } : undefined,
+  };
+}
+
 function runTo(d: Duel, phase: 'fight') {
   for (let i = 0; i < 200 && d.phase !== phase; i++) d.tick();
 }
@@ -37,17 +50,14 @@ describe('online duel', () => {
 
     d.fighters[0].attackStrengthTicker = 100;
     d.queueAttack(0);
-    const events = d.tick();
-
-    const hit = events.find((e) => e.hit)?.hit;
-    expect(hit?.on).toBe(1);
-    expect(hit?.hit.by).toBe(0);
-    expect(hit?.hit.fullHit).toBe(true);
+    const { hit, motion } = step(d);
+    expect(hit?.target.f).toBe(1);
+    expect(hit?.by).toBe(0);
+    expect(hit?.fullHit).toBe(true);
     // Diamond Sharpness V through Diamond Prot IV.
-    expect(hit?.hit.damage).toBeCloseTo(1.08, 2);
+    expect(hit?.damage).toBeCloseTo(1.08, 2);
     expect(d.fighters[1].health).toBeLessThan(20);
 
-    const motion = events.find((e) => e.motion)?.motion;
     expect(motion?.to).toBe(1);
     expect(motion?.vy).toBeCloseTo(0.3608, 3);
     expect(Math.hypot(motion!.vx, motion!.vz)).toBeCloseTo(0.4, 2);
@@ -63,8 +73,7 @@ describe('online duel', () => {
     }
     d.fighters[0].attackStrengthTicker = 100;
     d.queueAttack(0);
-    const events = d.tick();
-    expect(events.find((e) => e.miss)?.miss?.by).toBe(0);
+    expect(step(d).miss?.by).toBe(0);
     expect(d.fighters[1].health).toBe(20);
   });
 
@@ -79,8 +88,7 @@ describe('online duel', () => {
     expect(d.fighters[0].serverSprinting).toBe(true);
     d.fighters[0].attackStrengthTicker = 100;
     d.queueAttack(0);
-    const hit = d.tick().find((e) => e.hit)?.hit;
-    expect(hit?.hit.sprint).toBe(true);
+    expect(step(d).hit?.sprint).toBe(true);
   });
 
   it('ends the duel and names a winner', () => {
@@ -112,7 +120,7 @@ describe('online duel', () => {
         d.fighters[0].attackStrengthTicker = 100;
         d.queueAttack(0);
       }
-      const motion = d.tick().find((e) => e.motion)?.motion;
+      const motion = step(d).motion;
       if (t === 3) {
         expect(motion, 'the hit should land').toBeDefined();
         // The knockback handed back must keep the climb, not the server's own falling guess.
@@ -161,9 +169,9 @@ describe('lag compensation', () => {
     const d = strafingDuel(120);
     aimAt(d, d.rewoundPosition(1, 0));
     d.queueAttack(0);
-    const hit = d.tick().find((e) => e.hit)?.hit;
+    const hit = step(d).hit;
     expect(hit, 'a swing aimed at the seen position should connect').toBeDefined();
-    expect(hit?.hit.by).toBe(0);
+    expect(hit?.by).toBe(0);
   });
 
   it('compensates by more than a hitbox width, which is why hits used to vanish', () => {
@@ -181,7 +189,7 @@ describe('lag compensation', () => {
     const seen = d.rewoundPosition(1, 0);
     aimAt(d, { x: seen.x + 6, z: seen.z });
     d.queueAttack(0);
-    expect(d.tick().find((e) => e.miss)?.miss?.by).toBe(0);
+    expect(step(d).miss?.by).toBe(0);
   });
 
   it('rewinds further for a laggier attacker, and clamps', () => {

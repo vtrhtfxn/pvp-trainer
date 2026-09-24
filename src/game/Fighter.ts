@@ -272,6 +272,14 @@ export class Fighter {
    * item use, the attack cooldown and the server-side velocity decay that knockback needs.
    */
   networked = false;
+  /**
+   * Online, on a client: health, effects, item use, hunger and cooldowns belong to the server
+   * and arrive in snapshots, so tick() only moves (the local player) or animates (the opponent)
+   * and never deals damage, heals or finishes eating on its own.
+   */
+  replica = false;
+  /** Bumped on every swing, so a remote client can replay the animation. */
+  swingCount = 0;
   sprinting = false;
   private wasSprinting = false;
   serverSprinting = false;
@@ -736,6 +744,7 @@ export class Fighter {
   }
 
   swing() {
+    this.swingCount++;
     if (!this.swinging || this.swingTime >= C.SWING_DURATION / 2 || this.swingTime < 0) {
       this.swingTime = -1;
       this.swinging = true;
@@ -1278,10 +1287,10 @@ export class Fighter {
     }
     this.updateFluids();
     if (this.fireTicks > 0 && !this.dead) {
-      if (this.fireTicks % 20 === 0) burn(this);
+      if (this.fireTicks % 20 === 0 && !this.replica) burn(this);
       this.fireTicks--;
     }
-    if (this.inLava && !this.dead) {
+    if (this.inLava && !this.dead && !this.replica) {
       // Entity.lavaHurt: fire resistance or not, you catch fire; the damage is fire-typed.
       this.ignite(C.LAVA_FIRE_TICKS);
       lavaHurt(this);
@@ -1290,10 +1299,10 @@ export class Fighter {
     if (this.dead) {
       this.deathTime++;
       this.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
-    } else {
+    } else if (!this.replica) {
       this.tickEffects();
       this.tickItemUse();
-    }
+    } else if (this.rightClickDelay > 0) this.rightClickDelay--;
     if (this.networked) this.netStep();
     else this.aiStep();
     this.updateBodyRotation();
@@ -1307,7 +1316,7 @@ export class Fighter {
       this.resetAttackStrength();
       this.attrId = held;
     }
-    if (!this.dead) this.food.tick(this, this.naturalRegen);
+    if (!this.dead && !this.replica) this.food.tick(this, this.naturalRegen);
 
     // Client -> server sprint packets are only sent when the client's sprint state changes.
     // For a networked fighter `sprinting` IS the reported client state, so the same edge
@@ -1466,8 +1475,11 @@ export class Fighter {
     sprinting: boolean,
     sneaking: boolean,
     vy = 0,
+    fallFlying = false,
+    fallDistance: number | null = null,
   ) {
     if (this.dead) return;
+    const lastY = this.pos.y;
     this.pos.set(x, y, z);
     // Only the vertical component matters here: knockback needs it to leave a jump alone.
     this.vel.y = vy;
@@ -1475,7 +1487,18 @@ export class Fighter {
     this.pitch = pitch;
     const wasOnGround = this.onGround;
     this.onGround = onGround;
-    if (onGround) this.fallDistance = 0;
+    this.fallFlying = fallFlying;
+    if (onGround) {
+      // Landing: ServerPlayer.doCheckFallDamage runs on the server from the movement packets.
+      if (!wasOnGround) {
+        let fall = this.fallDistance + Math.max(0, lastY - y);
+        if (this.impulseY !== null) fall = Math.min(fall, Math.max(0, this.impulseY - y));
+        const dmg = Math.ceil(fall - 3);
+        if (dmg > 0 && this.fallDistance > 0) fallHurt(this, dmg);
+        this.impulseY = null;
+      }
+      this.fallDistance = 0;
+    } else if (fallDistance !== null) this.fallDistance = Math.max(0, fallDistance);
     else if (wasOnGround || this.pos.y < this.prevPos.y) this.fallDistance += Math.max(0, this.prevPos.y - this.pos.y);
     this.sprinting = sprinting;
     this.input = { ...this.input, sneak: sneaking };
@@ -1552,7 +1575,7 @@ export class Fighter {
     }
     // One point of elytra durability per second of flight.
     this.fallFlyTicks++;
-    if (this.fallFlyTicks % 20 === 0) this.damageItem(SLOT_ARMOR + 1, 1);
+    if (this.fallFlyTicks % 20 === 0 && !this.replica) this.damageItem(SLOT_ARMOR + 1, 1);
   }
 
   /**
@@ -1596,7 +1619,7 @@ export class Fighter {
     if (this.horizontalCollision) {
       const lost = before - Math.hypot(v.x, v.z);
       const dmg = lost * 10 - 3;
-      if (dmg > 0 && !this.dead) hurt(this, dmg, null, false, false, true);
+      if (dmg > 0 && !this.dead && !this.replica) hurt(this, dmg, null, false, false, true);
     }
   }
 
@@ -1687,7 +1710,7 @@ export class Fighter {
     this.inWeb = b.boxTouches(x0, this.pos.y, z0, x1, this.pos.y + this.height(), z1, B.COBWEB);
     if (this.inWeb) this.fallDistance = 0;
     // BaseFireBlock.entityInside: standing in fire sets you alight for 8 s and burns for 1.
-    if (!this.dead && b.boxTouches(x0, this.pos.y, z0, x1, this.pos.y + this.height(), z1, B.FIRE)) {
+    if (!this.dead && !this.replica && b.boxTouches(x0, this.pos.y, z0, x1, this.pos.y + this.height(), z1, B.FIRE)) {
       this.ignite(160);
       hurt(this, 1, null, false, true, false);
     }
@@ -1718,7 +1741,7 @@ export class Fighter {
         let fall = this.fallDistance;
         if (this.impulseY !== null) fall = Math.min(fall, Math.max(0, this.impulseY - this.pos.y));
         const dmg = Math.ceil(fall - 3);
-        if (dmg > 0 && !this.dead) fallHurt(this, dmg);
+        if (dmg > 0 && !this.dead && !this.replica) fallHurt(this, dmg);
       }
       this.fallDistance = 0;
       this.impulseY = null;

@@ -346,6 +346,7 @@ export class Menus {
       h('li', {}, 'NethPot: after a totem pops, re-totem fast — slot key + F with a hotbar totem, or E, hover a totem, F.'),
       h('li', {}, 'P-crit: when a hit knocks you up, let go of sprint and hit on the way down — a crit without jumping.'),
       h('li', {}, 'UHC: hold left click to mine (axe for planks, sword for webs); right click places blocks and pours buckets — a bucket ignores players, so aim at the floor under their feet to lava them. Water puts fire out.'),
+      h('li', {}, 'Mace: look straight down and throw a wind charge to fly up; smash on the way down — the longer the fall, the harder (Density for big falls, Breach for short ones). From high up: elytra on (right click it), jump to glide, dive, chestplate back on, smash.'),
       h('li', {}, 'Crystal: right click obsidian with a crystal, then left click the crystal. Knee-high crystals are half blocked by their own obsidian, so blow craters and set obsidian into the ground for foot-level hits.'),
       h('li', {}, 'Crystal: anchor = place, glowstone, then click it with anything else (your totem slot is safest). Blasts within 0.5 s of each other only deal the difference.'),
       h('li', {}, 'Diamond Pot: combos win — W-tap between sprint hits to keep them in the air. Low? Sprint away and pot at your feet (the potion carries your speed). Eat steak before hunger stops your sprint.'),
@@ -397,6 +398,9 @@ export class Menus {
       return input;
     };
 
+    panel.append(
+      h('div', { class: 'mp-hint' }, 'Hosting uses the kit you picked on the main menu (every kit works online); joining plays the host\u2019s kit.'),
+    );
     this.nameInput = field('Your name', loadNetName(), 'Steve', 16);
     this.roomInput = field('Room code', '', 'blank = create a new one', 8);
     this.serverInput = field('Server', loadNetServer(), 'ws://localhost:4180/ws', 120);
