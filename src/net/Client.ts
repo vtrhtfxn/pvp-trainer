@@ -1,3 +1,4 @@
+import { KITS } from '../game/kits';
 import { PROTOCOL_VERSION, type ClientMsg, type ServerMsg } from './protocol';
 
 export type NetStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error';
@@ -30,7 +31,10 @@ export class NetClient {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  connect(url: string, room: string, name: string) {
+  /** The kit of the room we are in (from the lobby / start messages). */
+  kit = 'sword';
+
+  connect(url: string, room: string, name: string, kit = 'sword') {
     this.close();
     this.setStatus('connecting', `Connecting to ${url} …`);
     let ws: WebSocket;
@@ -51,7 +55,7 @@ export class NetClient {
     const clearTimer = () => clearTimeout(timeout);
     ws.onopen = () => {
       clearTimer();
-      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION });
+      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION, kit });
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;
@@ -71,8 +75,11 @@ export class NetClient {
         this.send({ t: 'pong', id: msg.id });
         return;
       } else if (msg.t === 'lobby') {
-        this.setStatus('lobby', msg.players.length < 2 ? 'Waiting for an opponent…' : 'Starting…');
+        this.kit = msg.kit;
+        const kitName = KITS.find((k) => k.id === msg.kit)?.name ?? msg.kit;
+        this.setStatus('lobby', `${kitName} kit · ${msg.players.length < 2 ? 'Waiting for an opponent…' : 'Starting…'}`);
       } else if (msg.t === 'start') {
+        this.kit = msg.kit;
         this.setStatus('playing', '');
       }
       this.handlers.onMessage(msg);

@@ -15,11 +15,11 @@ import { itemIcon } from '../render/itemIcons';
 import { InventoryScreen } from '../ui/Inventory';
 import { NetClient, type NetStatus } from '../net/Client';
 import { NetMatch } from '../net/NetMatch';
-import type { NetHit, ServerMsg } from '../net/protocol';
+import type { ServerMsg } from '../net/protocol';
 import { performAttack, rayDistanceToTarget } from './combat';
 import type { Fighter, FighterEvent } from './Fighter';
 import { EFFECT_COLORS, ITEMS } from './items';
-import { KITS, kitById } from './kits';
+import { KITS, kitById, type KitId } from './kits';
 import { B } from './Blocks';
 import type { World } from './World';
 
@@ -275,7 +275,8 @@ export class Game {
   startOnline(url: string, room: string, name: string) {
     this.sound.unlock();
     this.leaveOnline(false);
-    this.net.connect(url, room, name);
+    // Hosting a room uses the kit selected in the main menu; joining uses the room's.
+    this.net.connect(url, room, name, this.settings.kit);
   }
 
   leaveOnline(toMenu = true) {
@@ -304,8 +305,8 @@ export class Game {
 
   private onNetMessage(msg: ServerMsg) {
     if (msg.t === 'start') {
-      if (!this.netMatch) {
-        this.netMatch = new NetMatch(this.net, this.net.you);
+      if (!this.netMatch || this.netMatch.kit.id !== msg.kit) {
+        this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId);
         this.match = this.netMatch;
       }
       this.netMatch.handle(msg);
@@ -315,28 +316,6 @@ export class Game {
     if (!this.netMatch) return;
     this.netMatch.handle(msg);
     switch (msg.t) {
-      case 'hit':
-        this.onNetHit(msg.hit, msg.on);
-        break;
-      case 'miss': {
-        const who = msg.by === this.net.you ? this.netMatch.player : this.netMatch.bot;
-        this.sound.swing(who.pos);
-        if (msg.by === this.net.you && this.settings.hitFeedback) this.hud.showFeedback('MISS', 'miss');
-        break;
-      }
-      case 'eat':
-        // Our own eating already produced local particles and sound.
-        if (msg.by !== this.net.you) {
-          const f = this.netMatch.bot;
-          if (msg.kind === 'done') this.sound.burp(f.pos);
-          else {
-            this.sound.eat(f.pos);
-            const eye = f.eyePos();
-            const d = lookDir(f.yaw, f.pitch, new V3());
-            this.view.particles.crumbs(eye.x + d.x * 0.6, eye.y + d.y * 0.6 - 0.3, eye.z + d.z * 0.6, d.x, d.z);
-          }
-        }
-        break;
       case 'end':
         if (this.state === 'playing' || this.state === 'paused') {
           const won = msg.winner === this.net.you;
@@ -347,43 +326,6 @@ export class Game {
       default:
         break;
     }
-  }
-
-  private onNetHit(hit: NetHit, on: number) {
-    const m = this.netMatch;
-    if (!m) return;
-    const attacker = hit.by === this.net.you ? m.player : m.bot;
-    const victim = on === this.net.you ? m.player : m.bot;
-    const fx = this.view.particles;
-    if (hit.shield) {
-      this.sound.shieldBlock(victim.pos);
-      if (hit.disabled) this.sound.shieldBreak(victim.pos);
-      if (this.settings.hitFeedback) {
-        if (hit.by === this.net.you) this.hud.showFeedback(hit.disabled ? 'SHIELD DISABLED' : 'BLOCKED', hit.disabled ? 'sprint' : 'miss');
-        else this.hud.showFeedback(hit.disabled ? 'YOUR SHIELD IS DOWN' : 'BLOCKED', hit.disabled ? 'weak' : 'hit');
-      }
-      return;
-    }
-    if (hit.blocked) {
-      this.sound.hit('weak', victim.pos);
-      if (hit.by === this.net.you && this.settings.hitFeedback) this.hud.showFeedback('NO DAMAGE', 'weak');
-      return;
-    }
-    const kind: HitKind = hit.crit ? 'crit' : hit.sprint ? 'knockback' : hit.strong ? 'strong' : 'weak';
-    this.sound.hit(kind, victim.pos);
-    if (hit.crit) fx.crit(victim.pos.x, victim.pos.y, victim.pos.z, false);
-    fx.crit(victim.pos.x, victim.pos.y, victim.pos.z, true, 14);
-    this.sound.hurt(victim.pos, on === this.net.you);
-    if (hit.by === this.net.you) {
-      this.lastReach = hit.reach;
-      if (this.settings.hitFeedback) {
-        if (hit.crit) this.hud.showFeedback('CRIT!', 'crit');
-        else if (hit.sprint) this.hud.showFeedback('SPRINT KB', 'sprint');
-        else if (!hit.strong) this.hud.showFeedback(`WEAK ${Math.round(hit.scale * 100)}%`, 'weak');
-        else this.hud.showFeedback('HIT', 'hit');
-      }
-    }
-    void attacker;
   }
 
   private beginOnlineRound() {
@@ -614,9 +556,11 @@ export class Game {
       this.sound.countdown(true);
     }
 
-    // Only movement/eating events are produced locally; hits arrive from the server.
+    // Our own movement events are made here; everything else (hits, items, explosions, …)
+    // arrives from the server into the same event queues the offline game uses.
     this.handleEvents(m.player, true);
-    m.bot.events.length = 0;
+    this.handleEvents(m.bot, true);
+    this.handleWorldEvents(m.world);
     for (const f of [m.player, m.bot]) {
       if (f.dead && f.deathTime === 20) this.view.particles.poof(f.pos.x, f.pos.y, f.pos.z);
     }
