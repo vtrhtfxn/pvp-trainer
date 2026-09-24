@@ -429,7 +429,13 @@ const ANCHORS: [number, Skills][] = [
  * Blends two profiles: numbers (and number pairs) linearly — whole numbers stay whole — while
  * on/off skills and styles come from the weaker one, so each skill unlocks at a hand-tuned tier.
  */
-function blend<T>(a: T, b: T, t: number): T {
+/** Numbers that are really levels (0 off, 1, 2 …): like on/off skills, the weaker tier's value. */
+const LEVELS = new Set(['ranged', 'pearls', 'defend', 'maxGapsPerRetreat']);
+/** Numbers where 0 means "never": a blend must not switch them on early. */
+const ZERO_OFF = new Set(['abortEatDistance']);
+
+function blend<T>(a: T, b: T, t: number, key = ''): T {
+  if (LEVELS.has(key) || (ZERO_OFF.has(key) && a === 0)) return a;
   if (typeof a === 'number' && typeof b === 'number') {
     const v = a + (b - a) * t;
     return (Number.isInteger(a) && Number.isInteger(b) ? Math.round(v) : Math.round(v * 1000) / 1000) as T;
@@ -437,7 +443,7 @@ function blend<T>(a: T, b: T, t: number): T {
   if (Array.isArray(a)) return a.map((x, i) => blend(x, (b as unknown[])[i], t)) as T;
   if (a && typeof a === 'object') {
     const out: Record<string, unknown> = {};
-    for (const k of Object.keys(a)) out[k] = blend((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], t);
+    for (const k of Object.keys(a)) out[k] = blend((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], t, k);
     return out as T;
   }
   return a;

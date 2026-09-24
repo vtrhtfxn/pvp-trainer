@@ -437,6 +437,7 @@ export class BotBrain {
       this.partingTicks = this.profile.partingShot ? 12 : 0;
     }
     if (s === 'eat') this.gapCountAtEat = this.bot.countItem('golden_apple');
+    this.launching = 0;
     this.critPlan = false;
     this.wtapTimer = 0;
   }
@@ -445,7 +446,8 @@ export class BotBrain {
     const b = this.bot;
     const P = this.profile;
     const eff = b.effectiveHealth();
-    const gaps = b.countItem('golden_apple');
+    // Only apples we can reach with a hotbar key count; the rest need a restock first.
+    const gaps = b.slotOf('golden_apple') >= 0 || b.offhand?.id === 'golden_apple' ? b.countItem('golden_apple') : 0;
     this.stateTimer++;
     switch (this.state) {
       case 'engage':
@@ -469,12 +471,21 @@ export class BotBrain {
           this.gapCountAtEat = now;
           const again = eff < P.returnHP && now > 0 && this.gapsThisRetreat < P.maxGapsPerRetreat && trueDist > 4;
           if (!again) this.enter('engage');
-        } else if (now === 0) {
+        } else if (now === 0 || this.stateTimer > P.maxRetreatTicks + 60) {
+          // Out of apples, or something (dodging, the inventory, a block in the way) kept
+          // interrupting the bite for too long: fight on rather than stand there.
           this.enter('engage');
+          this.retreatCooldown = 60;
         }
         break;
       }
     }
+  }
+
+  /** Low enough to go and eat, with an apple to eat. */
+  private needsApple(): boolean {
+    const b = this.bot;
+    return b.effectiveHealth() <= this.profile.retreatHP && b.countItem('golden_apple') > 0 && !b.effects.has('regeneration');
   }
 
   private cornered(trueDist: number) {
@@ -946,8 +957,8 @@ export class BotBrain {
       this.totemReact--;
       return false;
     }
-    this.potLabel = 'Re-totem';
     const hs = b.slotOf('totem_of_undying');
+    this.potLabel = 'Re-totem';
     if (hs >= 0 && N.hotbarTotem) {
       if (b.usingItem) b.stopUsingItem();
       // Two keys: the totem's slot, then F on the next tick.
@@ -959,12 +970,16 @@ export class BotBrain {
       this.backOff(per, dist, input);
       return true;
     }
+    // Without the hotbar-key trick (low tiers) any totem — hotbar or not — goes in through the
+    // inventory screen.
     const is = b.invSlotOf('totem_of_undying');
-    if (is >= 0) {
-      this.openInv([[is, SLOT_OFFHAND]]);
+    const from = is >= 0 ? is : hs;
+    if (from >= 0) {
+      this.openInv([[from, SLOT_OFFHAND]]);
       this.totemReact = -1;
       return true;
     }
+    this.potLabel = '';
     return false;
   }
 
@@ -1228,7 +1243,9 @@ export class BotBrain {
     }
 
     // ---- Buffs (Fire Resistance whenever their Fire Aspect has us burning) and mending.
-    if (!this.throwing && this.potCooldown === 0 && this.state !== 'eat' && !b.usingItem) this.throwing = this.pickThrow(trueDist);
+    if (!this.throwing && this.potCooldown === 0 && this.state !== 'eat' && !this.needsApple() && !b.usingItem) this.throwing = this.pickThrow(trueDist);
+    // A mending burst gives way to an apple once we are low (it also freezes the retreat timer).
+    if (this.throwing?.what === 'xp' && this.needsApple()) this.throwing = null;
     if (this.throwing && this.throwStep(per, dist, input)) return;
 
     // ---- Restock the hotbar in a quiet moment.
@@ -1410,7 +1427,8 @@ export class BotBrain {
     }
 
     // ---- Buffs, restock (only with room to do it).
-    if (!this.throwing && this.potCooldown === 0 && this.state !== 'eat' && !b.usingItem && trueDist > 4) this.throwing = this.pickThrow(trueDist);
+    if (!this.throwing && this.potCooldown === 0 && this.state !== 'eat' && !this.needsApple() && !b.usingItem && trueDist > 4) this.throwing = this.pickThrow(trueDist);
+    if (this.throwing?.what === 'xp' && this.needsApple()) this.throwing = null;
     if (this.throwing && this.throwStep(per, dist, input)) return;
     if (trueDist > 6 && this.state !== 'eat' && !b.usingItem) {
       const moves = this.maceRestockMoves();
@@ -2297,10 +2315,14 @@ export class BotBrain {
     const blocks = this.world.blocks;
     if (this.uhcCooldown > 0) this.uhcCooldown--;
     if (this.selfHelpCooldown > 0) this.selfHelpCooldown--;
+    const burning = b.inLava || (b.fireTicks > 30 && !b.effects.has('fire_resistance'));
     if (this.plan) {
       const r = this.runPlan(per, trueDist, input);
       if (r === 'own') return true;
-      if (this.plan) return false; // running in the background (lava waiting to be picked up)
+      // Running in the background (lava waiting to be picked up) — unless we need rescuing:
+      // burning or webbed beats getting the bucket back.
+      if (this.plan && !burning && !(b.inWeb && trueDist > 3.2)) return false;
+      this.plan = null;
     } else if (b.mining) b.tickMining(false, false);
 
     const cellX = Math.floor(b.pos.x);
@@ -2308,7 +2330,6 @@ export class BotBrain {
     const cellZ = Math.floor(b.pos.z);
 
     // ---- Fire or lava on us: water at our feet (then pick it back up).
-    const burning = b.inLava || (b.fireTicks > 30 && !b.effects.has('fire_resistance'));
     if (U.water && burning && !b.inWater && b.slotOf('water_bucket') >= 0 && this.selfHelpCooldown === 0) {
       this.plan = { kind: 'water', x: cellX, y: cellY, z: cellZ, phase: 'place', timer: 0 };
       return this.runPlan(per, trueDist, input) === 'own';
@@ -2343,6 +2364,7 @@ export class BotBrain {
     // top. Not with them next to us: an Efficiency III axe takes a plank out in 4 ticks.
     if (
       U.pillar &&
+      this.uhcCooldown === 0 &&
       trueDist > 6 &&
       !P.passive &&
       b.effectiveHealth() <= P.retreatHP &&
@@ -2357,8 +2379,10 @@ export class BotBrain {
       return this.runPlan(per, trueDist, input) === 'own';
     }
     if (P.passive) return false;
+    // Digging stops whatever is in hand — never mid-apple or on the way out to eat one.
+    const canDig = U.mine && this.state === 'engage' && b.useKind() !== 'food';
     // ---- They are up a pillar next to us: break the block they stand on.
-    if (U.mine && this.targetUp() && trueDist < 3.2) {
+    if (canDig && this.targetUp() && trueDist < 3.2) {
       const tx = Math.floor(T.pos.x);
       const ty = Math.floor(T.pos.y + 0.01) - 1;
       const tz = Math.floor(T.pos.z);
@@ -2368,7 +2392,7 @@ export class BotBrain {
       }
     }
     // ---- A wall between us: dig through it.
-    if (U.mine && trueDist < 4.3 && blocks.count) {
+    if (canDig && trueDist < 4.3 && blocks.count) {
       const eye = b.eyePos();
       const dx = T.pos.x - eye.x;
       const dy = T.pos.y + 1.2 - eye.y;
@@ -2681,24 +2705,47 @@ export class BotBrain {
       }
       return;
     }
+    const fireProof = b.effects.has('fire_resistance');
     const s = Math.sin(b.yaw);
     const c = Math.cos(b.yaw);
-    const mx = -s * input.forward + c * input.strafe;
-    const mz = -c * input.forward - s * input.strafe;
-    const len = Math.hypot(mx, mz);
-    if (len < 1e-3) return;
-    for (const k of [0.6, 1.2]) {
-      const px = Math.floor(b.pos.x + (mx / len) * k);
-      const pz = Math.floor(b.pos.z + (mz / len) * k);
-      const here = blocks.get(px, y, pz);
-      if (here === B.LAVA || here === B.FIRE || blocks.get(px, y - 1, pz) === B.LAVA) {
-        input.forward = input.forward > 0 ? 0 : input.forward;
-        input.strafe = -input.strafe;
-        input.sprint = false;
+    // Would walking with (forward, strafe) step into lava (or fire, without Fire Resistance)?
+    const hazard = (fwd: number, str: number) => {
+      const mx = -s * fwd + c * str;
+      const mz = -c * fwd - s * str;
+      const len = Math.hypot(mx, mz);
+      if (len < 1e-3) return false;
+      for (const k of [0.6, 1.2]) {
+        const px = Math.floor(b.pos.x + (mx / len) * k);
+        const pz = Math.floor(b.pos.z + (mz / len) * k);
+        const here = blocks.get(px, y, pz);
+        if (here === B.LAVA || (here === B.FIRE && !fireProof) || blocks.get(px, y - 1, pz) === B.LAVA) return true;
+      }
+      return false;
+    };
+    if (!hazard(input.forward, input.strafe)) return;
+    // Go around it: keep as much of the intended direction as we can, sidestepping toward the
+    // roomier side first. Standing still in front of a fire patch froze bots for seconds.
+    const side = input.strafe !== 0 ? Math.sign(input.strafe) : this.roomySide();
+    const fwd = input.forward;
+    for (const [f, st] of [
+      [fwd, side],
+      [fwd, -side],
+      [0, side],
+      [0, -side],
+      [-1, 0],
+    ] as const) {
+      if ((f !== 0 || st !== 0) && !hazard(f, st)) {
+        input.forward = f;
+        input.strafe = st;
+        input.sprint = input.sprint && f > 0;
         input.jump = false;
         return;
       }
     }
+    input.forward = 0;
+    input.strafe = 0;
+    input.sprint = false;
+    input.jump = false;
   }
 
   private retreat(per: Perceived, trueDist: number, input: MoveInput) {
