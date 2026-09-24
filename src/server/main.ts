@@ -341,13 +341,13 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  You (the host) play here:   http://localhost:${PORT}`);
   console.log('  Hosting does NOT stop you playing - open that link and join like anyone else.');
   console.log('');
-  console.log('  IMPORTANT: everyone opens an http:// address in a browser.');
-  console.log('  Do NOT double-click game.html - opened that way the game cannot find this');
-  console.log('  server, and it will say "could not reach that server".');
   if (usable.length) {
     console.log('');
-    console.log('  Everyone else on your network opens ONE of these:');
+    console.log('  Everyone else on your network opens ONE of these in a browser:');
     for (const a of usable) console.log(`      http://${a.address}:${PORT}      (${a.iface})`);
+    console.log('');
+    console.log('  Friends with the PvP Trainer app (Windows or Mac) instead type the address');
+    console.log(`  in Multiplayer -> Server, e.g.  ${usable[0].address}${PORT === 4180 ? '' : `:${PORT}`}`);
   } else {
     console.log('');
     console.log('  NOBODY ELSE CAN REACH THIS MACHINE.');
@@ -384,7 +384,11 @@ function openBrowser(url: string) {
   const cmd = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
   try {
-    spawn(cmd, args, { stdio: 'ignore', detached: true }).unref();
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    // A missing opener (no xdg-open on a bare Linux box) arrives as an async 'error' event —
+    // unhandled, it would take the whole server down right after it started.
+    child.on('error', () => {});
+    child.unref();
   } catch {
     /* no browser to open; the address is printed above anyway */
   }
