@@ -159,13 +159,13 @@ export class Game {
   // ------------------------------------------------------------------ state changes
 
   private newDemo(): Match {
-    const m = new Match(kitById('sword'), DIFFICULTIES.hard, 7);
+    const m = new Match(kitById('sword'), DIFFICULTIES.ht3, 7);
     m.phase = 'fight';
     return m;
   }
 
   private makeDemoBrain(m: Match): BotBrain {
-    return new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.hard, new Rng(11), () => performAttack(m.player, m.bot));
+    return new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.ht3, new Rng(11), () => performAttack(m.player, m.bot));
   }
 
   /** Debounced so the macOS ⌘M menu item and the in-page key handler can't double-fire. */

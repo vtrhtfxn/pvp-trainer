@@ -35,7 +35,7 @@ describe('bot duels', () => {
     let ate = 0;
     let retreated = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const { m, states } = duel('hard', 'hard', seed);
+      const { m, states } = duel('lt2', 'lt2', seed);
       if (m.phase === 'ended') finished++;
       if (m.bot.stats.gapplesEaten > 0) ate++;
       if (states.has('retreat')) retreated++;
@@ -50,7 +50,7 @@ describe('bot duels', () => {
   it('never attacks on Practice, but still moves and heals', () => {
     let moved = 0;
     for (let seed = 20; seed < 26; seed++) {
-      const { m } = duel('practice', 'normal', seed);
+      const { m } = duel('practice', 'lt3', seed);
       // The practice bot may swing zero times: no hits, no damage dealt, player untouched.
       expect(m.bot.stats.swings).toBe(0);
       expect(m.bot.stats.hits).toBe(0);
@@ -66,7 +66,7 @@ describe('bot duels', () => {
   it('scales with difficulty', () => {
     let expertWins = 0;
     for (let seed = 10; seed < 18; seed++) {
-      const { m } = duel('expert', 'easy', seed);
+      const { m } = duel('lt1', 'lt5', seed);
       if (m.winner === m.bot) expertWins++;
     }
     expect(expertWins).toBeGreaterThanOrEqual(7);

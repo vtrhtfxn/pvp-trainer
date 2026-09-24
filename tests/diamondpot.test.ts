@@ -102,7 +102,7 @@ describe('Diamond Pot bot', () => {
     let pots = 0;
     let combo = 0;
     for (let seed = 1; seed <= 4; seed++) {
-      const m = duel('hard', 'hard', seed);
+      const m = duel('lt2', 'lt2', seed);
       if (m.phase === 'ended') finished++;
       for (const f of [m.player, m.bot]) {
         hits += f.stats.hits;
@@ -121,7 +121,7 @@ describe('Diamond Pot bot', () => {
 
   it('scales with difficulty', () => {
     let wins = 0;
-    for (let seed = 40; seed < 46; seed++) if (duel('expert', 'normal', seed).winner?.id === 'bot') wins++;
+    for (let seed = 40; seed < 46; seed++) if (duel('lt1', 'lt3', seed).winner?.id === 'bot') wins++;
     expect(wins).toBeGreaterThanOrEqual(5);
   });
 });

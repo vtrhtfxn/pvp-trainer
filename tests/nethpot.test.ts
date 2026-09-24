@@ -276,7 +276,7 @@ describe('NethPot bot', () => {
     let finished = 0;
     const sum = { pots: 0, totems: 0, crits: 0, repaired: 0, xp: 0, ticks: 0 };
     for (let seed = 1; seed <= 4; seed++) {
-      const m = duel('hard', 'hard', seed);
+      const m = duel('lt2', 'lt2', seed);
       if (m.phase === 'ended') finished++;
       for (const f of [m.player, m.bot]) {
         sum.pots += f.stats.potsThrown;
@@ -297,7 +297,7 @@ describe('NethPot bot', () => {
   it('scales with difficulty', () => {
     let wins = 0;
     for (let seed = 30; seed < 36; seed++) {
-      const m = duel('expert', 'easy', seed);
+      const m = duel('lt1', 'lt5', seed);
       if (m.winner === m.bot) wins++;
     }
     console.log('expert beat easy', wins, '/ 6');

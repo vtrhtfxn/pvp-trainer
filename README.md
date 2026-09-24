@@ -138,11 +138,30 @@ when they do not, which is what keeps it playable on integrated graphics.
 
 The arena is 80 × 80 blocks (walls 16 high). Online duels use the Sword kit; the inventory screen and F work online too.
 
-Bot difficulties: **Practice, Easy, Normal, Hard, Expert**.
+### Bot tiers
 
-**Practice** moves, strafes, chases and eats golden apples exactly like Easy, but never
-swings — you take no damage, so you can drill combos, W-taps, crits and reach without the
-duel fighting back. Its nametag reads *Passive*.
+The bot follows the PvP tier lists, weakest to strongest: **LT5, HT5, LT4, HT4, LT3, HT3, LT2, HT2,
+LT1, HT1** (Low / High Tier 5 … 1). Each tier up has more reach (2.4 → 3.0 blocks), faster reactions
+(6 ticks → 1), steadier aim, better click timing and faster item play (re-totem 30 ticks → 1, crystal
+click gap 8 ticks → 0, inventory 30 ticks → 2), and unlocks more of the kit:
+
+| From | Also uses |
+| --- | --- |
+| LT5 | sword, golden apples, shield and axe, buffs at the start, crystals on obsidian, lava, re-totems through the inventory |
+| HT5 | crossbow (Axe/UHC), pearls in (Crystal), XP mending, the odd cobweb |
+| LT4 | respawn anchors, water bucket, mining blocks in its way (UHC pickaxe for stone and obsidian), re-buffing |
+| LT3 | hotbar totem + F, lava pickup, Slow Falling crossbow (Crystal), sets off your crystals |
+| HT3 | bow, pearls out when it is about to die |
+| LT2 | everything: attribute swaps, ender-chest surrounds, digging for foot-level crystals, mining your surround, pillars, hurt-immunity timing |
+
+Old saved difficulties map onto the ladder (Easy → LT5, Normal → LT3, Hard → LT2, Expert → LT1).
+The numbers in between anchor tiers (LT5, LT4, LT3, LT2, LT1, HT1) are blended, and on/off skills
+unlock at those anchors. `tests/tiers.test.ts` plays every kit three tiers apart and checks the
+stronger one wins; in tuning runs each single tier step won most duels in every kit.
+
+**Practice** moves, strafes, chases and eats golden apples like LT5, but never swings — you take no
+damage, so you can drill combos, W-taps, crits and reach without the duel fighting back. Its
+nametag reads *Passive*.
 
 ## Mechanics (all simulated at 20 ticks/second)
 
@@ -281,13 +300,13 @@ duel fighting back. Its nametag reads *Passive*.
 ## The bot
 
 The bot only presses keys, moves the mouse and clicks, with a reaction delay and aim error
-that depend on difficulty. It plays with the same physics and combat rules you do. It:
+that depend on its tier. It plays with the same physics and combat rules you do. It:
 
-- times hits to the cooldown (half-swings on Hard+), W-taps and S-taps after sprint hits
+- times hits to the cooldown (half-swings on LT2+), W-taps and S-taps after sprint hits
 - goes for jump crits, jump-resets, hit-selects and circle strafes
 - keeps its spacing while its sword recharges, and backs out of combos
 - **retreats when its health is low**: it lands a last knockback hit, runs (sprint-jumping on
-  Hard+), eats golden apples once it's far enough away, and comes back once it has healed
+  LT2+), eats golden apples once it's far enough away, and comes back once it has healed
 - punishes you with crits when you eat
 
 In the **Axe** kit it also plays the shield game:
@@ -295,61 +314,72 @@ In the **Axe** kit it also plays the shield game:
 - raises its shield when your weapon is about to be charged and its own is not (it tracks your swings
   and your held item's cooldown, and needs the 5-tick raise lead to be safe), and drops it for a tick to
   hit back
-- disables your shield with the axe — **Hard and Expert attribute-swap** (axe in hand and swing on the
-  same tick, sword damage and cooldown), lower difficulties pull the axe out and commit to it
-- goes all in with sword crits for the 5 s your shield is down, and reads your axe: Hard+ lowers its
+- disables your shield with the axe — **LT2 and up attribute-swap** (axe in hand and swing on the
+  same tick, sword damage and cooldown), lower tiers pull the axe out and commit to it
+- goes all in with sword crits for the 5 s your shield is down, and reads your axe: higher tiers lower their
   shield and hits you when you pull yours out
-- loads the crossbow when you keep your distance and shoots it (and the bow on Hard+) with ballistic
+- loads the crossbow when you keep your distance and shoots it (and the bow on HT3+) with ballistic
   aim and lead, stops when you close in
 - Practice keeps its shield up at you and never swings — a shield-disable drill
 
 In **NethPot** it plays the pot game:
 
 - throws Strength, Speed and Fire Resistance at the start and re-applies them when they run out
-  (Normal+), fetching them from the inventory — the inventory takes real time to open, and it can't
+  (LT4+), fetching them from the inventory — the inventory takes real time to open, and it can't
   move or attack while it's open
-- pots by looking straight down and backing off, at a health threshold that rises with difficulty
-  (Expert pots at 5.5 hearts, two pots back to back when it's low); lower difficulties aim sloppily
+- pots by looking straight down and backing off, at a health threshold that rises with tier
+  (HT1 pots below 6 hearts, two pots back to back when it's low); lower tiers aim sloppily
   and waste some of each pot
-- re-totems after a pop: slot key + F from a hotbar totem on Normal+, through the inventory on Easy,
+- re-totems after a pop: slot key + F from a hotbar totem on LT3+, through the inventory below that,
   and restocks the hotbar totem and healing pots when it has room
 - mends its armor with XP bottles in the gaps knockback opens, and eats a golden apple for absorption
   when you are far away
-- goes for jump crits and **P-crits** (Hard 55%, Expert 80% of the times you hit it)
+- goes for jump crits and **P-crits** (LT2 55%, LT1 80%, HT1 90% of the times you hit it)
 
 In **UHC** it plays the Axe-kit shield game (with stuns) plus:
 
 - pours **lava** at your feet when you're 2–4 blocks away and not fire-resistant, then picks it back
-  up once you've burned (Normal+), and never walks into lava itself
-- **webs** you as you come in, or itself when it's being comboed low (Normal+)
+  up once you've burned (LT3+), and never walks into lava itself
+- **webs** you as you come in, or itself when it's being comboed low (LT4+)
 - puts itself out with a **water** bucket at its feet, washes webs off, and picks the water back up
 - eats a **golden head** the moment it's low and the head is off cooldown
-- **pillars** three blocks up to eat golden apples when you're close (Hard+), and **mines** the pillar
+- **pillars** three blocks up to eat golden apples when you're 6–12 blocks off (LT2+; any closer and
+  your axe would have it down in 4 ticks), and **mines** the pillar
   out from under you — or any planks between you — with its Efficiency III axe
 - shoots you off a pillar with its crossbow
 
 In **Diamond Pot** it plays for combos instead: with normal knockback, Speed II and Strength II the
 damage comes from sprint-hit chains (W-/S-taps between hits), with crits only as a bonus. When it is
-being comboed low on health it sprints out of range (Normal+), **run-pots** — sprinting away and
+being comboed low on health it sprints out of range (LT4+), **run-pots** — sprinting away and
 throwing at its feet so the potion lands under it — keeps Strength, Speed and Regeneration up, and eats
 steak from the off hand before its hunger gets low enough to stop sprinting.
 
 In **Crystal** it plays the crystal game. Every few ticks it scores each option near you by
-the damage it would deal you after armor minus (per difficulty) what it would cost itself, and never
+the damage it would deal you after armor minus (per tier) what it would cost itself, per tick it takes, and never
 picks one that would kill it without a totem:
 
-- **hits a crystal** that is already standing (Normal+ also sets off yours when that hurts you more)
+- **hits a crystal** that is already standing (LT3+ also sets off yours when that hurts you more)
 - **crystals obsidian** that is already there, or **places obsidian, then a crystal, then hits it** —
-  crosshair on each face, with a click gap that shrinks from 8 ticks (Easy) to 1 (Expert)
-- **anchors** you (Normal+): places an anchor next to you, charges it with glowstone, then switches to
+  crosshair on each face, with a click gap that shrinks from 8 ticks (LT5) to 0 (HT1)
+- **anchors** you (LT4+): places an anchor next to you, charges it with glowstone, then switches to
   its totem slot and clicks it
-- waits out your hurt immunity before it blows anything up (Hard+)
+- waits out your hurt immunity before it blows anything up (LT2+)
+- **surrounds** itself when it is low and you are close (LT2+): steps to the middle of its block and puts
+  an ender chest on each side (fetched from the inventory; crystals can't go on them), then eats
+  inside and stays there until it has healed
+- **digs** (LT2+): when you are eating or walled in, digs the grass beside you, sets obsidian into the
+  hole and crystals it at your feet; and **mines your surround** open with the pickaxe
+- shoots the **crossbow** (Quick Charge III, Multishot, Slow Falling arrows) when you are out of crystal
+  range (LT3+)
 - re-totems, restocks its hotbar, eats golden apples, buffs with Strength and Speed, mends with XP
-- pearls in when you are far away (Normal+) and pearls out when it is about to die with no totems
-  left (Hard+); falls back to the sword when nothing is worth blowing up, and jumps out of craters
+- pearls in when you are far away (HT5+) and pearls out when it is about to die with no totems
+  left (HT3+); falls back to the sword when nothing is worth blowing up, and jumps out of craters
 
 Anchors do most of the damage on flat ground; once craters open up, foot-level crystals take over.
-It doesn't use the crossbow, surround itself with obsidian, or use the ender chests.
+Utility items (potions, XP, the pickaxe, ender chests) take turns in one hotbar slot and the item
+they displaced is restocked afterwards. In **UHC** it likewise fetches spare water and lava buckets,
+planks and the bow from the inventory in quiet moments, and the pickaxe when stone or obsidian is in
+its way.
 
 ## Project layout
 

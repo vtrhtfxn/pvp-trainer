@@ -813,6 +813,12 @@ export class Fighter {
     const blocks = this.world.blocks;
     const hw = C.PLAYER_WIDTH / 2;
     let ty = Math.max(0, y - 0.5);
+    // Against a wall: step into the middle of the (open) block the pearl was in, the way the
+    // game pushes you out to the nearest free space.
+    if (blocks.boxHasSolid(x - hw, ty, z - hw, x + hw, ty + this.height(), z + hw)) {
+      x = Math.floor(x) + 0.5;
+      z = Math.floor(z) + 0.5;
+    }
     for (let i = 0; i < 8 && blocks.boxHasSolid(x - hw, ty, z - hw, x + hw, ty + this.height(), z + hw); i++) ty = Math.floor(ty) + 1;
     this.pos.set(x, ty, z);
     this.prevPos.copy(this.pos);

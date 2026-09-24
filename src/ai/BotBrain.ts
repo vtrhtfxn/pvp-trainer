@@ -35,7 +35,7 @@ type UhcPlan =
   | { kind: 'lava'; x: number; y: number; z: number; phase: 'place' | 'wait' | 'pickup'; timer: number }
   | { kind: 'web'; x: number; y: number; z: number; ax: number; ay: number; az: number; timer: number }
   | { kind: 'mine'; x: number; y: number; z: number; timer: number; started: boolean }
-  | { kind: 'pillar'; baseY: number; height: number; timer: number; phase: 'build' | 'eat' }
+  | { kind: 'pillar'; baseY: number; height: number; timer: number; phase: 'build' | 'eat'; x: number; z: number }
   | { kind: 'head'; timer: number; count: number };
 
 /**
@@ -45,7 +45,9 @@ type UhcPlan =
 type CrystalPlan =
   | {
       kind: 'crystal' | 'anchor';
-      phase: 'place' | 'crystal' | 'charge' | 'blow';
+      /** 'dig': mine the ground first so the obsidian (and the crystal) sit a block lower. */
+      phase: 'dig' | 'place' | 'crystal' | 'charge' | 'blow';
+      started?: boolean;
       x: number;
       y: number;
       z: number;
@@ -60,6 +62,10 @@ type CrystalPlan =
       wait: number;
     }
   | { kind: 'hit'; crystal: EndCrystal; timer: number; wait: number }
+  /** Mine a block of their surround open with the pickaxe. */
+  | { kind: 'mine'; x: number; y: number; z: number; timer: number; started: boolean; wait: number }
+  /** Wall ourselves in: step to the middle of the block, then a block on each side. */
+  | { kind: 'surround'; phase: 'center' | 'place'; timer: number; wait: number }
   | { kind: 'pearl'; yaw: number; pitch: number; timer: number };
 
 /** An open inventory: a delay, then slot swaps (number key / F over a slot) one by one. */
@@ -82,6 +88,11 @@ interface Perceived extends Seen {
  * from the same simulation the player uses.
  */
 const uhcRay: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
+/** Hotbar items that can go back to the inventory to make room (they get restocked). */
+const SPARE_ITEMS: ItemId[] = ['experience_bottle', 'splash_potion', 'netherite_pickaxe', 'diamond_pickaxe', 'ender_chest', 'bow'];
+
+/** Blocks the bot will mine out of its way: planks (axe), webs (sword), lava/water rock (pickaxe). */
+const MINEABLE = new Set<number>([B.PLANKS, B.COBWEB, B.COBBLESTONE, B.STONE, B.OBSIDIAN, B.ENDER_CHEST, B.RESPAWN_ANCHOR]);
 const FACES: [number, number, number][] = [
   [0, 1, 0],
   [1, 0, 0],
@@ -170,6 +181,7 @@ export class BotBrain {
   private cplan: CrystalPlan | null = null;
   private crystalCooldown = 0;
   private thinkTimer = 0;
+  private surroundCooldown = 0;
 
   constructor(
     private readonly bot: Fighter,
@@ -248,6 +260,7 @@ export class BotBrain {
     this.cplan = null;
     this.crystalCooldown = 0;
     this.thinkTimer = 0;
+    this.surroundCooldown = 0;
   }
 
   tick() {
@@ -271,6 +284,12 @@ export class BotBrain {
     }
     if (this.retreatCooldown > 0) this.retreatCooldown--;
 
+    this.potLabel = '';
+    if (this.inv) {
+      this.invStep();
+      b.input = input;
+      return;
+    }
     if (this.crystalKit) {
       this.potLabel = '';
       this.crystalStep(per, dist, trueDist, justHurt, input);
@@ -723,7 +742,7 @@ export class BotBrain {
         this.equip('crossbow');
         this.aimAt(per.x, per.y + 1.2, per.z, 0.6);
         if (!b.usingItem) b.startUsingItem(true);
-        else if (b.useTicks() >= C.CROSSBOW_CHARGE_TICKS + 1) {
+        else if (b.useTicks() >= b.crossbowChargeTicks(b.heldStack()) + 1) {
           b.releaseUsingItem();
           this.ranged = 'fireCrossbow';
           this.rangedTimer = 0;
@@ -922,7 +941,8 @@ export class BotBrain {
       this.gapCooldown = 20;
       return false;
     }
-    if (!b.usingItem && !b.startUsingItem()) {
+    // A fresh press: the 4-tick delay after placing a block doesn't apply to it.
+    if (!b.usingItem && !b.startUsingItem(true)) {
       this.eating = false;
       this.gapCooldown = 20;
       return true;
@@ -975,7 +995,7 @@ export class BotBrain {
   }
 
   /** Select the item, look down, back away and throw; an XP bottle repeats on the held button. */
-  private throwStep(per: Perceived, dist: number, input: MoveInput) {
+  private throwStep(per: Perceived, dist: number, input: MoveInput): boolean {
     const b = this.bot;
     const t = this.throwing!;
     const N = this.profile.neth;
@@ -985,21 +1005,23 @@ export class BotBrain {
     // Mending stops once they come back.
     if (t.what === 'xp' && Math.hypot(this.target.pos.x - b.pos.x, this.target.pos.z - b.pos.z) < 3.5) {
       this.throwing = null;
-      return;
+      return false;
     }
     let slot = b.slotOf(id, potion);
     if (slot < 0) {
       const from = b.invSlotOf(id, potion);
       const to = this.freeHotbarSlot();
       if (from < 0 || to < 0) {
+        // No room in the hotbar right now: try again later instead of every tick.
         this.throwing = null;
-        return;
+        this.potCooldown = 40;
+        return false;
       }
       // Out of healing in the hotbar: shift-click a row of pots in while the inventory is open.
       const moves: [number, number][] = [[from, to]];
       if (t.what === 'healing') for (const mv of this.restockMoves(2, from, to)) moves.push(mv);
       this.openInv(moves);
-      return;
+      return true;
     }
     if (b.usingItem) b.stopUsingItem();
     if (b.selected !== slot) b.selectSlot(slot);
@@ -1012,10 +1034,10 @@ export class BotBrain {
     if (this.comboStyle && t.what === 'healing' && dist < 6) this.runOff(per, input);
     else this.backOff(per, dist, input);
     input.jump = false;
-    if (b.pitch > -Math.PI / 2 + this.throwAim + 0.35 || this.throwGap > 0) return;
+    if (b.pitch > -Math.PI / 2 + this.throwAim + 0.35 || this.throwGap > 0) return true;
     if (t.what === 'xp') {
-      if (!b.startUsingItem()) return; // held button: one bottle every 4 ticks
-    } else if (!b.startUsingItem(true)) return;
+      if (!b.startUsingItem()) return true; // held button: one bottle every 4 ticks
+    } else if (!b.startUsingItem(true)) return true;
     this.throwAim = 0;
     this.throwGap = t.what === 'xp' ? 0 : N.potGap;
     if (--t.left <= 0) {
@@ -1023,6 +1045,7 @@ export class BotBrain {
       // Give the potion time to land (about 3 ticks) before judging what we need again.
       this.potCooldown = t.what === 'xp' ? 2 : 6;
     }
+    return true;
   }
 
   /** Walk backwards away from the target (keeps facing them, so the fight resumes instantly). */
@@ -1069,8 +1092,8 @@ export class BotBrain {
       if (p && p !== 'healing' && b.effects.has(p === 'swiftness' ? 'speed' : p)) return i;
     }
     for (let i = 8; i >= 0; i--) if (b.inventory[i]?.id === 'splash_potion') return i;
-    // The Crystal hotbar is full; the bot never uses its crossbow, so that slot takes turns.
-    if (this.crystalKit) return b.slotOf('crossbow');
+    // The Crystal hotbar is full: a utility slot takes turns.
+    if (this.crystalKit) return this.spareHotbarSlot();
     return -1;
   }
 
@@ -1157,39 +1180,73 @@ export class BotBrain {
     }
 
     // Buffs at the start (and again when they run out), mending when there is a gap.
-    if (!this.throwing && !this.eating && this.potCooldown === 0) this.throwing = this.pickThrow(trueDist);
-    if (this.throwing) {
-      this.throwStep(per, dist, input);
-      return;
-    }
+    if (!this.throwing && !this.eating && this.potCooldown === 0 && this.ranged === 'none') this.throwing = this.pickThrow(trueDist);
+    if (this.throwing && this.throwStep(per, dist, input)) return;
 
-    // Restock the hotbar: a spare totem, and whatever ran out.
-    if (trueDist > 4.5 && !this.eating && !per.using) {
-      const moves = this.restockMoves(0);
-      const used = new Set(moves.map((m) => m[1]));
-      const empty: number[] = [];
-      for (let i = 0; i < 9; i++) if (!b.inventory[i] && !used.has(i)) empty.push(i);
-      for (const id of ['end_crystal', 'obsidian', 'golden_apple', 'respawn_anchor', 'glowstone', 'ender_pearl'] as ItemId[]) {
-        if (!empty.length) break;
-        const from = b.invSlotOf(id);
-        if (b.slotOf(id) < 0 && from >= 0) moves.push([from, empty.shift()!]);
-      }
+    // Restock the hotbar: a spare totem, whatever ran out or got swapped out.
+    if (trueDist > 4.5 && !this.eating && !per.using && this.ranged === 'none') {
+      const moves = this.crystalRestockMoves();
       if (moves.length) {
         this.openInv(moves);
         return;
       }
     }
 
+    // Low with them close: wall in before eating (HT3+).
+    const low = b.health <= 10 && !b.effects.has('regeneration');
+    if (this.surroundCooldown > 0) this.surroundCooldown--;
+    if (K.surround && !P.passive && low && this.surroundCooldown === 0 && trueDist < 7 && b.onGround && !this.eating && !this.isSurrounded(b) && b.countItem('ender_chest') + b.countItem('obsidian') >= 4) {
+      this.cplan = { kind: 'surround', phase: 'center', timer: 0, wait: 0 };
+      this.surroundCooldown = 200;
+      this.settle = 0;
+      if (this.runCrystal(per, dist, input)) return;
+    }
+    // Healing inside our surround: stay in it until healthy.
+    const stayIn = K.surround && this.isSurrounded(b) && b.effectiveHealth() < P.returnHP;
+
     // Golden apples: keep absorption up when there is a gap, and always when low.
     if (!this.eating && this.gapCooldown === 0 && !P.passive && b.countItem('golden_apple') > 0) {
-      const low = b.health <= 10 && !b.effects.has('regeneration');
       if (low || (!b.effects.has('absorption') && trueDist > 4.5)) {
         this.eating = true;
         this.eatId = 'golden_apple';
         this.eatStartCount = b.countItem('golden_apple');
       }
     }
-    if (this.eating && this.eatId && this.eatingStep(per, dist, trueDist, input)) return;
+    if (this.eating && this.eatId && this.eatingStep(per, dist, trueDist, input)) {
+      if (stayIn) input.forward = input.strafe = 0;
+      return;
+    }
+
+    // Out of crystal range: the crossbow (Quick Charge III, Multishot, Slow Falling arrows).
+    if (this.rangedCooldown > 0) this.rangedCooldown--;
+    if (K.crossbow && !P.passive && (this.ranged !== 'none' || this.crystalWantsCrossbow(dist))) {
+      if (this.rangedStep(per, dist, input)) {
+        input.forward = dist > 9 ? 1 : 0; // close in while loading
+        return;
+      }
+    }
+
+    // Their surround: mine it open with the pickaxe (HT3+).
+    if (K.mine && !P.passive && this.crystalCooldown === 0 && trueDist < 4.6 && this.isSurrounded(T)) {
+      const tx = Math.floor(T.pos.x);
+      const ty = Math.floor(T.pos.y + 0.01);
+      const tz = Math.floor(T.pos.z);
+      const eye = b.eyePos();
+      let best: [number, number, number] | null = null;
+      let bestD = Infinity;
+      for (const [x, y, z] of this.sides(tx, ty, tz)) {
+        const d = Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z);
+        if (d < bestD && d < C.BLOCK_REACH && this.anyFacePoint(x, y, z)) {
+          bestD = d;
+          best = [x, y, z];
+        }
+      }
+      if (best) {
+        this.cplan = { kind: 'mine', x: best[0], y: best[1], z: best[2], timer: 0, started: false, wait: 0 };
+        this.settle = 0;
+        if (this.runCrystal(per, dist, input)) return;
+      }
+    }
 
     // A new combo.
     if (!P.passive && this.crystalCooldown === 0 && --this.thinkTimer <= 0) {
@@ -1204,7 +1261,123 @@ export class BotBrain {
 
     // Nothing worth blowing up: the sword.
     this.engage(per, dist, justHurt, input);
-    if (b.horizontalCollision && b.onGround) input.jump = true; // out of craters
+    if (stayIn) {
+      input.forward = input.strafe = 0;
+      input.jump = false;
+    } else if (b.horizontalCollision && b.onGround) input.jump = true; // out of craters (and surrounds)
+  }
+
+  /** A loaded crossbow and them out of crystal range, or time to load it while they are far. */
+  private crystalWantsCrossbow(dist: number): boolean {
+    const b = this.bot;
+    if (this.rangedCooldown > 0 || b.countItem('crossbow') === 0) return false;
+    if (b.slotOf('crossbow') < 0) return false; // it comes back with the next restock
+    const charged = !!b.inventory[b.slotOf('crossbow')]?.charged;
+    if (charged) return dist > 6 && dist < 26;
+    return dist > 8 && dist < 26 && b.hasAmmo();
+  }
+
+  /** The four cells beside a floor cell, at foot level. */
+  private sides(x: number, y: number, z: number): [number, number, number][] {
+    return [
+      [x + 1, y, z],
+      [x - 1, y, z],
+      [x, y, z + 1],
+      [x, y, z - 1],
+    ];
+  }
+
+  /** Walled in on all four sides at foot level (by placed blocks — the floor itself doesn't count). */
+  private isSurrounded(f: Fighter): boolean {
+    const blocks = this.world.blocks;
+    const y = Math.floor(f.pos.y + 0.01);
+    return this.sides(Math.floor(f.pos.x), y, Math.floor(f.pos.z)).every(([x, yy, z]) => {
+      const id = blocks.get(x, yy, z);
+      return isSolidBlock(id) && id !== B.BEDROCK;
+    });
+  }
+
+  /**
+   * Surround: step into the middle of the block (sneaking, so it doesn't overshoot), then put an
+   * ender chest (crystals can't go on those; obsidian when they run out) on each side. Crystals
+   * at their feet can't reach ours any more.
+   */
+  private runSurround(plan: CrystalPlan & { kind: 'surround' }, input: MoveInput, end: (ok: boolean) => false): boolean {
+    const b = this.bot;
+    const K = this.profile.crystal;
+    const blocks = this.world.blocks;
+    this.potLabel = 'Surround';
+    const cx = Math.floor(b.pos.x);
+    const cy = Math.floor(b.pos.y + 0.01);
+    const cz = Math.floor(b.pos.z);
+    if (plan.timer > 70 || !b.onGround) return end(false);
+    if (plan.phase === 'center') {
+      const dx = cx + 0.5 - b.pos.x;
+      const dz = cz + 0.5 - b.pos.z;
+      if ((Math.abs(dx) < 0.15 && Math.abs(dz) < 0.15) || plan.timer > 16) {
+        plan.phase = 'place';
+        plan.timer = 0;
+        return true;
+      }
+      // Walk to the middle facing it, sneaking so we don't overshoot.
+      const yaw = yawTowards(dx, dz);
+      b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(yaw - b.yaw), -0.8, 0.8));
+      input.forward = Math.abs(wrapAngle(yaw - b.yaw)) < 0.5 ? 1 : 0;
+      input.sneak = true;
+      return true;
+    }
+    if (plan.wait > 0) plan.wait--;
+    const todo = this.sides(cx, cy, cz).filter(([x, y, z]) => blocks.get(x, y, z) === B.AIR && !this.cellHasFighter(x, y, z));
+    if (!todo.length) return end(true);
+    if (b.countItem('ender_chest') > 0) {
+      const r = this.fetch('ender_chest');
+      if (r === 'fetching') return true;
+      if (r === 'none' && !this.equip('obsidian')) return end(false);
+    } else if (!this.equip('obsidian')) return end(false);
+    for (const [x, y, z] of todo) {
+      const face = this.supportFace(x, y, z);
+      if (!face) continue;
+      const [sx, sy, sz, nx, ny, nz] = face;
+      const p = this.facePoint(sx, sy, sz, nx, ny, nz)!;
+      this.aimPoint(p[0], p[1], p[2]);
+      if (plan.wait > 0 || this.settle < K.aimSettle) return true;
+      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      if (hit && hit.x === sx && hit.y === sy && hit.z === sz && hit.nx === nx && hit.ny === ny && hit.nz === nz && b.startUsingItem(true)) {
+        plan.wait = K.clickGap;
+        this.settle = 0;
+      }
+      return true;
+    }
+    return end(false);
+  }
+
+  /**
+   * Crystal restock: the totem, anything that ran out, and whatever a utility swap pushed out of
+   * the hotbar (it goes back where the XP, potion, pickaxe or ender chest is).
+   */
+  private crystalRestockMoves(): [number, number][] {
+    const b = this.bot;
+    const moves = this.restockMoves(0);
+    const taken = new Set(moves.map((m) => m[1]));
+    const essentials: ItemId[] = [this.weapon, 'end_crystal', 'obsidian', 'golden_apple', 'totem_of_undying', 'ender_pearl'];
+    const K = this.profile.crystal;
+    if (K.anchors) essentials.push('respawn_anchor', 'glowstone');
+    if (K.crossbow) essentials.push('crossbow');
+    for (const id of essentials) {
+      const from = b.invSlotOf(id);
+      if (b.slotOf(id) >= 0 || from < 0 || moves.some((m) => m[0] === from)) continue;
+      let to = -1;
+      for (let i = 0; i < 9 && to < 0; i++) if (!taken.has(i) && !b.inventory[i]) to = i;
+      for (const u of SPARE_ITEMS) {
+        if (to >= 0) break;
+        const i = b.slotOf(u);
+        if (i >= 0 && !taken.has(i)) to = i;
+      }
+      if (to < 0) break;
+      taken.add(to);
+      moves.push([from, to]);
+    }
+    return moves;
   }
 
   /** Damage (after armor) to them and to us from a blast, and how good a trade that is. */
@@ -1315,9 +1488,14 @@ export class BotBrain {
     const eye = b.eyePos();
     let best: CrystalPlan | null = null;
     let bestScore = 0;
-    const consider = (score: number | null, plan: () => CrystalPlan) => {
-      if (score !== null && score > bestScore) {
-        bestScore = score;
+    // Judged per tick: `clicks` clicks (each with its gap and aim settle) plus `extra` ticks of
+    // work, plus the 10 ticks of hurt immunity every blast has to wait out anyway.
+    const click = K.clickGap + K.aimSettle;
+    const consider = (score: number | null, clicks: number, extra: number, plan: () => CrystalPlan) => {
+      if (score === null || score <= 0) return;
+      const rate = score / (clicks * click + extra + 10);
+      if (rate > bestScore) {
+        bestScore = rate;
         best = plan();
       }
     };
@@ -1328,9 +1506,12 @@ export class BotBrain {
       const d = Math.hypot(c.x - eye.x, c.y + 1 - eye.y, c.z - eye.z);
       if (d > C.ATTACK_REACH + 1) continue;
       const s = this.blastScore(c.x, c.y, c.z, CRYSTAL_POWER, per);
-      consider(s === null ? null : s + 1, () => ({ kind: 'hit', crystal: c, timer: 0, wait: 0 }));
+      consider(s, 1, 0, () => ({ kind: 'hit', crystal: c, timer: 0, wait: 0 }));
     }
 
+    // Digging takes about a second (and leaves obsidian they can use too): only worth it on
+    // someone who stays put — eating, or walled in.
+    const camping = K.mine && (per.using || this.isSurrounded(this.target));
     const hasObsidian = b.slotOf('obsidian') >= 0;
     const hasCrystal = b.slotOf('end_crystal') >= 0;
     const anchors = K.anchors && b.slotOf('respawn_anchor') >= 0 && b.slotOf('glowstone') >= 0;
@@ -1351,8 +1532,25 @@ export class BotBrain {
           if (hasCrystal && id === B.OBSIDIAN && above === B.AIR) {
             if (!canPlaceCrystal(world, x, y, z) || !this.anyFacePoint(x, y, z)) continue;
             const s = this.blastScore(x + 0.5, y + 1, z + 0.5, CRYSTAL_POWER, per);
-            consider(s === null ? null : s + 0.5, () => ({
+            consider(s, 2, 0, () => ({
               kind: 'crystal', phase: 'crystal', x, y, z, sx: 0, sy: 0, sz: 0, nx: 0, ny: 0, nz: 0, crystal: null, timer: 0, wait: 0,
+            }));
+            continue;
+          }
+          // 2b. Dig the ground beside them and set obsidian into it: a crystal at their feet (HT3+).
+          if (camping && hasObsidian && hasCrystal && (id === B.GRASS || id === B.DIRT) && above === B.AIR && blocks.get(x, y + 2, z) === B.AIR) {
+            if (this.cellHasFighter(x, y + 1, z, 2) || !this.anyFacePoint(x, y, z)) continue;
+            // Once dug, a face inside the hole has to be in view to put the obsidian in.
+            const ground = blocks.swapTemp(x, y, z, B.AIR);
+            const inHole = this.supportFace(x, y, z);
+            blocks.swapTemp(x, y, z, ground);
+            if (!inHole) continue;
+            const was = blocks.swapTemp(x, y, z, B.OBSIDIAN);
+            const s = this.blastScore(x + 0.5, y + 1, z + 0.5, CRYSTAL_POWER, per);
+            blocks.swapTemp(x, y, z, was);
+            // Grass or dirt by hand: 15–18 ticks of digging first.
+            consider(s, 3, id === B.GRASS ? 18 : 15, () => ({
+              kind: 'crystal', phase: 'dig', x, y, z, sx: x, sy: y - 1, sz: z, nx: 0, ny: 1, nz: 0, crystal: null, timer: 0, wait: 0,
             }));
             continue;
           }
@@ -1365,12 +1563,12 @@ export class BotBrain {
             const was = blocks.swapTemp(x, y, z, B.OBSIDIAN);
             const s = this.blastScore(x + 0.5, y + 1, z + 0.5, CRYSTAL_POWER, per);
             blocks.swapTemp(x, y, z, was);
-            consider(s, () => ({ kind: 'crystal', phase: 'place', x, y, z, sx, sy, sz, nx, ny, nz, crystal: null, timer: 0, wait: 0 }));
+            consider(s, 3, 0, () => ({ kind: 'crystal', phase: 'place', x, y, z, sx, sy, sz, nx, ny, nz, crystal: null, timer: 0, wait: 0 }));
           }
           // 4. An anchor: placed, charged, blown up (the block is gone by then).
           if (anchors && dy >= -1) {
             const s = this.blastScore(x + 0.5, y + 0.5, z + 0.5, ANCHOR_POWER, per);
-            consider(s === null ? null : s - 0.5, () => ({ kind: 'anchor', phase: 'place', x, y, z, sx, sy, sz, nx, ny, nz, crystal: null, timer: 0, wait: 0 }));
+            consider(s, 3, 1, () => ({ kind: 'anchor', phase: 'place', x, y, z, sx, sy, sz, nx, ny, nz, crystal: null, timer: 0, wait: 0 }));
           }
         }
     return best;
@@ -1387,6 +1585,11 @@ export class BotBrain {
     input.forward = dist > 4.3 ? 1 : dist < 2.4 ? -1 : 0;
     input.sprint = false;
     input.strafe = this.world.wallDistance(b.pos.x, b.pos.z) < 3 ? this.roomySide() : this.strafeDir;
+    // Healing in our surround: stay put.
+    if (P.crystal.surround && b.effectiveHealth() < P.returnHP && this.isSurrounded(b)) {
+      input.forward = input.strafe = 0;
+      return;
+    }
     if (b.horizontalCollision && b.onGround && input.forward > 0) input.jump = true;
   }
 
@@ -1402,6 +1605,7 @@ export class BotBrain {
       this.cplan = null;
       this.crystalCooldown = ok ? K.comboGap : 4;
       this.thinkTimer = 0;
+      if (b.mining) b.tickMining(false, false);
       return false;
     };
     if (b.usingItem) b.stopUsingItem();
@@ -1419,6 +1623,8 @@ export class BotBrain {
       }
       return true;
     }
+
+    if (plan.kind === 'surround') return this.runSurround(plan, input, end);
 
     this.crystalMove(dist, input);
     if ('wait' in plan && plan.wait > 0) plan.wait--;
@@ -1446,6 +1652,58 @@ export class BotBrain {
     };
 
     if (plan.kind === 'hit') return hitCrystal(plan.crystal);
+
+    // Mine a block open: their surround (pickaxe), or the ground for a lower crystal.
+    const mineStep = (x: number, y: number, z: number, started: boolean): boolean | 'mined' => {
+      if (blocks.get(x, y, z) === B.AIR) {
+        if (b.mining) b.tickMining(false, false);
+        return 'mined';
+      }
+      const p = this.anyFacePoint(x, y, z);
+      if (!p) return false;
+      this.aimPoint(p[0], p[1], p[2]);
+      // Stand still to mine; settle before the first click, then just hold it.
+      input.forward = input.strafe = 0;
+      input.sprint = false;
+      if (!started && this.settle < K.aimSettle) return true;
+      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      if (hit && hit.x === x && hit.y === y && hit.z === z) {
+        b.tickMining(true, !started);
+        return true;
+      }
+      if (b.mining) b.tickMining(false, false);
+      return true;
+    };
+    if (plan.kind === 'mine') {
+      this.potLabel = 'Mining';
+      if (plan.timer > 90) return end(false);
+      if (!this.equipToolFor(blocks.get(plan.x, plan.y, plan.z))) return true;
+      const r = mineStep(plan.x, plan.y, plan.z, plan.started);
+      if (r === 'mined') return end(true);
+      if (r === false) return plan.timer > 8 ? end(false) : true;
+      if (b.mining) plan.started = true;
+      return true;
+    }
+
+    if (plan.phase === 'dig') {
+      this.potLabel = 'Digging';
+      // Grass and dirt need no tool: dig with the obsidian already in hand.
+      if (plan.timer > 50 || !this.equip('obsidian') || this.cellHasFighter(plan.x, plan.y + 1, plan.z, 2)) return end(false);
+      const r = mineStep(plan.x, plan.y, plan.z, !!plan.started);
+      if (r === false) return plan.timer > 8 ? end(false) : true;
+      if (r === 'mined') {
+        const face = this.supportFace(plan.x, plan.y, plan.z);
+        if (!face) return end(false);
+        [plan.sx, plan.sy, plan.sz, plan.nx, plan.ny, plan.nz] = face;
+        plan.phase = 'place';
+        plan.timer = 0;
+        plan.wait = K.clickGap;
+        this.settle = 0;
+        return true;
+      }
+      if (b.mining) plan.started = true;
+      return true;
+    }
 
     if (plan.phase === 'place') {
       this.potLabel = plan.kind === 'anchor' ? 'Anchor' : 'Obsidian';
@@ -1600,19 +1858,21 @@ export class BotBrain {
       this.plan = { kind: 'head', timer: 0, count: b.countItem('golden_head') };
       return this.runPlan(per, trueDist, input) === 'own';
     }
-    // ---- Low with apples to eat and them close: pillar up out of reach and eat on top.
+    // ---- Low with apples to eat and them a few blocks off: pillar up out of reach and eat on
+    // top. Not with them next to us: an Efficiency III axe takes a plank out in 4 ticks.
     if (
       U.pillar &&
+      trueDist > 6 &&
       !P.passive &&
       b.effectiveHealth() <= P.retreatHP &&
       !b.effects.has('regeneration') &&
       b.countItem('golden_apple') > 0 &&
       b.slotOf('oak_planks') >= 0 &&
       b.onGround &&
-      trueDist < 6 &&
+      trueDist < 12 &&
       this.columnClear(cellX, cellY, cellZ, 5)
     ) {
-      this.plan = { kind: 'pillar', baseY: cellY, height: 0, timer: 0, phase: 'build' };
+      this.plan = { kind: 'pillar', baseY: cellY, height: 0, timer: 0, phase: 'build', x: cellX + 0.5, z: cellZ + 0.5 };
       return this.runPlan(per, trueDist, input) === 'own';
     }
     if (P.passive) return false;
@@ -1621,7 +1881,7 @@ export class BotBrain {
       const tx = Math.floor(T.pos.x);
       const ty = Math.floor(T.pos.y + 0.01) - 1;
       const tz = Math.floor(T.pos.z);
-      if (blocks.get(tx, ty, tz) === B.PLANKS) {
+      if (MINEABLE.has(blocks.get(tx, ty, tz)) && blocks.get(tx, ty, tz) !== B.COBWEB) {
         this.plan = { kind: 'mine', x: tx, y: ty, z: tz, timer: 0, started: false };
         return this.runPlan(per, trueDist, input) === 'own';
       }
@@ -1634,9 +1894,17 @@ export class BotBrain {
       const dz = T.pos.z - eye.z;
       const len = Math.hypot(dx, dy, dz);
       const hit = blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, Math.min(len, C.BLOCK_REACH), 'outline', uhcRay);
-      if (hit && (hit.id === B.PLANKS || hit.id === B.COBWEB)) {
+      if (hit && MINEABLE.has(hit.id)) {
         this.plan = { kind: 'mine', x: hit.x, y: hit.y, z: hit.z, timer: 0, started: false };
         return this.runPlan(per, trueDist, input) === 'own';
+      }
+    }
+    // ---- A quiet moment: bring spare buckets, planks, the bow and the crossbow back to the hotbar.
+    if (trueDist > 5.5 && !b.inWeb && !b.onFire) {
+      const moves = this.uhcRestockMoves();
+      if (moves.length) {
+        this.openInv(moves);
+        return true;
       }
     }
     if (this.uhcCooldown > 0) return false;
@@ -1678,6 +1946,32 @@ export class BotBrain {
       }
     }
     return false;
+  }
+
+  private uhcRestockMoves(): [number, number][] {
+    const b = this.bot;
+    const moves: [number, number][] = [];
+    const taken = new Set<number>();
+    const target = (ok: (i: number) => boolean) => {
+      for (let i = 0; i < 9; i++) if (!taken.has(i) && ok(i)) return i;
+      return -1;
+    };
+    const want = (id: ItemId, into: (i: number) => boolean) => {
+      const from = b.invSlotOf(id);
+      if (b.slotOf(id) >= 0 || from < 0) return;
+      const to = target(into);
+      if (to < 0) return;
+      taken.add(to);
+      moves.push([from, to]);
+    };
+    const empty = (i: number) => !b.inventory[i];
+    const bucket = (i: number) => empty(i) || b.inventory[i]?.id === 'bucket';
+    want('crossbow', (i) => empty(i) || b.inventory[i]?.id === 'diamond_pickaxe');
+    want('water_bucket', bucket);
+    if (this.profile.uhc.lava > 0) want('lava_bucket', bucket);
+    want('oak_planks', empty);
+    if (this.profile.axe.ranged >= 2) want('bow', empty);
+    return moves;
   }
 
   /** One tick of the current plan: 'own' (it used the tick), 'fight' (let the fight run), 'done'. */
@@ -1759,12 +2053,12 @@ export class BotBrain {
       case 'mine': {
         this.uhcLabel = 'Mining';
         const id = blocks.get(plan.x, plan.y, plan.z);
-        if (plan.timer > 90 || (id !== B.PLANKS && id !== B.COBWEB)) {
-          if (plan.timer > 90) this.selfHelpCooldown = 40;
+        if (plan.timer > 120 || !MINEABLE.has(id)) {
+          if (plan.timer > 120) this.selfHelpCooldown = 40;
           return finish(5);
         }
         if (b.usingItem) b.stopUsingItem();
-        this.equip(id === B.COBWEB ? 'diamond_sword' : b.slotOf('diamond_axe') >= 0 ? 'diamond_axe' : 'diamond_sword');
+        if (!this.equipToolFor(id)) return 'own';
         this.aimPoint(plan.x + 0.5, plan.y + 0.5, plan.z + 0.5);
         const dist = Math.hypot(plan.x + 0.5 - b.pos.x, plan.z + 0.5 - b.pos.z);
         if (dist > 3.4) input.forward = 1;
@@ -1779,10 +2073,13 @@ export class BotBrain {
         this.uhcLabel = plan.phase === 'build' ? 'Pillaring' : 'Eating';
         const top = plan.baseY + plan.height;
         if (plan.phase === 'build') {
-          if (plan.timer > 80 || !this.equip('oak_planks')) return finish(60);
+          // Knocked off the column: it's over, fight or run instead.
+          const off = Math.hypot(b.pos.x - plan.x, b.pos.z - plan.z) > 0.55 || b.pos.y < top - 0.6;
+          if (plan.timer > 60 || (plan.timer > 3 && off) || !this.equip('oak_planks')) return finish(80);
           if (b.usingItem) b.stopUsingItem();
           this.turnTo(b.yaw, -Math.PI / 2 + 0.01, 3);
-          input.jump = true;
+          // Stop first (a jump keeps our run-up speed and carries us off the column).
+          input.jump = plan.height > 0 || Math.hypot(b.vel.x, b.vel.z) < 0.03;
           if (!b.onGround && b.pos.y >= top + 1 && b.startUsingItem(true)) {
             plan.height++;
             if (plan.height >= 3) {
@@ -2007,6 +2304,56 @@ export class BotBrain {
       return false;
     }
     if (this.bot.selected !== slot) this.bot.selectSlot(slot);
+    return true;
+  }
+
+  /**
+   * Makes sure `id` is in the hotbar and selected: 'ready', 'fetching' (the inventory is open to
+   * bring it in — it takes real time), or 'none' (we have none, or no room for it).
+   */
+  private fetch(id: ItemId): 'ready' | 'fetching' | 'none' {
+    const b = this.bot;
+    const slot = b.slotOf(id);
+    if (slot >= 0) {
+      if (b.selected !== slot) b.selectSlot(slot);
+      return 'ready';
+    }
+    const from = b.invSlotOf(id);
+    const to = from >= 0 ? this.spareHotbarSlot(id) : -1;
+    if (to < 0) return 'none';
+    this.openInv([[from, to]]);
+    return 'fetching';
+  }
+
+  /**
+   * A hotbar slot something can be swapped into: an empty one, an empty bucket, a utility item
+   * that isn't needed right now, and as a last resort the crossbow (restocked afterwards).
+   */
+  private spareHotbarSlot(forId: ItemId | null = null): number {
+    const b = this.bot;
+    for (let i = 0; i < 9; i++) if (!b.inventory[i]) return i;
+    for (let i = 0; i < 9; i++) if (b.inventory[i]?.id === 'bucket') return i;
+    for (const u of SPARE_ITEMS) {
+      if (u === forId) continue;
+      const i = b.slotOf(u);
+      if (i >= 0 && !(this.throwing && (u === 'experience_bottle' || u === 'splash_potion'))) return i;
+    }
+    if (forId !== 'crossbow' && forId !== 'tipped_arrow' && this.ranged === 'none') return b.slotOf('crossbow');
+    return -1;
+  }
+
+  /** The right tool for a block: pickaxe for stone-like blocks, axe for planks, sword for webs. */
+  /** False while the inventory is open to fetch the pickaxe. */
+  private equipToolFor(id: number): boolean {
+    const b = this.bot;
+    const pick: ItemId = b.countItem('netherite_pickaxe') > 0 ? 'netherite_pickaxe' : 'diamond_pickaxe';
+    if (id === B.COBWEB) this.equip(this.weapon);
+    else if (id === B.PLANKS && b.slotOf('diamond_axe') >= 0) this.equip('diamond_axe');
+    else if (id !== B.PLANKS && id !== B.GRASS && id !== B.DIRT) {
+      const r = this.fetch(pick);
+      if (r === 'fetching') return false;
+      if (r === 'none' && !this.equip(this.weapon)) this.equip('diamond_sword');
+    } else if (!this.equip(this.weapon)) this.equip('diamond_sword');
     return true;
   }
 
