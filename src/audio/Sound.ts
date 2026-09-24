@@ -127,6 +127,14 @@ export class Sound {
     this.tone(d, t + 0.005, 0.12, 'sawtooth', base * 1.5, base * 0.8, 0.08);
   }
 
+  /** entity.player.attack.sweep: a longer, airy whoosh. */
+  sweep(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.22, 'bandpass', 600, 2600, 1.1, 0.45);
+  }
+
   swing(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.5);
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.13, 'bandpass', 380, 1300, 1.4, 0.35);

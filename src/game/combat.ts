@@ -162,7 +162,7 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
   attacker.resetAttackStrength();
 
   if (target.isBlocking() && shieldFaces(target, attacker.pos.x, attacker.pos.z)) {
-    return hitShield(attacker, target, reach, scale, swap);
+    return hitShield(attacker, target, reach, scale, swap, base + ench);
   }
 
   const strong = scale > C.STRONG_ATTACK_SCALE;
@@ -235,6 +235,16 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
     target.serverVel.set(kbVel.x, vy, kbVel.z);
   }
 
+  // Player.attack's sweep: a full-charge sword hit with no crit, no sprint knockback, on the
+  // ground and barely moving. It would also hit anyone else within a block of the target (for
+  // 1 + damage × level/(level+1) with Sweeping Edge) — in a duel there is no one else, so it is
+  // just the sweep arc and sound.
+  const moved = Math.hypot(attacker.pos.x - attacker.prevPos.x, attacker.pos.z - attacker.prevPos.z);
+  if (strong && !crit && !sprint && attacker.onGround && moved < attacker.movementSpeed() && defOf(weapon).tool === 'sword') {
+    const d = attacker.look(new V3());
+    attacker.events.push({ type: 'sweep', x: attacker.pos.x + d.x, y: attacker.pos.y + attacker.height() * 0.5, z: attacker.pos.z + d.z });
+  }
+
   attacker.causeExhaustion(C.EXHAUSTION_ATTACK);
   const s = attacker.stats;
   s.hits++;
@@ -268,9 +278,10 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
  * an axe in the attacker's hand disables the shield. The defender still gets fresh i-frames
  * with lastHurt = 0, so a follow-up inside half a second deals full damage without knockback.
  */
-function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: number, swap: boolean): AttackOutcome {
+function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: number, swap: boolean, damage: number): AttackOutcome {
   const weapon = defOf(attacker.heldStack());
   attacker.swing();
+  target.damageShield(damage);
   if (target.invulnerableTime <= C.IFRAME_WINDOW) {
     target.lastHurt = 0;
     target.invulnerableTime = C.INVULNERABLE_TICKS;

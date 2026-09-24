@@ -36,6 +36,7 @@ export type ItemId =
   | 'ender_chest'
   | 'ender_pearl'
   | 'netherite_pickaxe'
+  | 'netherite_axe'
   | 'tipped_arrow';
 export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance' | 'slow_falling';
 
@@ -163,6 +164,10 @@ export interface Enchants {
   multishot?: number;
   quickCharge?: number;
   silkTouch?: number;
+  /** Sweep attacks hit others near your target for 1 + level/(level+1) of the damage. */
+  sweepingEdge?: number;
+  /** Sneaking speed 30% + 15% per level. */
+  swiftSneak?: number;
 }
 
 export interface ItemStack {
@@ -204,6 +209,21 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     tool: 'axe',
     toolSpeed: 8,
   },
+  // Netherite axe: 10 attack damage, 1.0 attack speed (a 20-tick cooldown); disables shields.
+  netherite_axe: {
+    id: 'netherite_axe',
+    name: 'Netherite Axe',
+    maxStack: 1,
+    attackDamage: 10,
+    attackSpeed: 1.0,
+    use: 'none',
+    handheld: true,
+    disablesShield: true,
+    maxDamage: 2031,
+    hitCost: 2,
+    tool: 'axe',
+    toolSpeed: 9,
+  },
   golden_apple: {
     id: 'golden_apple',
     name: 'Golden Apple',
@@ -221,7 +241,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
       ],
     },
   },
-  shield: { id: 'shield', name: 'Shield', maxStack: 1, ...MELEE_FIST, use: 'shield' },
+  shield: { id: 'shield', name: 'Shield', maxStack: 1, ...MELEE_FIST, use: 'shield', maxDamage: 336 },
   bow: { id: 'bow', name: 'Bow', maxStack: 1, ...MELEE_FIST, use: 'bow' },
   crossbow: { id: 'crossbow', name: 'Crossbow', maxStack: 1, ...MELEE_FIST, use: 'crossbow' },
   arrow: { id: 'arrow', name: 'Arrow', maxStack: 64, ...MELEE_FIST, use: 'none' },
@@ -347,6 +367,8 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.blastProtection) out.push(`Blast Protection ${roman(e.blastProtection)}`);
   if (e?.featherFalling) out.push(`Feather Falling ${roman(e.featherFalling)}`);
   if (e?.knockback) out.push(`Knockback ${roman(e.knockback)}`);
+  if (e?.sweepingEdge) out.push(`Sweeping Edge ${roman(e.sweepingEdge)}`);
+  if (e?.swiftSneak) out.push(`Swift Sneak ${roman(e.swiftSneak)}`);
   if (e?.efficiency) out.push(`Efficiency ${roman(e.efficiency)}`);
   if (e?.silkTouch) out.push('Silk Touch');
   if (e?.multishot) out.push('Multishot');

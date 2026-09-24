@@ -82,6 +82,7 @@ interface Puff {
   sprite: THREE.Sprite;
   age: number;
   life: number;
+  frames: THREE.Texture[];
 }
 
 /**
@@ -96,11 +97,30 @@ export class ExplosionView {
   private emitters: { x: number; y: number; z: number; ticks: number }[] = [];
   private acc = 0;
 
+  private readonly sweepFrames: THREE.Texture[] = [];
+
   constructor() {
     for (let i = 0; i < 16; i++) {
       const t = packTexture(`particle/explosion_${i}`);
       if (t) this.frames.push(t);
     }
+    for (let i = 0; i < 8; i++) {
+      const t = packTexture(`particle/sweep_${i}`);
+      if (t) this.sweepFrames.push(t);
+    }
+  }
+
+  /** SweepAttackParticle: one grey 8-frame arc, 4 ticks, where the sweep landed. */
+  sweep(x: number, y: number, z: number) {
+    if (!this.sweepFrames.length) return;
+    const s = this.free.pop() ?? new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, fog: false }));
+    const shade = 0.4 + Math.random() * 0.6;
+    (s.material as THREE.SpriteMaterial).color.setRGB(shade, shade, shade);
+    s.position.set(x, y, z);
+    s.scale.setScalar(2);
+    s.renderOrder = 6;
+    this.group.add(s);
+    this.puffs.push({ sprite: s, age: 0, life: 4, frames: this.sweepFrames });
   }
 
   onEvent(e: WorldEvent) {
@@ -116,7 +136,7 @@ export class ExplosionView {
     s.scale.setScalar(2 * (1 - Math.random() * 0.5) * 2);
     s.renderOrder = 6;
     this.group.add(s);
-    this.puffs.push({ sprite: s, age: 0, life: 6 + Math.floor(Math.random() * 4) });
+    this.puffs.push({ sprite: s, age: 0, life: 6 + Math.floor(Math.random() * 4), frames: this.frames });
   }
 
   update(dt: number) {
@@ -140,8 +160,9 @@ export class ExplosionView {
         this.puffs.splice(i, 1);
         continue;
       }
-      const f = Math.min(15, Math.floor(((p.age + this.acc) / p.life) * 16));
-      (p.sprite.material as THREE.SpriteMaterial).map = this.frames[f] ?? null;
+      const n = p.frames.length;
+      const f = Math.min(n - 1, Math.floor(((p.age + this.acc) / p.life) * n));
+      (p.sprite.material as THREE.SpriteMaterial).map = p.frames[f] ?? null;
       (p.sprite.material as THREE.SpriteMaterial).needsUpdate = true;
     }
   }

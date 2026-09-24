@@ -134,7 +134,8 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **Diamond Pot** — Diamond Sword (Sharpness V), Diamond armor (Protection IV, Unbreaking III), 26× Splash Healing II, 3× Strength II, 3× Speed II, 3× Regeneration (all 1:30), 5 steak (off hand); all damage +33% | ✅ Playable (vs bot) |
 | **UHC** (mcpvp.club tier-test kit) — Diamond Sword (Sharp III), Diamond Axe (Eff III), Shield, Diamond armor (Prot III/II/II/III), 8 golden apples, 2 golden heads, 4 water + 2 lava buckets, 8 cobwebs, 2 stacks of oak planks, Diamond Pickaxe (Eff III), Bow (Power I), Crossbow (Piercing I), 10 arrows · no natural regeneration, stuns on | ✅ Playable (vs bot) |
 | **Crystal** — Netherite armor (Prot IV helmet and chestplate, Blast Protection IV leggings and boots, Feather Falling IV boots; all Unbreaking III + Mending), Netherite Sword (Sharpness V, Knockback I), Netherite Pickaxe (Efficiency V, Silk Touch), 128 end crystals, 128 obsidian, 128 respawn anchors, 128 glowstone, 8 totems (one in the off hand), 64 golden apples, 80 ender pearls, 32 ender chests, Crossbow (Multishot, Quick Charge III) with 64 Slow Falling arrows, 128 XP bottles, 4× Strength II, 4× Speed II · diggable ground | ✅ Playable (vs bot) |
-| SMP, Mace | Coming soon (cards shown in the menu) |
+| **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
+| Mace | Coming soon (card shown in the menu) |
 
 The arena is 80 × 80 blocks (walls 16 high). Online duels use the Sword kit; the inventory screen and F work online too.
 
@@ -293,6 +294,13 @@ nametag reads *Passive*.
   Feather Falling IV + Prot IV), and it goes on a 1 s cooldown. Pearls set off crystals.
 - **Quick Charge III** loads a crossbow in 0.25 s; **Multishot** fires three arrows (the side two
   can't be picked up). **Slow Falling** tipped arrows give 30 s of Slow Falling (1/8 of the potion).
+- **Netherite Axe**: 10 damage, 1.0 attack speed, disables shields like any axe.
+- **Shield durability** (336): blocking a hit of 3+ damage costs 1 + that damage (Unbreaking applies,
+  Mending repairs it); at 0 it breaks.
+- **Sweeping Edge**: a full-charge sword hit on the ground — no crit, no sprint knockback, barely moving
+  — is a sweep (arc and sound). It would also hit anyone within a block of your target; in a duel there
+  is no one else, so it changes nothing else.
+- **Swift Sneak III**: sneaking at 75% of walking speed instead of 30%.
 - **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
   `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
   Absorption I for 2 min, 4 hunger and 9.6 saturation.
@@ -380,6 +388,16 @@ Utility items (potions, XP, the pickaxe, ender chests) take turns in one hotbar 
 they displaced is restocked afterwards. In **UHC** it likewise fetches spare water and lava buckets,
 planks and the bow from the inventory in quiet moments, and the pickaxe when stone or obsidian is in
 its way.
+
+In **SMP** it plays the Axe-kit shield game with the netherite axe (attribute-swapping it on LT2+) and:
+
+- throws Strength and Speed, and Fire Resistance whenever your Fire Aspect has it burning; mends
+  with XP in the gaps; refills its hotbar potions, apples and pearls from the inventory
+- retreats to eat golden apples; LT2+ lands the parting hit with the **Knockback sword swapped in on
+  the same tick** (the charged sword's cooldown, Knockback I's push)
+- has one totem, which only works from a hand: at 7 HP or less with you close it swaps the totem into
+  its off hand in place of the shield, and puts the shield back once it is safe (or the totem popped)
+- pearls in when you run far (HT5+) and pearls out once per retreat when you are still on it (HT3+)
 
 ## Project layout
 

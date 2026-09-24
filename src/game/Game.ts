@@ -80,11 +80,11 @@ export class Game {
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view = new SceneRenderer(canvas, this.match.world, assets);
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword' | 'end_crystal') =>
+    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword' | 'end_crystal' | 'netherite_axe') =>
       itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
-      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : kit.icon === 'crystal' ? packIcon('end_crystal') : undefined;
+      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : kit.icon === 'crystal' ? packIcon('end_crystal') : kit.icon === 'smp' ? packIcon('netherite_axe') : undefined;
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
     this.hud = new HUD(uiRoot);
@@ -688,6 +688,10 @@ export class Game {
           }
           break;
         }
+        case 'sweep':
+          this.sound.sweep(e);
+          this.view.explosions.sweep(e.x, e.y, e.z);
+          break;
         case 'hitShield':
           if (isPlayer && live && this.settings.hitFeedback) {
             if (e.disabled) this.hud.showFeedback(e.swap ? 'SHIELD DISABLED · SWAP' : 'SHIELD DISABLED', 'sprint');
