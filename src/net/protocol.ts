@@ -71,7 +71,7 @@ export function toSlot(s: ItemStack | null): Slot {
 }
 
 export function fromSlot(slot: Slot | undefined): ItemStack | null {
-  if (!Array.isArray(slot) || !(slot[0] in ITEMS)) return null;
+  if (!Array.isArray(slot) || typeof slot[0] !== 'string' || !Object.hasOwn(ITEMS, slot[0])) return null;
   const id = slot[0] as ItemId;
   const count = Math.max(1, Math.min(ITEMS[id].maxStack, Number(slot[1]) | 0));
   const out: ItemStack = { id, count };
@@ -102,7 +102,8 @@ export function itemTotals(slots: readonly Slot[]): Map<string, number> {
     const s = fromSlot(raw ?? null);
     if (!s) continue;
     const ench = s.ench ? ENCHANT_KEYS.filter((k) => s.ench![k]).map((k) => `${k}${s.ench![k]}`).join(',') : '';
-    const key = `${s.id}:${ench}:${s.damage ?? 0}:${s.potion ?? ''}`;
+    // A loaded crossbow counts as a different item, so a layout can't load one for free.
+    const key = `${s.id}:${ench}:${s.damage ?? 0}:${s.potion ?? ''}:${s.charged ? 1 : 0}:${s.chargedPotion ?? ''}`;
     m.set(key, (m.get(key) ?? 0) + s.count);
   }
   return m;

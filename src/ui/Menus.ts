@@ -209,12 +209,20 @@ export class Menus {
 
   // ------------------------------------------------------------------ pause
 
+  private restartBtn!: HTMLElement;
+
+  /** Online there is nothing to restart: that would quietly leave the match for a bot duel. */
+  setOnline(online: boolean) {
+    this.restartBtn.style.display = online ? 'none' : '';
+  }
+
   private buildPause(): HTMLDivElement {
     const root = h('div', { class: 'screen pause' });
     const panel = h('div', { class: 'menu-panel small' });
     panel.append(h('div', { class: 'screen-title' }, 'Game Paused'));
     panel.append(this.button('Back to Duel', () => this.cb.onResume(), 'big'));
-    panel.append(this.button('Restart Duel', () => this.cb.onRestart()));
+    this.restartBtn = this.button('Restart Duel', () => this.cb.onRestart());
+    panel.append(this.restartBtn);
     panel.append(this.button('Settings', () => this.openSettings('pause')));
     panel.append(this.button('Quit to Title', () => this.cb.onQuit()));
     root.append(panel);

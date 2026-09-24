@@ -98,6 +98,8 @@ export class Duel {
       this.pendingSlot[i] = null;
       this.lastInv[i] = '';
       this.history[i].length = 0;
+      // The clients reset their teleport acks for the new round too.
+      this.teleportId[i] = this.teleportAcked[i] = 0;
     }
   }
 
@@ -159,8 +161,27 @@ export class Duel {
   applyMove(i: number, m: { x: number; y: number; z: number; yaw: number; pitch: number; g: boolean; sp: boolean; sn: boolean; vy: number; ff?: boolean; fd?: number; tp?: number }) {
     if ((Number(m.tp) | 0) < this.teleportId[i]) return;
     this.teleportAcked[i] = this.teleportId[i];
-    const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-    this.fighters[i].applyMove(num(m.x), num(m.y), num(m.z), num(m.yaw), num(m.pitch), !!m.g, !!m.sp, !!m.sn, num(m.vy), !!m.ff, m.fd === undefined ? null : num(m.fd));
+    const num = (v: unknown, lo: number, hi: number) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : 0;
+    };
+    // Movement is trusted, but only inside the arena: a wild coordinate would send the block
+    // scans on a walk through billions of cells and stall every room on this server.
+    const lim = this.world.blocks.half + 2;
+    const f = this.fighters[i];
+    f.applyMove(
+      num(m.x, -lim, lim),
+      num(m.y, -64, 512),
+      num(m.z, -lim, lim),
+      num(m.yaw, -1e4, 1e4),
+      num(m.pitch, -Math.PI / 2, Math.PI / 2),
+      !!m.g,
+      !!m.sp,
+      !!m.sn,
+      num(m.vy, -10, 10),
+      !!m.ff,
+      m.fd === undefined ? null : num(m.fd, 0, 400),
+    );
   }
 
   /**
@@ -204,6 +225,12 @@ export class Duel {
       for (let i = 0; i < 2; i++) this.handleActions(i);
     } else {
       this.pendingAttacks[0] = this.pendingAttacks[1] = 0;
+      // Hotbar keys still work during the countdown (the client already shows the new slot).
+      for (let i = 0; i < 2; i++) {
+        const slot = this.pendingSlot[i];
+        if (slot !== null && !this.fighters[i].dead) this.fighters[i].selectSlot(slot);
+        this.pendingSlot[i] = null;
+      }
     }
 
     a.tick();
@@ -442,6 +469,9 @@ export class Duel {
         return;
       case 'inv':
         this.setInventory(i, msg.slots);
+        // Accepted or not, send back the real inventory: the client's copy was frozen while its
+        // inventory screen was open and may have fallen behind (worn armor, a pickup).
+        this.lastInv[i] = '';
         return;
       default:
         return;

@@ -20,6 +20,8 @@ const OP_PONG = 0xa;
 
 /** Refuse absurd frames rather than buffering them; nothing here is near this size. */
 const MAX_MESSAGE = 1 << 20;
+/** Unsent bytes queued for one client before it counts as gone (about 10 s of state). */
+const MAX_BACKLOG = 4 << 20;
 
 type Bytes = Buffer<ArrayBufferLike>;
 
@@ -35,8 +37,16 @@ export class WsConnection {
   constructor(private readonly socket: Socket) {
     socket.on('data', (chunk: Buffer) => this.feed(Buffer.from(chunk)));
     socket.on('close', () => this.finish());
-    socket.on('error', () => this.finish());
-    socket.on('end', () => this.finish());
+    // A peer that vanishes without a close frame (crashed tab, dropped Wi-Fi) only half-closes
+    // the TCP connection; destroy our side too, or the socket and its file handle leak.
+    socket.on('error', () => {
+      this.finish();
+      socket.destroy();
+    });
+    socket.on('end', () => {
+      this.finish();
+      socket.destroy();
+    });
   }
 
   get open(): boolean {
@@ -45,6 +55,13 @@ export class WsConnection {
 
   send(text: string) {
     if (!this.open) return;
+    // A client that stopped reading (its network died silently) would have the server queue
+    // 20 state messages a second for it until the OS gives up minutes later. Cut it off.
+    if (this.socket.writableLength > MAX_BACKLOG) {
+      this.finish();
+      this.socket.destroy();
+      return;
+    }
     this.socket.write(frame(OP_TEXT, Buffer.from(text, 'utf8')));
   }
 
@@ -59,6 +76,8 @@ export class WsConnection {
     }
     this.finish();
     this.socket.end();
+    // Give the close frame a moment to leave, then drop the connection whatever the peer does.
+    setTimeout(() => this.socket.destroy(), 2000).unref();
   }
 
   private finish() {
@@ -68,6 +87,7 @@ export class WsConnection {
   }
 
   private feed(chunk: Bytes) {
+    if (this.closed) return;
     this.buffer = this.buffer.length ? Buffer.concat([this.buffer, chunk]) : chunk;
     // A single TCP chunk can hold several frames, or a fraction of one.
     for (;;) {

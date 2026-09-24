@@ -113,6 +113,19 @@ class Room {
   }
 
   private step() {
+    try {
+      this.stepDuel();
+    } catch (err) {
+      // One broken duel must not take every other room down with it.
+      log(`room ${this.code}: duel crashed — ${(err as Error)?.stack ?? err}`);
+      if (this.timer) clearInterval(this.timer);
+      this.timer = null;
+      this.duel = null;
+      for (const c of this.players) c.send({ t: 'error', message: 'The duel hit an error on the server. Join the room again to play on.' });
+    }
+  }
+
+  private stepDuel() {
     const duel = this.duel;
     if (!duel) return;
     this.tick++;
@@ -129,7 +142,7 @@ class Room {
   }
 
   voteRematch(seat: number) {
-    if (!this.duel) return;
+    if (!this.duel || this.duel.phase !== 'ended') return;
     this.rematchVotes.add(seat);
     if (this.rematchVotes.size >= 2 && this.players.length === 2) {
       this.rematchVotes.clear();
