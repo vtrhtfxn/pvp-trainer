@@ -219,3 +219,31 @@ describe('golden apple', () => {
     expect(speed).toBeLessThan(0.05);
   });
 });
+
+describe('audit regressions', () => {
+  it('a gapple eaten under a totem’s Absorption II keeps its Absorption I for later', async () => {
+    const { World } = await import('../src/game/World');
+    const { Fighter } = await import('../src/game/Fighter');
+    const { kitById } = await import('../src/game/kits');
+    const world = new World(20);
+    const f = new Fighter('player', 'A', world);
+    world.fighters.push(f);
+    f.reset(0.5, 0.5, 0, kitById('neth_pot'));
+    f.addEffect('absorption', 1, 100); // totem
+    f.absorption = 2; // some of it already soaked up
+    f.addEffect('absorption', 0, 2400); // gapple
+    expect(f.effects.get('absorption')?.amplifier).toBe(1);
+    for (let i = 0; i < 120; i++) f.tick();
+    const e = f.effects.get('absorption');
+    expect(e?.amplifier).toBe(0);
+    expect(e!.duration).toBeGreaterThan(2200);
+    expect(f.absorption).toBe(4);
+  });
+
+  it('the arena walls go up forever: nobody leaves above build height', async () => {
+    const { World } = await import('../src/game/World');
+    const world = new World(40);
+    const r = world.move(39.5, 20, 0, 3, 0, 0, 0.3, 1.8);
+    expect(r.x).toBeLessThan(40);
+  });
+});

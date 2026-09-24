@@ -87,8 +87,8 @@ describe('Mace mechanics', () => {
     const r = performAttack(a, b);
     expect(r.hit).toBe(true);
     expect(r.crit).toBe(true);
-    // (6 × 1.5 + 49) raw through Netherite Prot IV.
-    expect(r.damage).toBeCloseTo(13.9, 1);
+    // (6 + 49) × 1.5 = 82.5 raw (the crit multiplies the smash bonus too), through Netherite Prot IV.
+    expect(r.damage).toBeCloseTo(24.9, 1);
     expect(a.fallDistance).toBe(0);
     expect(a.vel.y).toBeGreaterThan(2);
     expect(a.stats.smashes).toBe(1);
