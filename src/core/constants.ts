@@ -83,3 +83,31 @@ export const ARROW_DRAG = 0.99;
 export const ARROW_INACCURACY = 0.0172275;
 /** Arrows stuck in the ground vanish after a minute (1200 ticks). */
 export const ARROW_DESPAWN_TICKS = 1200;
+
+// ---- Thrown items (ThrowableProjectile, ThrownSplashPotion, ThrownExperienceBottle)
+/** Splash potions and XP bottles are thrown 20° above the crosshair (shootFromRotation). */
+export const THROW_PITCH_OFFSET_DEG = 20;
+export const POTION_THROW_SPEED = 0.5;
+export const POTION_GRAVITY = 0.05;
+export const XP_BOTTLE_THROW_SPEED = 0.7;
+export const XP_BOTTLE_GRAVITY = 0.07;
+export const THROWN_DRAG = 0.99;
+/** Splash radius: full strength on a direct hit, fading linearly to nothing 4 blocks out. */
+export const SPLASH_RADIUS = 4;
+
+// ---- Experience orbs and Mending
+export const XP_ORB_GRAVITY = 0.03;
+export const XP_ORB_FOLLOW_RANGE = 8;
+/** Player.takeXpDelay: one orb every 2 ticks. */
+export const XP_PICKUP_DELAY = 2;
+/** Mending repairs 2 durability per experience point. */
+export const MENDING_DURABILITY_PER_XP = 2;
+
+// ---- Fire, totems
+/** Fire Aspect sets the target alight for 4 s per level. */
+export const FIRE_ASPECT_TICKS_PER_LEVEL = 80;
+/** Burning deals 1 damage every 20 ticks (Entity.baseTick), ignoring armor points. */
+export const FIRE_DAMAGE = 1;
+export const TOTEM_REGEN_TICKS = 900; // Regeneration II, 45 s
+export const TOTEM_ABSORPTION_TICKS = 100; // Absorption II, 5 s
+export const TOTEM_FIRE_RES_TICKS = 800; // Fire Resistance, 40 s

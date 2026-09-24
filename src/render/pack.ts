@@ -8,7 +8,8 @@ const urls = import.meta.glob('../assets/pack/**/*.png', { eager: true, query: '
   string
 >;
 
-const images = new Map<string, HTMLImageElement>();
+type PackImage = HTMLImageElement | HTMLCanvasElement;
+const images = new Map<string, PackImage>();
 
 function keyOf(path: string): string {
   return path.replace(/^.*assets\/pack\//, '').replace(/\.png$/, '');
@@ -32,8 +33,19 @@ export async function loadPack(): Promise<void> {
   );
 }
 
-export function packImage(name: string): HTMLImageElement | undefined {
+/** The bundled URL of a pack file, for use in CSS/HTML. */
+export function packUrl(name: string): string | undefined {
+  for (const [path, url] of Object.entries(urls)) if (keyOf(path) === name) return url;
+  return undefined;
+}
+
+export function packImage(name: string): PackImage | undefined {
   return images.get(name);
+}
+
+/** Adds a texture built at runtime (e.g. a tinted potion) under a pack-style name. */
+export function registerPackImage(name: string, img: PackImage) {
+  images.set(name, img);
 }
 
 /** The pixels of a pack texture (for meshing item sprites). */

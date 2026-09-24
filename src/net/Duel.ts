@@ -61,7 +61,7 @@ export class Duel {
     const half = SPAWN_DISTANCE / 2;
     this.fighters[0].reset(0, half, 0, this.kit);
     this.fighters[1].reset(0, -half, Math.PI, this.kit);
-    this.world.clearArrows();
+    this.world.clearEntities();
     for (const f of this.fighters) f.networked = true;
     this.phase = 'countdown';
     this.phaseTicks = 0;
@@ -169,7 +169,7 @@ export class Duel {
     a.tick();
     b.tick();
     pushApart(a, b);
-    this.world.tickArrows();
+    this.world.tickEntities();
     this.collectEvents(out);
     this.record();
 

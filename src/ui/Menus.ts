@@ -309,7 +309,7 @@ export class Menus {
       ['Ctrl', 'Sprint (toggle by default) · or double-tap W'],
       ['Shift', 'Sneak'],
       ['Left Click', 'Attack — full damage every 0.6 s, clicking early resets the cooldown'],
-      ['Right Click (hold)', 'Use: eat, raise the shield, draw the bow, load / fire the crossbow. Main hand first, then off hand'],
+      ['Right Click (hold)', 'Use: eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion or XP bottle. Main hand first, then off hand'],
       ['1 – 9 / Scroll', 'Hotbar (switching items resets the attack cooldown on the next tick)'],
       ['F', 'Swap main hand and off hand'],
       ['E', 'Inventory — drag or click items, shift-click to quick-move, 1–9 / F over a slot to swap'],
@@ -342,6 +342,9 @@ export class Menus {
       h('li', {}, 'Practice difficulty never swings back — use it to drill combos, W-taps and reach. In the Axe kit it keeps its shield up, so you can drill shield disables.'),
       h('li', {}, 'Shield: blocks everything from the front half once it has been up for 0.25 s. You cannot attack while it is raised — lower it first.'),
       h('li', {}, 'An axe hit on a raised shield disables it for 5 s, at any charge.'),
+      h('li', {}, 'NethPot: look straight down to pot — a splash heals less the further from your feet it lands (nothing past 4 blocks). Healing II is 4 hearts at best.'),
+      h('li', {}, 'NethPot: after a totem pops, re-totem fast — slot key + F with a hotbar totem, or E, hover a totem, F.'),
+      h('li', {}, 'P-crit: when a hit knocks you up, let go of sprint and hit on the way down — a crit without jumping.'),
       h(
         'li',
         {},
@@ -472,6 +475,13 @@ export class Menus {
             ['Hits blocked', `${r.player.blocked}`, `${r.bot.blocked}`],
             ['Shields disabled', `${r.player.shieldsDisabled}`, `${r.bot.shieldsDisabled}`],
             ['Attribute swaps', `${r.player.attributeSwaps}`, `${r.bot.attributeSwaps}`],
+          ] as [string, string, string][])
+        : []),
+      ...(r.player.potsThrown + r.bot.potsThrown + r.player.totemsPopped + r.bot.totemsPopped > 0
+        ? ([
+            ['Pots thrown', `${r.player.potsThrown}`, `${r.bot.potsThrown}`],
+            ['Totems popped', `${r.player.totemsPopped}`, `${r.bot.totemsPopped}`],
+            ['XP bottles', `${r.player.xpBottles}`, `${r.bot.xpBottles}`],
           ] as [string, string, string][])
         : []),
       ...(r.player.arrowsShot + r.bot.arrowsShot > 0

@@ -55,7 +55,7 @@ export class Match {
     const half = SPAWN_DISTANCE / 2;
     this.player.reset(0, half, 0, this.kit);
     this.bot.reset(0, -half, Math.PI, this.kit);
-    this.world.clearArrows();
+    this.world.clearEntities();
     this.brain.resetRound();
     this.phase = 'countdown';
     this.phaseTicks = 0;
@@ -115,7 +115,7 @@ export class Match {
     p.tick();
     b.tick();
     pushApart(p, b);
-    this.world.tickArrows();
+    this.world.tickEntities();
 
     this.phaseTicks++;
     if (this.phase === 'countdown' && this.phaseTicks >= COUNTDOWN_TICKS) {

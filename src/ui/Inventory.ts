@@ -1,6 +1,6 @@
 import { INV_SIZE, SLOT_ARMOR, SLOT_OFFHAND, type Fighter } from '../game/Fighter';
-import { ITEMS, stackLore, type ItemStack } from '../game/items';
-import { emptySlotIcon, itemIcon } from '../render/itemIcons';
+import { ITEMS, sameItem, stackLore, stackName, type ItemStack } from '../game/items';
+import { drawDurabilityBar, emptySlotIcon, itemIcon } from '../render/itemIcons';
 
 export interface InventoryCallbacks {
   /** Something moved: resync (online) and play a sound. */
@@ -161,7 +161,7 @@ export class InventoryScreen {
   }
 
   private same(a: ItemStack, b: ItemStack): boolean {
-    return a.id === b.id && !!a.charged === !!b.charged && JSON.stringify(a.ench ?? {}) === JSON.stringify(b.ench ?? {});
+    return sameItem(a, b);
   }
 
   /** Slot.safeInsert / pickup for a left click. */
@@ -338,7 +338,7 @@ export class InventoryScreen {
     for (const s of this.slots) {
       const st = f.getSlot(s.index);
       const empty = s.index >= SLOT_ARMOR && s.index < SLOT_OFFHAND ? EMPTY_ICONS[s.index - SLOT_ARMOR] : s.index === SLOT_OFFHAND ? 'shield' : null;
-      const key = st ? `${st.id}:${st.count}:${st.charged ? 1 : 0}:${st.ench ? 1 : 0}` : `-${empty ?? ''}`;
+      const key = st ? `${st.id}:${st.count}:${st.charged ? 1 : 0}:${st.ench ? 1 : 0}:${st.potion ?? ''}:${st.damage ?? 0}` : `-${empty ?? ''}`;
       s.root.classList.toggle('selected', s.index === f.selected);
       if (key === s.key) continue;
       s.key = key;
@@ -361,6 +361,7 @@ export class InventoryScreen {
     if (st) {
       const icon = itemIcon(st);
       if (icon) ctx.drawImage(icon, 0, 0);
+      drawDurabilityBar(ctx, st, -1, 0);
     } else if (empty) {
       const icon = emptySlotIcon(empty);
       if (icon) {
@@ -379,7 +380,7 @@ export class InventoryScreen {
       this.tooltip.style.display = 'none';
       return;
     }
-    const name = ITEMS[st.id].name;
+    const name = stackName(st);
     const lore = stackLore(st);
     const html = `<b class="${st.ench ? 'ench' : ''}">${name}</b>${lore.map((l) => `<span class="${l.startsWith(' ') ? 'attr' : ''}">${l || '&nbsp;'}</span>`).join('')}`;
     if (this.tooltip.innerHTML !== html) this.tooltip.innerHTML = html;

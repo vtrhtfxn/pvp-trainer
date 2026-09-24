@@ -2,9 +2,21 @@ import * as C from '../core/constants';
 import { STRONG_ATTACK_SCALE } from '../core/constants';
 import { shieldFaces } from '../game/combat';
 import { bowPower, type Fighter } from '../game/Fighter';
-import { ITEMS, type ItemStack } from '../game/items';
-import { itemIcon } from '../render/itemIcons';
-import { packImage } from '../render/pack';
+import { EFFECT_NAMES, ITEMS, formatTicks, type EffectId, type ItemStack } from '../game/items';
+import { drawDurabilityBar, itemIcon } from '../render/itemIcons';
+import { packImage, packUrl } from '../render/pack';
+
+const ROMAN = ['', ' II', ' III', ' IV', ' V'];
+const effectIconCss = new Map<EffectId, string>();
+function effectIcon(id: EffectId): string {
+  let css = effectIconCss.get(id);
+  if (css === undefined) {
+    const url = packUrl(`mob_effect/${id}`);
+    css = url ? ` style="background-image:url(${url})"` : '';
+    effectIconCss.set(id, css);
+  }
+  return css;
+}
 import { makeHudSprites, type HudSprites, type Sprite } from './sprites';
 import type { Settings } from './settings';
 
@@ -56,6 +68,8 @@ export class HUD {
   private readonly oppText: HTMLDivElement;
   private readonly effects: HTMLDivElement;
   private readonly center: HTMLDivElement;
+  private readonly fire: HTMLDivElement;
+  private readonly totem: HTMLDivElement;
   private readonly sprites: HudSprites;
   private scale = 2;
   private dpr = 1;
@@ -89,6 +103,31 @@ export class HUD {
     this.oppText = el('div', 'opp-text', this.opponent);
     this.effects = el('div', 'effects', this.root);
     this.center = el('div', 'center-text', this.root);
+    // ScreenEffectRenderer.renderFire: two sheets of flame over the bottom corners.
+    // Drawn under the rest of the HUD, like vanilla (the hotbar sits on top of the flames).
+    this.fire = el('div', 'fire-overlay', this.root);
+    this.root.prepend(this.fire);
+    const fireUrl = packUrl('block/fire_0');
+    for (const side of ['left', 'right']) {
+      const d = el('div', `fire-sheet ${side}`, this.fire);
+      if (fireUrl) d.style.backgroundImage = `url(${fireUrl})`;
+    }
+    // GameRenderer.displayItemActivation: the totem flies up out of the screen centre.
+    this.totem = el('div', 'totem-pop', this.root);
+  }
+
+  /** Plays the totem-of-undying screen animation. */
+  showTotem() {
+    const icon = itemIcon({ id: 'totem_of_undying', count: 1 });
+    if (!icon) return;
+    if (!this.totem.firstChild) {
+      const img = document.createElement('img');
+      img.src = icon.toDataURL();
+      this.totem.appendChild(img);
+    }
+    this.totem.classList.remove('show');
+    void this.totem.offsetWidth; // restart the CSS animation
+    this.totem.classList.add('show');
   }
 
   setVisible(v: boolean) {
@@ -161,8 +200,11 @@ export class HUD {
       botStatus: string;
       lastReach: number | null;
       now: number;
+      firstPerson: boolean;
     },
   ) {
+    this.fire.style.display = info.firstPerson && player.onFire && !player.dead ? '' : 'none';
+
     // ---- crosshair + attack indicator (Gui.renderCrosshair)
     const charge = player.attackStrengthScale(0);
     const fullAndAiming = info.aimingAtBot && charge >= 1 && player.attackDelay() > 5;
@@ -197,6 +239,11 @@ export class HUD {
         lines.push(`<b>Attributes</b> <span class="kb">${player.attrId ? ITEMS[player.attrId].name : 'Hand'} (swap)</span>`);
       }
     }
+    if (settings.showNextHit && (player.onFire || bot.onFire)) {
+      const t = (f: Fighter) =>
+        f.onFire ? `<span class="${f.effects.has('fire_resistance') ? 'ok' : 'no'}">${(f.fireTicks / 20).toFixed(1)}s</span>` : '<span class="ok">—</span>';
+      lines.push(`<b>Burning</b> ${t(player)} · <b>Bot</b> ${t(bot)}`);
+    }
     if (player.shieldCooldown > 0 || bot.shieldCooldown > 0) {
       const t = (n: number) => (n > 0 ? `<span class="no">${(n / 20).toFixed(1)}s</span>` : '<span class="ok">ready</span>');
       lines.push(`<b>Shield</b> ${t(player.shieldCooldown)} · <b>Bot</b> ${t(bot.shieldCooldown)}`);
@@ -222,10 +269,10 @@ export class HUD {
     // ---- effects (top right)
     const eff: string[] = [];
     for (const [id, e] of player.effects) {
-      const secs = Math.ceil(e.duration / 20);
-      const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
-      const name = id === 'regeneration' ? `Regeneration ${e.amplifier === 1 ? 'II' : 'I'}` : 'Absorption';
-      eff.push(`<div class="effect ${id}"><i></i><span>${name}<br><em>${time}</em></span></div>`);
+      const name = `${EFFECT_NAMES[id]}${ROMAN[e.amplifier] ?? ''}`;
+      // Vanilla blinks the icon through the last 10 seconds.
+      const blink = e.duration <= 200 && Math.floor(e.duration / 10) % 2 === 0 ? ' blink' : '';
+      eff.push(`<div class="effect ${id}${blink}"><i${effectIcon(id)}></i><span>${name}<br><em>${formatTicks(e.duration)}</em></span></div>`);
     }
     const effHtml = eff.join('');
     if (this.effects.innerHTML !== effHtml) this.effects.innerHTML = effHtml;
@@ -238,7 +285,7 @@ export class HUD {
     const abs = Math.ceil(p.absorption);
     const regen = p.effects.has('regeneration');
     const blinking = this.healthBlinkUntil > this.tickCount && Math.floor((this.healthBlinkUntil - this.tickCount) / 3) % 2 === 1;
-    const slotKey = (st: ItemStack | null) => (st ? `${st.id}${st.count}${st.charged ? 'c' : ''}` : '-');
+    const slotKey = (st: ItemStack | null) => (st ? `${st.id}${st.count}${st.charged ? 'c' : ''}${st.potion ?? ''}${st.damage ?? ''}` : '-');
     let bar = slotKey(p.offhand);
     for (let i = 0; i < 9; i++) bar += `,${slotKey(p.inventory[i])}`;
     const key = [
@@ -363,6 +410,7 @@ export class HUD {
       c.fillStyle = 'rgba(255,255,255,0.5)';
       c.fillRect(x, y + top, 16, 16 - top);
     }
+    drawDurabilityBar(c, st, x - 1, y);
     if (st.count > 1) {
       c.font = '7px "Pixelify Sans", monospace';
       c.textAlign = 'right';

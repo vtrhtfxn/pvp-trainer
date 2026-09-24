@@ -43,7 +43,7 @@ Then open http://localhost:5173.
 | Ctrl | Sprint (toggle by default, or double-tap W) |
 | Shift | Sneak |
 | Left click | Attack |
-| Right click (hold) | Use — eat, raise the shield, draw the bow, load / fire the crossbow (main hand first, then off hand) |
+| Right click (hold) | Use — eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion / XP bottle (main hand first, then off hand) |
 | 1–9 / scroll | Hotbar |
 | F | Swap main hand and off hand |
 | E | Inventory |
@@ -130,7 +130,8 @@ when they do not, which is what keeps it playable on integrated graphics.
 | --- | --- |
 | **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV), 5 golden apples | ✅ Playable |
 | **Axe** — Diamond Axe, Diamond Sword, Crossbow, Bow, 6 Arrows, Shield (off hand), Diamond armor (unenchanted) | ✅ Playable (vs bot) |
-| UHC, Diamond Pot, NethPot, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
+| **NethPot** — Netherite Sword (Sharpness V, Fire Aspect II, Unbreaking III, Mending), Netherite armor (Protection IV, Unbreaking III, Mending), 3 totems (one in the off hand), 64 golden apples, 3× Strength II, 3× Speed II, 3× Fire Resistance (8:00), 21× Splash Healing II, 2 stacks of Bottles o' Enchanting | ✅ Playable (vs bot) |
+| UHC, Diamond Pot, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
 
 Online duels use the Sword kit; the inventory screen and F work online too.
 
@@ -193,6 +194,29 @@ duel fighting back. Its nametag reads *Passive*.
   picks up / places / swaps, right click splits, shift-click quick-moves, 1–9 or F over a slot swaps it
   with that hotbar slot or the off hand, and you can drag a stack straight onto another slot. The game
   keeps running while it is open, just like vanilla.
+- **Splash potions** (NethPot): thrown instantly on right click, 20° above the crosshair at 0.5
+  blocks/tick plus your own motion, gravity 0.05. Everyone within 4 blocks of the splash is affected,
+  scaled by 1 − distance / 4 (a direct hit is always full strength), so look straight down to pot
+  yourself. **Healing II** heals round(scale × 8) — 4 hearts at best. **Strength II** +6 attack damage
+  (1:30), **Speed II** +40% speed (1:30), **Fire Resistance** 8:00. Potions don't stack, so every pot
+  has its own slot.
+- **Totem of Undying**: a lethal hit with a totem in either hand (main hand first) uses it instead —
+  1 HP, every effect cleared, then Regeneration II 45 s, Absorption II 5 s, Fire Resistance 40 s.
+  Re-totem with **F** (a hotbar totem) or from the inventory (hover a totem, press F).
+- **Fire Aspect II**: sets the target alight for 8 s. Burning deals 1 damage per second through
+  armor points (Protection still reduces it); Fire Resistance cancels it.
+- **Durability**: armor loses max(1, damage ÷ 4) per piece per hit, swords 1 per hit, axes 2.
+  Unbreaking III skips 75% of weapon wear and 30% of armor wear. Durability bars show in the hotbar
+  and inventory; a piece that reaches zero breaks.
+- **Bottle o' Enchanting + Mending**: a bottle drops 3–11 XP in orbs that fly to the nearest player
+  within 8 blocks (one orb every 2 ticks). Mending spends each orb on a random damaged Mending item you
+  are wearing or holding, at 2 durability per XP.
+- **Netherite**: armor 3/8/6/3, toughness 3 per piece and **0.1 knockback resistance per piece** —
+  a full set takes 40% less knockback, which is why NethPot fights stay close. Netherite Sword: 8 damage.
+- **Crit maths with Strength II**: (8 + 6) × 1.5 + 3 Sharpness = 24 before armor. Against Netherite
+  Prot IV that is 3.4 HP; a full non-crit hit is 2.1 HP.
+- **P-crits** (punish crits): a hit on you while you stand on the ground knocks you up. Let go of
+  sprint and you are falling a few ticks later with your sword charged — a crit with no jump.
 - **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
   `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
   Absorption I for 2 min, 4 hunger and 9.6 saturation.
@@ -222,11 +246,26 @@ In the **Axe** kit it also plays the shield game:
   aim and lead, stops when you close in
 - Practice keeps its shield up at you and never swings — a shield-disable drill
 
+In **NethPot** it plays the pot game:
+
+- throws Strength, Speed and Fire Resistance at the start and re-applies them when they run out
+  (Normal+), fetching them from the inventory — the inventory takes real time to open, and it can't
+  move or attack while it's open
+- pots by looking straight down and backing off, at a health threshold that rises with difficulty
+  (Expert pots at 5.5 hearts, two pots back to back when it's low); lower difficulties aim sloppily
+  and waste some of each pot
+- re-totems after a pop: slot key + F from a hotbar totem on Normal+, through the inventory on Easy,
+  and restocks the hotbar totem and healing pots when it has room
+- mends its armor with XP bottles in the gaps knockback opens, and eats a golden apple for absorption
+  when you are far away
+- goes for jump crits and **P-crits** (Hard 55%, Expert 80% of the times you hit it)
+
 ## Project layout
 
 ```
 src/core      constants (all vanilla values), math, rng
-src/game      Fighter (movement/inventory/items/effects), combat, Arrow, Match (tick order), Game (glue), kits, items
+src/game      Fighter (movement/inventory/items/effects/durability), combat, Arrow, Thrown (potions, XP bottles),
+              XpOrb (mending), Match (tick order), Game (glue), kits, items
 src/ai        BotBrain + difficulty profiles
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
               first-person hands, item meshes from the resource pack, arrows, particles

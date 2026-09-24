@@ -219,6 +219,85 @@ export class Particles {
     }
   }
 
+  /** Splash potion impact (level events 2002/2007): a ring of the potion's colour. */
+  splash(x: number, y: number, z: number, color: number, xp: boolean) {
+    const r = ((color >> 16) & 255) / 255;
+    const g = ((color >> 8) & 255) / 255;
+    const b = (color & 255) / 255;
+    for (let i = 0; i < 70; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 0.05 + Math.random() * 0.15;
+      const shade = 0.75 + Math.random() * 0.25;
+      const life = 0.5 + Math.random() * 0.6;
+      this.stars.spawn({
+        x,
+        y: y + 0.1,
+        z,
+        vx: Math.cos(ang) * sp,
+        vy: 0.02 + Math.random() * 0.12,
+        vz: Math.sin(ang) * sp,
+        r: r * shade,
+        g: g * shade,
+        b: b * shade,
+        size: xp ? 0.07 : 0.1,
+        life,
+        maxLife: life,
+        gravity: 0.004,
+        drag: 0.9,
+        grow: 0,
+      });
+    }
+  }
+
+  /** Totem of Undying: a fountain of green and yellow sparks around the player. */
+  totem(x: number, y: number, z: number) {
+    for (let i = 0; i < 90; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 0.08 + Math.random() * 0.2;
+      const yellow = Math.random() < 0.4;
+      const life = 0.8 + Math.random() * 1.2;
+      this.squares.spawn({
+        x: x + Math.cos(ang) * 0.3,
+        y: y + 0.4 + Math.random() * 1.2,
+        z: z + Math.sin(ang) * 0.3,
+        vx: Math.cos(ang) * sp,
+        vy: 0.15 + Math.random() * 0.3,
+        vz: Math.sin(ang) * sp,
+        r: yellow ? 1 : 0.35 + Math.random() * 0.2,
+        g: yellow ? 0.9 : 0.85 + Math.random() * 0.15,
+        b: yellow ? 0.2 : 0.2,
+        size: 0.06,
+        life,
+        maxLife: life,
+        gravity: 0.01,
+        drag: 0.9,
+        grow: 0,
+      });
+    }
+  }
+
+  /** Ambient potion swirl (LivingEntity.tickEffects): one faint particle in the effect's colour. */
+  swirl(x: number, y: number, z: number, color: number) {
+    const life = 0.8 + Math.random() * 0.4;
+    this.squares.spawn({
+      x: x + (Math.random() - 0.5) * 0.6,
+      y: y + Math.random() * 1.8,
+      z: z + (Math.random() - 0.5) * 0.6,
+      vx: 0,
+      vy: 0.02,
+      vz: 0,
+      r: ((color >> 16) & 255) / 255,
+      g: ((color >> 8) & 255) / 255,
+      b: (color & 255) / 255,
+      size: 0.05,
+      life,
+      maxLife: life,
+      gravity: -0.0005,
+      drag: 0.95,
+      grow: 0,
+    });
+  }
+
   clear() {
     for (const l of [this.stars, this.squares, this.smoke]) l.update(1000);
   }

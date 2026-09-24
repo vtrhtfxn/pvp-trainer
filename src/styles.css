@@ -643,11 +643,91 @@ body {
   display: block;
   clip-path: polygon(50% 100%, 0 40%, 0 15%, 20% 0, 50% 15%, 80% 0, 100% 15%, 100% 40%);
 }
+.effect i[style] {
+  clip-path: none;
+  background-color: transparent;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+}
+.effect.blink i {
+  opacity: 0.35;
+}
 .effect.regeneration i {
-  background: #e35ea6;
+  background-color: #e35ea6;
 }
 .effect.absorption i {
-  background: var(--gold);
+  background-color: var(--gold);
+}
+
+/* Burning, first person: two flame sheets over the bottom corners (fire_0 is 32 frames tall). */
+.fire-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38vh;
+  pointer-events: none;
+  opacity: 0.8;
+}
+.fire-sheet {
+  position: absolute;
+  bottom: -8vh;
+  width: 30vw;
+  height: 100%;
+  background-size: 100% 3200%;
+  image-rendering: pixelated;
+  animation: fire-anim 1.6s steps(32, jump-none) infinite;
+}
+.fire-sheet.left {
+  left: -4vw;
+}
+.fire-sheet.right {
+  right: -4vw;
+  transform: scaleX(-1);
+}
+@keyframes fire-anim {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 100%;
+  }
+}
+
+.totem-pop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  opacity: 0;
+}
+.totem-pop img {
+  display: block;
+  width: 40vmin;
+  height: 40vmin;
+  image-rendering: pixelated;
+  transform: translate(-50%, -50%);
+}
+.totem-pop.show {
+  animation: totem-pop 2s ease-out forwards;
+}
+@keyframes totem-pop {
+  0% {
+    opacity: 1;
+    transform: translateY(40vh) scale(0.3) rotate(0deg);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(-12deg);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-4vh) scale(1.05) rotate(8deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-70vh) scale(0.6) rotate(0deg);
+  }
 }
 .effect em {
   font-style: normal;

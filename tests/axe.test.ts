@@ -25,7 +25,7 @@ function setup(dist = 2) {
 function step(world: World, ...fs: Fighter[]) {
   for (const f of fs) f.snapshot();
   for (const f of fs) f.tick();
-  world.tickArrows();
+  world.tickEntities();
 }
 
 function charge(f: Fighter) {

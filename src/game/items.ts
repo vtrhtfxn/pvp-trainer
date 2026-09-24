@@ -11,11 +11,61 @@ export type ItemId =
   | 'diamond_helmet'
   | 'diamond_chestplate'
   | 'diamond_leggings'
-  | 'diamond_boots';
-export type EffectId = 'regeneration' | 'absorption';
+  | 'diamond_boots'
+  | 'netherite_sword'
+  | 'netherite_helmet'
+  | 'netherite_chestplate'
+  | 'netherite_leggings'
+  | 'netherite_boots'
+  | 'totem_of_undying'
+  | 'splash_potion'
+  | 'experience_bottle';
+export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance';
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow';
+export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw';
+
+/** The splash potions NethPot uses (vanilla potion registry names in the comments). */
+export type PotionId = 'strength' | 'swiftness' | 'fire_resistance' | 'healing';
+
+export interface PotionDef {
+  id: PotionId;
+  name: string;
+  /** Liquid colour (MobEffect colour), tints item/potion_overlay. */
+  color: number;
+  /** A timed effect, or instant health (heals 4 << amplifier at full strength). */
+  effect: EffectId | 'instant_health';
+  amplifier: number;
+  duration: number;
+}
+
+export const POTIONS: Record<PotionId, PotionDef> = {
+  // strong_strength: Strength II, 1:30
+  strength: { id: 'strength', name: 'Strength', color: 0xffc700, effect: 'strength', amplifier: 1, duration: 1800 },
+  // strong_swiftness: Speed II, 1:30
+  swiftness: { id: 'swiftness', name: 'Swiftness', color: 0x33ebff, effect: 'speed', amplifier: 1, duration: 1800 },
+  // long_fire_resistance: Fire Resistance, 8:00
+  fire_resistance: { id: 'fire_resistance', name: 'Fire Resistance', color: 0xff9900, effect: 'fire_resistance', amplifier: 0, duration: 9600 },
+  // strong_healing: Instant Health II, 8 HP
+  healing: { id: 'healing', name: 'Healing', color: 0xf82423, effect: 'instant_health', amplifier: 1, duration: 1 },
+};
+
+/** MobEffect colours (potion swirls). */
+export const EFFECT_COLORS: Record<EffectId, number> = {
+  regeneration: 0xcd5cab,
+  absorption: 0x2552a5,
+  strength: 0xffc700,
+  speed: 0x33ebff,
+  fire_resistance: 0xff9900,
+};
+
+export const EFFECT_NAMES: Record<EffectId, string> = {
+  regeneration: 'Regeneration',
+  absorption: 'Absorption',
+  strength: 'Strength',
+  speed: 'Speed',
+  fire_resistance: 'Fire Resistance',
+};
 
 /** Armor slot index: 0 head, 1 chest, 2 legs, 3 feet. */
 export type ArmorSlot = 0 | 1 | 2 | 3;
@@ -54,6 +104,10 @@ export interface ItemDef {
   disablesShield?: boolean;
   /** Rendered as a tool held diagonally (item/handheld) rather than a flat item. */
   handheld?: boolean;
+  /** Durability. Missing = unbreakable. */
+  maxDamage?: number;
+  /** Durability lost per entity hit (swords 1, axes 2). */
+  hitCost?: number;
   food?: FoodProps;
   armor?: ArmorProps;
 }
@@ -62,6 +116,9 @@ export interface ItemDef {
 export interface Enchants {
   sharpness?: number;
   protection?: number;
+  unbreaking?: number;
+  fireAspect?: number;
+  mending?: number;
 }
 
 export interface ItemStack {
@@ -70,16 +127,21 @@ export interface ItemStack {
   ench?: Enchants;
   /** Crossbow: loaded with an arrow. */
   charged?: boolean;
+  /** Splash potion contents. */
+  potion?: PotionId;
+  /** Durability used up (ItemStack damage value). */
+  damage?: number;
 }
 
 const MELEE_FIST = { attackDamage: FIST_DAMAGE, attackSpeed: FIST_ATTACK_SPEED };
 
-function armor(id: ItemId, name: string, slot: ArmorSlot, points: number): ItemDef {
-  return { id, name, maxStack: 1, ...MELEE_FIST, use: 'none', armor: { slot, points, toughness: 2, knockbackResistance: 0 } };
+function armor(id: ItemId, name: string, slot: ArmorSlot, points: number, maxDamage: number, toughness = 2, knockbackResistance = 0): ItemDef {
+  return { id, name, maxStack: 1, ...MELEE_FIST, use: 'none', maxDamage, armor: { slot, points, toughness, knockbackResistance } };
 }
 
 export const ITEMS: Record<ItemId, ItemDef> = {
-  diamond_sword: { id: 'diamond_sword', name: 'Diamond Sword', maxStack: 1, attackDamage: 7, attackSpeed: 1.6, use: 'none', handheld: true },
+  diamond_sword: { id: 'diamond_sword', name: 'Diamond Sword', maxStack: 1, attackDamage: 7, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 1561, hitCost: 1 },
+  netherite_sword: { id: 'netherite_sword', name: 'Netherite Sword', maxStack: 1, attackDamage: 8, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 2031, hitCost: 1 },
   diamond_axe: {
     id: 'diamond_axe',
     name: 'Diamond Axe',
@@ -89,6 +151,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     use: 'none',
     handheld: true,
     disablesShield: true,
+    maxDamage: 1561,
+    hitCost: 2,
   },
   golden_apple: {
     id: 'golden_apple',
@@ -111,10 +175,18 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   bow: { id: 'bow', name: 'Bow', maxStack: 1, ...MELEE_FIST, use: 'bow' },
   crossbow: { id: 'crossbow', name: 'Crossbow', maxStack: 1, ...MELEE_FIST, use: 'crossbow' },
   arrow: { id: 'arrow', name: 'Arrow', maxStack: 64, ...MELEE_FIST, use: 'none' },
-  diamond_helmet: armor('diamond_helmet', 'Diamond Helmet', 0, 3),
-  diamond_chestplate: armor('diamond_chestplate', 'Diamond Chestplate', 1, 8),
-  diamond_leggings: armor('diamond_leggings', 'Diamond Leggings', 2, 6),
-  diamond_boots: armor('diamond_boots', 'Diamond Boots', 3, 3),
+  diamond_helmet: armor('diamond_helmet', 'Diamond Helmet', 0, 3, 363),
+  diamond_chestplate: armor('diamond_chestplate', 'Diamond Chestplate', 1, 8, 528),
+  diamond_leggings: armor('diamond_leggings', 'Diamond Leggings', 2, 6, 495),
+  diamond_boots: armor('diamond_boots', 'Diamond Boots', 3, 3, 429),
+  // Netherite: +1 toughness over diamond and 0.1 knockback resistance per piece (40% for a set).
+  netherite_helmet: armor('netherite_helmet', 'Netherite Helmet', 0, 3, 407, 3, 0.1),
+  netherite_chestplate: armor('netherite_chestplate', 'Netherite Chestplate', 1, 8, 592, 3, 0.1),
+  netherite_leggings: armor('netherite_leggings', 'Netherite Leggings', 2, 6, 555, 3, 0.1),
+  netherite_boots: armor('netherite_boots', 'Netherite Boots', 3, 3, 481, 3, 0.1),
+  totem_of_undying: { id: 'totem_of_undying', name: 'Totem of Undying', maxStack: 1, ...MELEE_FIST, use: 'none' },
+  splash_potion: { id: 'splash_potion', name: 'Splash Potion', maxStack: 1, ...MELEE_FIST, use: 'throw' },
+  experience_bottle: { id: 'experience_bottle', name: "Bottle o' Enchanting", maxStack: 64, ...MELEE_FIST, use: 'throw' },
 };
 
 export const FIST: ItemDef = { id: 'arrow', name: 'Hand', maxStack: 0, ...MELEE_FIST, use: 'none' };
@@ -129,21 +201,70 @@ export function sharpnessBonus(level: number): number {
 }
 
 export function isEnchanted(stack: ItemStack | null | undefined): boolean {
+  if (stack?.id === 'experience_bottle') return true; // always glints
   const e = stack?.ench;
-  return !!e && ((e.sharpness ?? 0) > 0 || (e.protection ?? 0) > 0);
+  if (!e) return false;
+  for (const k in e) if ((e[k as keyof Enchants] ?? 0) > 0) return true;
+  return false;
 }
 
 export function cloneStack(s: ItemStack | null | undefined): ItemStack | null {
   return s ? { ...s, ench: s.ench ? { ...s.ench } : undefined } : null;
 }
 
+/** ItemStack.isSameItemSameComponents: the stacks could merge. */
+export function sameItem(a: ItemStack, b: ItemStack): boolean {
+  return (
+    a.id === b.id &&
+    !!a.charged === !!b.charged &&
+    a.potion === b.potion &&
+    (a.damage ?? 0) === (b.damage ?? 0) &&
+    JSON.stringify(a.ench ?? {}) === JSON.stringify(b.ench ?? {})
+  );
+}
+
+/** Display name, e.g. "Splash Potion of Healing". */
+export function stackName(s: ItemStack): string {
+  if (s.id === 'splash_potion' && s.potion) return `Splash Potion of ${POTIONS[s.potion].name}`;
+  return ITEMS[s.id].name;
+}
+
+/** Durability left as 0..1, or null for items without durability (or undamaged ones). */
+export function durabilityFraction(s: ItemStack | null | undefined): number | null {
+  const max = s ? ITEMS[s.id].maxDamage : undefined;
+  if (!s || !max || !s.damage) return null;
+  return Math.max(0, 1 - s.damage / max);
+}
+
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
+const roman = (n: number) => ROMAN[n] ?? String(n);
+
+export function formatTicks(t: number): string {
+  const sec = Math.max(0, Math.ceil(t / 20));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
 /** Tooltip lines under the item name. */
 export function stackLore(s: ItemStack): string[] {
   const out: string[] = [];
-  const roman = ['', 'I', 'II', 'III', 'IV', 'V'];
-  if (s.ench?.sharpness) out.push(`Sharpness ${roman[s.ench.sharpness] ?? s.ench.sharpness}`);
-  if (s.ench?.protection) out.push(`Protection ${roman[s.ench.protection] ?? s.ench.protection}`);
+  const e = s.ench;
+  if (e?.sharpness) out.push(`Sharpness ${roman(e.sharpness)}`);
+  if (e?.protection) out.push(`Protection ${roman(e.protection)}`);
+  if (e?.fireAspect) out.push(`Fire Aspect ${roman(e.fireAspect)}`);
+  if (e?.unbreaking) out.push(`Unbreaking ${roman(e.unbreaking)}`);
+  if (e?.mending) out.push('Mending');
   if (s.charged) out.push('Projectile: [Arrow]');
+  if (s.potion) {
+    const p = POTIONS[s.potion];
+    const lvl = p.amplifier > 0 ? ` ${roman(p.amplifier + 1)}` : '';
+    if (p.effect === 'instant_health') out.push(`Instant Health${lvl}`);
+    else out.push(`${EFFECT_NAMES[p.effect]}${lvl} (${formatTicks(p.duration)})`);
+    if (p.effect === 'strength' || p.effect === 'speed') {
+      out.push('');
+      out.push('When Applied:');
+      out.push(p.effect === 'strength' ? ` +${3 * (p.amplifier + 1)} Attack Damage` : ` +${20 * (p.amplifier + 1)}% Speed`);
+    }
+  }
   const def = ITEMS[s.id];
   if (def.handheld) {
     out.push('');
@@ -157,7 +278,9 @@ export function stackLore(s: ItemStack): string[] {
     out.push(`When on ${['Head', 'Body', 'Legs', 'Feet'][def.armor.slot]}:`);
     out.push(` +${def.armor.points} Armor`);
     out.push(` +${def.armor.toughness} Armor Toughness`);
+    if (def.armor.knockbackResistance) out.push(` +${Math.round(def.armor.knockbackResistance * 10)} Knockback Resistance`);
   }
+  if (def.maxDamage && s.damage) out.push(`Durability: ${def.maxDamage - s.damage} / ${def.maxDamage}`);
   return out;
 }
 

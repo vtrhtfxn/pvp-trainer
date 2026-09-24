@@ -1,11 +1,52 @@
 import type { ItemStack } from '../game/items';
-import { isEnchanted } from '../game/items';
-import { packImage } from './pack';
+import { POTIONS, durabilityFraction, isEnchanted, type PotionId } from '../game/items';
+import { packImage, registerPackImage } from './pack';
 
 /** Pack texture shown for a stack in the GUI (and meshed for the hand). */
-export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged'>): string {
+export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>): string {
   if (s.id === 'crossbow') return s.charged ? 'item/crossbow_arrow' : 'item/crossbow_standby';
+  if (s.id === 'splash_potion') return potionTexture(s.potion ?? 'healing');
   return `item/${s.id}`;
+}
+
+/**
+ * Splash potions are two layers in vanilla (item/splash_potion.json): the liquid overlay tinted
+ * with the potion colour, under the bottle. They are baked into one texture per potion and
+ * registered with the pack, so icons, hand meshes and thrown sprites all share it.
+ */
+export function potionTexture(potion: PotionId): string {
+  const name = `item/splash_potion_${potion}`;
+  if (packImage(name)) return name;
+  const bottle = packImage('item/splash_potion');
+  const overlay = packImage('item/potion_overlay');
+  if (!bottle || !overlay) return 'item/splash_potion';
+  const c = document.createElement('canvas');
+  c.width = bottle.width;
+  c.height = bottle.height;
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(overlay, 0, 0);
+  // Multiply the (white) overlay by the colour, keeping its alpha.
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = `#${POTIONS[potion].color.toString(16).padStart(6, '0')}`;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(overlay, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(bottle, 0, 0);
+  registerPackImage(name, c);
+  return name;
+}
+
+/** ItemRenderer's durability bar: 13 px, green → red, under the item. */
+export function drawDurabilityBar(ctx: CanvasRenderingContext2D, st: ItemStack, x: number, y: number) {
+  const f = durabilityFraction(st);
+  if (f === null) return;
+  const w = Math.round(13 * f);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x + 2, y + 13, 13, 2);
+  ctx.fillStyle = `hsl(${Math.round(f * 120)}, 100%, 50%)`;
+  ctx.fillRect(x + 2, y + 13, w, 1);
 }
 
 const cache = new Map<string, HTMLCanvasElement>();
@@ -72,6 +113,6 @@ export function itemIcon(s: ItemStack): HTMLCanvasElement | undefined {
 }
 
 /** Empty-slot outline for armor and the off hand. */
-export function emptySlotIcon(kind: 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'shield'): HTMLImageElement | undefined {
+export function emptySlotIcon(kind: 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'shield'): CanvasImageSource | undefined {
   return packImage(`item/empty_armor_slot_${kind}`);
 }

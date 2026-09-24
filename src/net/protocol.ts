@@ -8,9 +8,9 @@
  * like ServerboundInteractPacket.
  */
 
-import { ITEMS, type ItemId, type ItemStack } from '../game/items';
+import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -28,12 +28,27 @@ export const INTERP_TICKS = 2;
 /** Never rewind a target further than this; beyond it, lag compensation becomes abuse. */
 export const MAX_REWIND_TICKS = 10;
 
-/** An item stack on the wire; `e` packs Sharpness (bits 0–2), Protection (3–5) and crossbow charge (6). */
-export type Slot = readonly [id: string, count: number, e?: number] | null;
+/**
+ * An item stack on the wire. `e` packs Sharpness (bits 0–2), Protection (3–5), crossbow charge
+ * (6), Unbreaking (7–8), Fire Aspect (9–10), Mending (11) and the potion (12–14, index + 1);
+ * `d` is the durability used.
+ */
+export type Slot = readonly [id: string, count: number, e?: number, d?: number] | null;
+
+const POTION_IDS = Object.keys(POTIONS) as PotionId[];
 
 export function toSlot(s: ItemStack | null): Slot {
   if (!s) return null;
-  const e = (s.ench?.sharpness ?? 0) | ((s.ench?.protection ?? 0) << 3) | (s.charged ? 64 : 0);
+  const n = s.ench ?? {};
+  const e =
+    (n.sharpness ?? 0) |
+    ((n.protection ?? 0) << 3) |
+    (s.charged ? 64 : 0) |
+    ((n.unbreaking ?? 0) << 7) |
+    ((n.fireAspect ?? 0) << 9) |
+    ((n.mending ?? 0) << 11) |
+    ((s.potion ? POTION_IDS.indexOf(s.potion) + 1 : 0) << 12);
+  if (s.damage) return [s.id, s.count, e, s.damage];
   return e ? [s.id, s.count, e] : [s.id, s.count];
 }
 
@@ -42,19 +57,33 @@ export function fromSlot(slot: Slot | undefined): ItemStack | null {
   const count = Math.max(1, Math.min(64, Number(slot[1]) | 0));
   const e = Number(slot[2]) | 0;
   const out: ItemStack = { id: slot[0] as ItemId, count };
-  const sharpness = e & 7;
-  const protection = (e >> 3) & 7;
-  if (sharpness || protection) out.ench = { ...(sharpness ? { sharpness } : {}), ...(protection ? { protection } : {}) };
+  const ench: Enchants = {};
+  const put = (k: keyof Enchants, v: number) => {
+    if (v) ench[k] = v;
+  };
+  put('sharpness', e & 7);
+  put('protection', (e >> 3) & 7);
+  put('unbreaking', (e >> 7) & 3);
+  put('fireAspect', (e >> 9) & 3);
+  put('mending', (e >> 11) & 1);
+  if (Object.keys(ench).length) out.ench = ench;
   if (e & 64) out.charged = true;
+  const potion = POTION_IDS[((e >> 12) & 7) - 1];
+  if (potion) out.potion = potion;
+  const d = Number(slot[3]) | 0;
+  if (d > 0) out.damage = d;
   return out;
 }
 
-/** Item totals keyed by id + enchantments: an inventory rearrangement must not change these. */
+/**
+ * Item totals keyed by id, enchantments, potion and durability: an inventory rearrangement
+ * must not change these (crossbow charge aside).
+ */
 export function itemTotals(slots: readonly Slot[]): Map<string, number> {
   const m = new Map<string, number>();
   for (const s of slots) {
     if (!s) continue;
-    const key = `${s[0]}:${(Number(s[2]) | 0) & 63}`;
+    const key = `${s[0]}:${(Number(s[2]) | 0) & ~64}:${Number(s[3]) | 0}`;
     m.set(key, (m.get(key) ?? 0) + (Number(s[1]) | 0));
   }
   return m;
