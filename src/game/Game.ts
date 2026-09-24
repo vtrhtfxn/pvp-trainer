@@ -80,11 +80,11 @@ export class Game {
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view = new SceneRenderer(canvas, this.match.world, assets);
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword') =>
+    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword' | 'end_crystal') =>
       itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
-      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : undefined;
+      const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : kit.icon === 'crystal' ? packIcon('end_crystal') : undefined;
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
     this.hud = new HUD(uiRoot);
@@ -634,6 +634,15 @@ export class Game {
         const at = { x: e.x + 0.5, y: e.y + 0.5, z: e.z + 0.5 };
         this.sound.block(at, blockSound(e.block), e.type === 'blockBreak');
         if (e.type === 'blockBreak') fx.blockBreak(e.x, e.y, e.z, BLOCK_COLORS[e.block] ?? 0x888888);
+      } else if (e.type === 'explosion') {
+        this.view.explosions.onEvent(e);
+        this.sound.explosion(e, e.power);
+      } else if (e.type === 'crystalPlace') {
+        this.sound.crystalPlace(e);
+      } else if (e.type === 'anchorCharge') {
+        this.sound.anchorCharge({ x: e.x + 0.5, y: e.y + 0.5, z: e.z + 0.5 }, e.charge);
+      } else if (e.type === 'pearl') {
+        fx.portal(e.x, e.y, e.z);
       } else if (e.type === 'blockConvert') {
         const at = { x: e.x + 0.5, y: e.y + 0.5, z: e.z + 0.5 };
         if (e.from === B.COBWEB) fx.blockBreak(e.x, e.y, e.z, BLOCK_COLORS[B.COBWEB]);
@@ -730,7 +739,15 @@ export class Game {
           this.sound.hurt(f.pos, isPlayer && live);
           break;
         case 'throw':
-          this.sound.throwItem(f.pos);
+          if (e.kind === 'pearl') this.sound.pearl(f.pos, false);
+          else this.sound.throwItem(f.pos);
+          break;
+        case 'pearlLand':
+          this.sound.pearl(f.pos, true);
+          fx.portal(f.pos.x, f.pos.y, f.pos.z);
+          break;
+        case 'explosionHit':
+          if (!isPlayer && live && this.settings.hitFeedback && e.damage > 0) this.hud.showFeedback(`BLAST ${(e.damage / 2).toFixed(1)} ❤`, 'crit');
           break;
         case 'splashed':
           if (isPlayer && live && this.settings.hitFeedback && !e.own) this.hud.showFeedback(`SPLASHED · ${Math.round(e.scale * 100)}%`, 'weak');

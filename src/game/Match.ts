@@ -1,7 +1,8 @@
 import { BotBrain } from '../ai/BotBrain';
 import type { BotProfile } from '../ai/difficulty';
 import { Rng } from '../core/rng';
-import { performAttack, pushApart, type AttackOutcome } from './combat';
+import { performAttack, pushApart, rayDistanceToTarget, type AttackOutcome } from './combat';
+import { attackCrystal, crosshairCrystal } from './crystals';
 import { Fighter } from './Fighter';
 import type { KitDef } from './kits';
 import { World } from './World';
@@ -15,7 +16,7 @@ export const SPAWN_DISTANCE = 12;
  * the same order as a Minecraft client/server tick (inputs & clicks first, then entity ticks).
  */
 export class Match {
-  readonly world = new World(24);
+  readonly world: World;
   readonly player: Fighter;
   readonly bot: Fighter;
   readonly brain: BotBrain;
@@ -43,15 +44,23 @@ export class Match {
     seed?: number,
   ) {
     this.rng = new Rng(seed);
+    this.world = new World(undefined, kit.floorDepth ?? 0);
     this.player = new Fighter('player', 'You', this.world);
     this.bot = new Fighter('bot', `${profile.name} Bot`, this.world);
     this.world.fighters.push(this.player, this.bot);
     this.world.damageMultiplier = kit.damageMultiplier ?? 1;
     this.world.shieldStuns = !!kit.shieldStuns;
     this.world.rng = new Rng(this.rng.int(0, 2 ** 30));
-    this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () =>
-      performAttack(this.bot, this.player),
-    );
+    this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () => {
+      // Like the player's clicks: an end crystal nearer than the opponent takes the hit.
+      const cr = crosshairCrystal(this.bot);
+      const t = rayDistanceToTarget(this.bot, this.player);
+      if (cr && (t < 0 || cr.t < t)) {
+        attackCrystal(this.bot, cr.crystal);
+        return { hit: false, reach: -1, crit: false, sprint: false, scale: 1, damage: 0, blocked: false, disabled: false, swap: false };
+      }
+      return performAttack(this.bot, this.player);
+    });
     this.reset();
   }
 
@@ -159,6 +168,14 @@ export class Match {
       let mined = false;
       while (this.queuedClicks > 0) {
         this.queuedClicks--;
+        // The crosshair picks whatever is nearest: an end crystal in front of the opponent
+        // gets hit (and blows up) instead of them.
+        const cr = crosshairCrystal(p);
+        const botT = rayDistanceToTarget(p, this.bot);
+        if (cr && (botT < 0 || cr.t < botT)) {
+          attackCrystal(p, cr.crystal);
+          continue;
+        }
         if (!mined && p.tickMining(true, true)) mined = true;
         else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot);
       }

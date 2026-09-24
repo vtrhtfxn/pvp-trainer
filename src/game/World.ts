@@ -3,6 +3,7 @@ import { Rng } from '../core/rng';
 import { Arrow } from './Arrow';
 import { Blocks, type CollideResult } from './Blocks';
 import type { DroppedItem } from './DroppedItem';
+import type { EndCrystal } from './EndCrystal';
 import type { Fighter } from './Fighter';
 import type { Thrown } from './Thrown';
 import { XpOrb, orbSize } from './XpOrb';
@@ -13,10 +14,17 @@ export type WorldEvent =
   | { type: 'blockPlace'; x: number; y: number; z: number; block: number }
   | { type: 'blockBreak'; x: number; y: number; z: number; block: number }
   /** Water and lava meeting (hiss + smoke), or water washing a cobweb away. */
-  | { type: 'blockConvert'; x: number; y: number; z: number; from: number; to: number };
+  | { type: 'blockConvert'; x: number; y: number; z: number; from: number; to: number }
+  | { type: 'explosion'; x: number; y: number; z: number; power: number }
+  | { type: 'crystalPlace'; x: number; y: number; z: number }
+  | { type: 'anchorCharge'; x: number; y: number; z: number; charge: number }
+  | { type: 'pearl'; x: number; y: number; z: number };
 
-/** UHC build limit: blocks can be placed in the 12 layers above the floor. */
-export const BUILD_HEIGHT = 12;
+/** Build limit: blocks can be placed in the 16 layers above the floor. */
+export const BUILD_HEIGHT = 16;
+
+/** Arena half-size: the fighting area is 2 × ARENA_HALF blocks square. */
+export const ARENA_HALF = 40;
 
 export interface MoveResult {
   x: number;
@@ -36,6 +44,7 @@ export class World {
   thrown: Thrown[] = [];
   orbs: XpOrb[] = [];
   items: DroppedItem[] = [];
+  crystals: EndCrystal[] = [];
   readonly blocks: Blocks;
   /** Drained by the game each frame; capped so headless simulations never grow it forever. */
   events: WorldEvent[] = [];
@@ -44,8 +53,12 @@ export class World {
   damageMultiplier = 1;
   /** mcpvp.club "stuns": an axe disabling a shield clears the defender's hurt immunity. */
   shieldStuns = false;
-  constructor(readonly half = 24) {
-    this.blocks = new Blocks(half, BUILD_HEIGHT);
+  constructor(
+    readonly half = ARENA_HALF,
+    /** Layers of breakable ground (Crystal); 0 = the usual unbreakable floor. */
+    floorDepth = 0,
+  ) {
+    this.blocks = new Blocks(half, BUILD_HEIGHT, floorDepth);
     this.blocks.onChange = (x, y, z, from, to) => this.emit({ type: 'blockConvert', x, y, z, from, to });
   }
 
@@ -104,6 +117,10 @@ export class World {
       for (const it of this.items) it.tick(this);
       this.items = this.items.filter((i) => !i.removed);
     }
+    if (this.crystals.length) {
+      for (const c of this.crystals) c.age++;
+      this.crystals = this.crystals.filter((c) => !c.removed);
+    }
     if (this.arrows.length) {
       for (const a of this.arrows) a.tick(this);
       this.arrows = this.arrows.filter((a) => !a.removed);
@@ -124,6 +141,7 @@ export class World {
     this.thrown.length = 0;
     this.orbs.length = 0;
     this.items.length = 0;
+    this.crystals.length = 0;
     this.events.length = 0;
     this.blocks.clear();
   }

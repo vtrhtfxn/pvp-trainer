@@ -30,7 +30,7 @@ export interface DuelEvent {
  * resolves through vanilla's cooldown, reach, crit, sprint-knockback and i-frame rules.
  */
 export class Duel {
-  readonly world = new World(24);
+  readonly world = new World();
   readonly kit = kitById('sword');
   readonly fighters: [Fighter, Fighter];
   phase: NetPhase = 'lobby';

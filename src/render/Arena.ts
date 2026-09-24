@@ -9,6 +9,8 @@ export const SKY_HORIZON = new THREE.Color('#c4dcff');
 /** Builds the arena: grass floor, stone-brick walls with glowstone pillars, trees, sky and clouds. */
 export class Arena {
   readonly group = new THREE.Group();
+  /** The grass inside the walls; hidden when the kit brings its own diggable ground. */
+  readonly floor: THREE.Group;
   private sky: THREE.Mesh;
   private sun: THREE.Mesh;
   private clouds: THREE.Mesh;
@@ -20,7 +22,12 @@ export class Arena {
     const H = world.half; // interior spans [-H, H)
     const R = H + 22;
 
-    for (let x = -R; x < R; x++) for (let z = -R; z < R; z++) v.set(x, -1, z, 'grass');
+    const inner = new Voxels();
+    for (let x = -R; x < R; x++)
+      for (let z = -R; z < R; z++) {
+        if (x >= -H && x < H && z >= -H && z < H) inner.set(x, -1, z, 'grass');
+        else v.set(x, -1, z, 'grass');
+      }
 
     const wallBlock = (): BlockId => {
       const r = rng.next();
@@ -80,6 +87,8 @@ export class Arena {
     }
 
     this.group.add(meshVoxels(v));
+    this.floor = meshVoxels(inner);
+    this.group.add(this.floor);
 
     // Sky dome
     const skyMat = new THREE.ShaderMaterial({

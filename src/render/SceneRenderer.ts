@@ -6,6 +6,7 @@ import type { World } from '../game/World';
 import { Arena, SKY_HORIZON } from './Arena';
 import { ArrowView } from './Arrows';
 import { BlocksView } from './BlocksView';
+import { CrystalView, ExplosionView } from './CrystalView';
 import { FireView } from './FireView';
 import { ThrownView } from './ThrownView';
 import type { Assets } from './assets';
@@ -52,6 +53,8 @@ export class SceneRenderer {
   readonly arrows = new ArrowView();
   readonly thrown = new ThrownView();
   readonly blocks = new BlocksView();
+  readonly crystals = new CrystalView();
+  readonly explosions = new ExplosionView();
   private readonly playerFire = new FireView();
   private readonly botFire = new FireView();
   // Inventory-screen player preview: its own tiny scene, rendered off-screen.
@@ -109,7 +112,7 @@ export class SceneRenderer {
     this.scene.add(this.nametag.sprite);
     this.scene.add(this.hitboxes.group);
     this.firstPerson = new FirstPersonView(assets, glintMat);
-    this.scene.add(this.arrows.group, this.thrown.group, this.playerFire.group, this.botFire.group, this.blocks.group);
+    this.scene.add(this.arrows.group, this.thrown.group, this.playerFire.group, this.botFire.group, this.blocks.group, this.crystals.group, this.explosions.group);
 
     this.previewModel = new PlayerModel(assets, glintMat);
     this.previewModel.shadow.visible = false;
@@ -331,6 +334,10 @@ export class SceneRenderer {
     this.arrows.update(player.world.arrows, alpha);
     this.thrown.update(player.world.thrown, player.world.orbs, alpha, time, player.world.items);
     this.blocks.update(player.world.blocks, player.world.fighters, player, this.cameraMode !== 'orbit', time);
+    // Crystal brings its own diggable ground; every other kit stands on the arena's grass.
+    this.arena.floor.visible = player.world.blocks.depth === 0;
+    this.crystals.update(player.world.crystals, alpha);
+    this.explosions.update(dt);
     this.playerFire.update(player, alpha, this.camera, time, !firstPerson);
     this.botFire.update(bot, alpha, this.camera, time, true);
     this.particles.setViewport(this.renderer.domElement.height, this.camera.fov);

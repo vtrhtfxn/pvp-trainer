@@ -5,7 +5,8 @@ import { FIST, ITEMS, cloneStack, defOf, type EffectId, type ItemDef, type ItemI
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
 import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks';
 import { DroppedItem } from './DroppedItem';
-import { burn, fallHurt, lavaHurt } from './combat';
+import { burn, fallHurt, hurt, lavaHurt } from './combat';
+import { canPlaceCrystal, detonateAnchor, placeCrystal } from './crystals';
 import { Thrown } from './Thrown';
 import type { World } from './World';
 
@@ -58,6 +59,12 @@ export interface FighterStats {
   xpBottles: number;
   /** Durability Mending restored. */
   repaired: number;
+  crystalsPlaced: number;
+  crystalsBroken: number;
+  anchorsBlown: number;
+  pearlsThrown: number;
+  /** Damage your crystals and anchors did to the other player. */
+  explosionDamage: number;
 }
 
 export type FighterEvent =
@@ -95,13 +102,15 @@ export type FighterEvent =
   | { type: 'arrowHit'; target: Fighter; damage: number; crit: boolean }
   | { type: 'pickup' }
   | { type: 'swapHands' }
-  | { type: 'throw'; kind: 'potion' | 'xp' }
+  | { type: 'throw'; kind: 'potion' | 'xp' | 'pearl' }
   /** A splash potion's effect reached you (`own`: you threw it). */
   | { type: 'splashed'; potion: PotionId; scale: number; own: boolean }
   | { type: 'totem' }
   | { type: 'itemBreak'; id: ItemId }
   | { type: 'xpPickup'; value: number }
   | { type: 'bucket'; fluid: number; fill: boolean }
+  | { type: 'explosionHit'; damage: number }
+  | { type: 'pearlLand' }
   /** A mining swing (the block-hit tick sound). */
   | { type: 'mineHit'; block: number }
   /** `attacker` is null for damage without a source entity (burning). */
@@ -131,6 +140,11 @@ export function newStats(): FighterStats {
     totemsPopped: 0,
     xpBottles: 0,
     repaired: 0,
+    crystalsPlaced: 0,
+    crystalsBroken: 0,
+    anchorsBlown: 0,
+    pearlsThrown: 0,
+    explosionDamage: 0,
   };
 }
 
@@ -301,7 +315,7 @@ export class Fighter {
   mineProgress = 0;
   private destroyDelay = 0;
 
-  armor: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, knockbackResistance: 0 };
+  armor: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, blastEpf: 0, fallEpf: 0, knockbackResistance: 0, explosionKnockbackResistance: 0 };
 
   // Animation state
   walkDist = 0;
@@ -642,21 +656,28 @@ export class Fighter {
 
   /** Player.getProjectile: off hand first, then main hand, then the inventory in order. */
   private findAmmo(): number {
-    if (this.offhand?.id === 'arrow') return SLOT_OFFHAND;
-    if (this.heldStack()?.id === 'arrow') return this.selected;
-    for (let i = 0; i < INV_SIZE; i++) if (this.inventory[i]?.id === 'arrow') return i;
+    const isAmmo = (s: ItemStack | null) => s?.id === 'arrow' || s?.id === 'tipped_arrow';
+    if (isAmmo(this.offhand)) return SLOT_OFFHAND;
+    if (isAmmo(this.heldStack())) return this.selected;
+    for (let i = 0; i < INV_SIZE; i++) if (isAmmo(this.inventory[i])) return i;
     return -1;
   }
   hasAmmo(): boolean {
     return this.findAmmo() >= 0;
   }
-  private consumeAmmo(): boolean {
+  /** Uses up one arrow; returns it (with its potion, for tipped arrows) or null if there is none. */
+  private consumeAmmo(): { potion: PotionId | undefined } | null {
     const i = this.findAmmo();
-    if (i < 0) return false;
+    if (i < 0) return null;
     const s = this.getSlot(i)!;
+    const potion = s.potion;
     s.count--;
     if (s.count <= 0) this.setSlot(i, null);
-    return true;
+    return { potion };
+  }
+  /** CrossbowItem.getChargeDuration: 25 ticks, 5 fewer per level of Quick Charge. */
+  crossbowChargeTicks(s: ItemStack | null): number {
+    return Math.max(0, C.CROSSBOW_CHARGE_TICKS - 5 * (s?.ench?.quickCharge ?? 0));
   }
   effectiveHealth(): number {
     return this.health + this.absorption;
@@ -709,6 +730,15 @@ export class Fighter {
     if (!click && this.rightClickDelay > 0) return false;
     // A block under the crosshair (not hidden behind a player) is what blocks get placed against.
     let hit: RayHit | null | undefined;
+    // Block interactions come before items (unless sneaking): a respawn anchor is charged with
+    // glowstone and blows up when used with anything else.
+    if (!this.sneaking) {
+      hit = this.crosshairBlock(C.BLOCK_REACH, true);
+      if (hit && hit.id === B.RESPAWN_ANCHOR && this.useAnchor(hit.x, hit.y, hit.z)) {
+        this.rightClickDelay = C.USE_ITEM_DELAY;
+        return true;
+      }
+    }
     for (const hand of ['main', 'off'] as const) {
       const s = this.stackIn(hand);
       if (!s || this.cooldowns.has(s.id)) continue;
@@ -722,6 +752,17 @@ export class Fighter {
           if (!this.placeBlock(s, hand, hit)) return false;
           ok = true;
         }
+      } else if (def.use === 'crystal') {
+        if (hit === undefined) hit = this.crosshairBlock(C.BLOCK_REACH, true);
+        // EndCrystalItem.useOn: the clicked block itself must be obsidian with room above.
+        if (hit) {
+          if (!canPlaceCrystal(this.world, hit.x, hit.y, hit.z)) return false;
+          placeCrystal(this.world, this, hit.x, hit.y, hit.z);
+          s.count--;
+          if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+          if (hand === 'main') this.swing();
+          ok = true;
+        }
       } else if (def.use === 'bucket') ok = this.useBucket(s, hand);
       else ok = this.tryUse(s, hand);
       if (ok) {
@@ -733,6 +774,54 @@ export class Fighter {
   }
 
   // ---------------------------------------------------------------- blocks
+
+  /**
+   * RespawnAnchorBlock.useItemOn / useWithoutItem, main hand first. Glowstone (in either hand)
+   * adds a charge up to 4; with any other item in the main hand, a charged anchor explodes.
+   */
+  private useAnchor(x: number, y: number, z: number): boolean {
+    const blocks = this.world.blocks;
+    const charge = blocks.anchorCharge(x, y, z);
+    const main = this.heldStack();
+    const off = this.offhand;
+    const fuel = (s: ItemStack | null) => s?.id === 'glowstone';
+    const chargeWith = (s: ItemStack, hand: Hand) => {
+      blocks.setAnchorCharge(x, y, z, charge + 1);
+      s.count--;
+      if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+      if (hand === 'main') this.swing();
+      this.world.emit({ type: 'anchorCharge', x, y, z, charge: charge + 1 });
+      return true;
+    };
+    if (fuel(main) && charge < 4) return chargeWith(main!, 'main');
+    // Main hand without glowstone but glowstone in the off hand: the off hand charges it.
+    if (!fuel(main) && fuel(off) && charge < 4) return chargeWith(off!, 'off');
+    if (charge > 0) {
+      this.swing();
+      detonateAnchor(this.world, x, y, z, this);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * ThrownEnderpearl.onHit: the thrower appears where the pearl was, takes 5 fall damage and
+   * loses their fall distance and speed. Nudged up out of any block they would land inside.
+   */
+  pearlTeleport(x: number, y: number, z: number) {
+    if (this.dead) return;
+    const blocks = this.world.blocks;
+    const hw = C.PLAYER_WIDTH / 2;
+    let ty = Math.max(0, y - 0.5);
+    for (let i = 0; i < 8 && blocks.boxHasSolid(x - hw, ty, z - hw, x + hw, ty + this.height(), z + hw); i++) ty = Math.floor(ty) + 1;
+    this.pos.set(x, ty, z);
+    this.prevPos.copy(this.pos);
+    this.vel.set(0, 0, 0);
+    this.serverVel.set(0, 0, 0);
+    this.fallDistance = 0;
+    this.events.push({ type: 'pearlLand' });
+    fallHurt(this, C.PEARL_DAMAGE);
+  }
 
   private readonly rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 
@@ -931,9 +1020,16 @@ export class Fighter {
         return true;
       case 'crossbow':
         if (s.charged) {
-          // A loaded crossbow fires on the click itself.
+          // A loaded crossbow fires on the click itself; Multishot adds two arrows 10° either
+          // side that can't be picked up.
           s.charged = false;
-          this.shootArrow(C.CROSSBOW_SPEED, true, false, s);
+          const potion = s.chargedPotion;
+          delete s.chargedPotion;
+          this.shootArrow(C.CROSSBOW_SPEED, true, false, s, potion, 0, true);
+          if (s.ench?.multishot) {
+            this.shootArrow(C.CROSSBOW_SPEED, true, false, s, potion, -10, false);
+            this.shootArrow(C.CROSSBOW_SPEED, true, false, s, potion, 10, false);
+          }
           this.events.push({ type: 'shoot', crossbow: true, power: 1 });
           return true;
         }
@@ -949,8 +1045,20 @@ export class Fighter {
     }
   }
 
-  /** Splash potions and XP bottles leave the hand the moment you click. */
+  /** Splash potions, XP bottles and pearls leave the hand the moment you click. */
   private throwItem(s: ItemStack, hand: Hand) {
+    if (s.id === 'ender_pearl') {
+      const t = new Thrown(this, 'pearl', null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
+      t.throwFrom(this, C.PEARL_THROW_SPEED, this.world.rng, 0);
+      this.world.spawnThrown(t);
+      s.count--;
+      if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+      if (hand === 'main') this.swing();
+      this.cooldowns.set('ender_pearl', { ticks: 20, total: 20 });
+      this.stats.pearlsThrown++;
+      this.events.push({ type: 'throw', kind: 'pearl' });
+      return;
+    }
     const xp = s.id === 'experience_bottle';
     const t = new Thrown(this, xp ? 'xp' : 'potion', s.potion ?? null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
     t.throwFrom(this, xp ? C.XP_BOTTLE_THROW_SPEED : C.POTION_THROW_SPEED, this.world.rng);
@@ -971,13 +1079,18 @@ export class Fighter {
     if (s && s.id === this.useId) {
       if (s.id === 'bow') {
         const power = bowPower(ticks);
-        if (power >= 0.1 && this.consumeAmmo()) {
-          this.shootArrow(power * C.BOW_MAX_SPEED, power >= 1, true, s);
+        const ammo = power >= 0.1 ? this.consumeAmmo() : null;
+        if (ammo) {
+          this.shootArrow(power * C.BOW_MAX_SPEED, power >= 1, true, s, ammo.potion);
           this.events.push({ type: 'shoot', crossbow: false, power });
         }
-      } else if (s.id === 'crossbow' && ticks >= C.CROSSBOW_CHARGE_TICKS && !s.charged && this.consumeAmmo()) {
-        s.charged = true;
-        this.events.push({ type: 'crossbowLoaded' });
+      } else if (s.id === 'crossbow' && ticks >= this.crossbowChargeTicks(s) && !s.charged) {
+        const ammo = this.consumeAmmo();
+        if (ammo) {
+          s.charged = true;
+          if (ammo.potion) s.chargedPotion = ammo.potion;
+          this.events.push({ type: 'crossbowLoaded' });
+        }
       }
     }
     this.stopUsingItem();
@@ -1010,14 +1123,16 @@ export class Fighter {
     this.events.push({ type: 'shieldDisabled' });
   }
 
-  private shootArrow(speed: number, crit: boolean, addMotion: boolean, weapon: ItemStack) {
+  private shootArrow(speed: number, crit: boolean, addMotion: boolean, weapon: ItemStack, potion?: PotionId, yawOffsetDeg = 0, pickup = true) {
     const eyeY = this.pos.y + this.eyeHeight() - 0.1;
     const arrow = new Arrow(this, this.pos.x, eyeY, this.pos.z, crit);
+    arrow.potion = potion ?? null;
+    arrow.pickup = pickup;
     // Power: +0.5 × level + 0.5 base damage. Piercing: goes through shields (and extra entities).
     const pow = weapon.ench?.power ?? 0;
     if (pow > 0) arrow.baseDamage += 0.5 * pow + 0.5;
     arrow.pierce = weapon.ench?.piercing ?? 0;
-    const d = this.look();
+    const d = yawOffsetDeg ? lookDir(this.yaw + (yawOffsetDeg * Math.PI) / 180, this.pitch, new V3()) : this.look();
     arrow.shoot(d.x, d.y, d.z, speed, 1, this.world.rng);
     if (addMotion) {
       // BowItem uses shootFromRotation, which inherits the shooter's own movement.
@@ -1156,7 +1271,7 @@ export class Fighter {
     const def = ITEMS[stack.id];
     if (def.use !== 'food') {
       this.useItemRemaining--;
-      if (def.use === 'crossbow' && this.useTicks() === C.CROSSBOW_CHARGE_TICKS) this.events.push({ type: 'crossbowLoaded' });
+      if (def.use === 'crossbow' && this.useTicks() === this.crossbowChargeTicks(stack)) this.events.push({ type: 'crossbowLoaded' });
       if (def.use === 'shield' && this.shieldCooldown > 0) this.stopUsingItem();
       return;
     }
@@ -1318,7 +1433,13 @@ export class Fighter {
     const ox = this.pos.x;
     const oz = this.pos.z;
     this.move(this.vel.x, this.vel.y, this.vel.z);
-    this.vel.y = (this.vel.y - C.GRAVITY) * C.VERTICAL_DRAG;
+    // Slow Falling: gravity 0.01 while falling, and no fall distance (so no fall damage, no crits).
+    let g = C.GRAVITY;
+    if (this.vel.y <= 0 && this.effects.has('slow_falling')) {
+      g = 0.01;
+      this.fallDistance = 0;
+    }
+    this.vel.y = (this.vel.y - g) * C.VERTICAL_DRAG;
     this.vel.x *= friction;
     this.vel.z *= friction;
     if (this.onGround && this.sprinting) {
@@ -1413,6 +1534,11 @@ export class Fighter {
     }
     this.inWeb = b.boxTouches(x0, this.pos.y, z0, x1, this.pos.y + this.height(), z1, B.COBWEB);
     if (this.inWeb) this.fallDistance = 0;
+    // BaseFireBlock.entityInside: standing in fire sets you alight for 8 s and burns for 1.
+    if (!this.dead && b.boxTouches(x0, this.pos.y, z0, x1, this.pos.y + this.height(), z1, B.FIRE)) {
+      this.ignite(160);
+      hurt(this, 1, null, false, true, false);
+    }
   }
 
   private move(dx: number, dy: number, dz: number) {

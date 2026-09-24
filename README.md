@@ -133,9 +133,10 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **NethPot** — Netherite Sword (Sharpness V, Fire Aspect II, Unbreaking III, Mending), Netherite armor (Protection IV, Unbreaking III, Mending), 3 totems (one in the off hand), 64 golden apples, 3× Strength II, 3× Speed II, 3× Fire Resistance (8:00), 21× Splash Healing II, 2 stacks of Bottles o' Enchanting | ✅ Playable (vs bot) |
 | **Diamond Pot** — Diamond Sword (Sharpness V), Diamond armor (Protection IV, Unbreaking III), 26× Splash Healing II, 3× Strength II, 3× Speed II, 3× Regeneration (all 1:30), 5 steak (off hand); all damage +33% | ✅ Playable (vs bot) |
 | **UHC** (mcpvp.club tier-test kit) — Diamond Sword (Sharp III), Diamond Axe (Eff III), Shield, Diamond armor (Prot III/II/II/III), 8 golden apples, 2 golden heads, 4 water + 2 lava buckets, 8 cobwebs, 2 stacks of oak planks, Diamond Pickaxe (Eff III), Bow (Power I), Crossbow (Piercing I), 10 arrows · no natural regeneration, stuns on | ✅ Playable (vs bot) |
-| Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
+| **Crystal** — Netherite armor (Prot IV helmet and chestplate, Blast Protection IV leggings and boots, Feather Falling IV boots; all Unbreaking III + Mending), Netherite Sword (Sharpness V, Knockback I), Netherite Pickaxe (Efficiency V, Silk Touch), 128 end crystals, 128 obsidian, 128 respawn anchors, 128 glowstone, 8 totems (one in the off hand), 64 golden apples, 80 ender pearls, 32 ender chests, Crossbow (Multishot, Quick Charge III) with 64 Slow Falling arrows, 128 XP bottles, 4× Strength II, 4× Speed II · diggable ground | ✅ Playable (vs bot) |
+| SMP, Mace | Coming soon (cards shown in the menu) |
 
-Online duels use the Sword kit; the inventory screen and F work online too.
+The arena is 80 × 80 blocks (walls 16 high). Online duels use the Sword kit; the inventory screen and F work online too.
 
 Bot difficulties: **Practice, Easy, Normal, Hard, Expert**.
 
@@ -248,6 +249,31 @@ duel fighting back. Its nametag reads *Passive*.
   shield.
 - **Fall damage**: ⌈fall − 3⌉, through armor (Protection still reduces it); water and webs cancel it.
 - **No natural regeneration** in UHC: health only comes back from golden apples and heads.
+- **End crystals**: right click places one on obsidian (any face; the floor is grass, not bedrock) if
+  the block above is empty and no player or crystal is in the 1 × 2 space above it. Any hit (a click,
+  an arrow, a pearl, another explosion) sets it off: a **power 6** explosion centred on the obsidian's
+  top face. A left click aimed at a crystal in front of your opponent hits the crystal.
+- **Explosions** (vanilla ServerExplosion): damage = (impact² + impact) / 2 × 7 × 2·power + 1, where
+  impact = (1 − distance / (2·power)) × the share of points on your hitbox with a clear line to the
+  centre. A crystal on obsidian at knee height is half hidden behind its own obsidian, so it deals far
+  less than one at your feet. That is why crystal fights dig in: the Crystal arena has 4 layers of
+  diggable ground (grass, dirt, then bedrock), and obsidian set into a crater puts the crystal at foot
+  level. Knockback = impact, minus explosion knockback resistance (Blast Protection IV on two pieces
+  cancels it). Blocks break along 16³ rays that lose strength with each block's blast resistance
+  (obsidian and anchors 1200 survive; grass, dirt and glowstone don't). Dropped items in the blast are
+  destroyed, and nearby crystals chain.
+- **Protection by damage type**: Protection gives 1 EPF per level against everything, Blast Protection
+  2 per level against explosions, Feather Falling 3 per level against falls (and pearl landings); the
+  total is capped at 20 (80%). The Crystal kit hits the cap against explosions.
+- **Hurt immunity** still applies: a blast within 10 ticks of the last one only deals what it exceeds
+  it by, so timing your crystals matters.
+- **Respawn anchors**: glowstone (in either hand) adds a charge, up to 4; right click a charged anchor
+  with anything else and it explodes with **power 5** and sets fire around it. Sneak to place blocks
+  against an anchor instead.
+- **Ender pearls**: 1.5 blocks/tick, gravity 0.03. You land where it hit, take 5 fall damage (1 through
+  Feather Falling IV + Prot IV), and it goes on a 1 s cooldown. Pearls set off crystals.
+- **Quick Charge III** loads a crossbow in 0.25 s; **Multishot** fires three arrows (the side two
+  can't be picked up). **Slow Falling** tipped arrows give 30 s of Slow Falling (1/8 of the potion).
 - **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
   `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
   Absorption I for 2 min, 4 hunger and 9.6 saturation.
@@ -308,12 +334,30 @@ being comboed low on health it sprints out of range (Normal+), **run-pots** — 
 throwing at its feet so the potion lands under it — keeps Strength, Speed and Regeneration up, and eats
 steak from the off hand before its hunger gets low enough to stop sprinting.
 
+In **Crystal** it plays the crystal game. Every few ticks it scores each option near you by
+the damage it would deal you after armor minus (per difficulty) what it would cost itself, and never
+picks one that would kill it without a totem:
+
+- **hits a crystal** that is already standing (Normal+ also sets off yours when that hurts you more)
+- **crystals obsidian** that is already there, or **places obsidian, then a crystal, then hits it** —
+  crosshair on each face, with a click gap that shrinks from 8 ticks (Easy) to 1 (Expert)
+- **anchors** you (Normal+): places an anchor next to you, charges it with glowstone, then switches to
+  its totem slot and clicks it
+- waits out your hurt immunity before it blows anything up (Hard+)
+- re-totems, restocks its hotbar, eats golden apples, buffs with Strength and Speed, mends with XP
+- pearls in when you are far away (Normal+) and pearls out when it is about to die with no totems
+  left (Hard+); falls back to the sword when nothing is worth blowing up, and jumps out of craters
+
+Anchors do most of the damage on flat ground; once craters open up, foot-level crystals take over.
+It doesn't use the crossbow, surround itself with obsidian, or use the ender chests.
+
 ## Project layout
 
 ```
 src/core      constants (all vanilla values), math, rng
 src/game      Fighter (movement/inventory/items/effects/durability/mining), combat, Arrow, Thrown (potions, XP bottles),
               XpOrb (mending), Blocks (placed blocks, collision, raycasts, water/lava flow), DroppedItem,
+              Explosion, EndCrystal, crystals (placing, hitting, anchors),
               Match (tick order), Game (glue), kits, items
 src/ai        BotBrain + difficulty profiles
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),

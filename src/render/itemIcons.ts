@@ -6,6 +6,9 @@ import { packImage, registerPackImage } from './pack';
 export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>): string {
   if (s.id === 'crossbow') return s.charged ? 'item/crossbow_arrow' : 'item/crossbow_standby';
   if (s.id === 'splash_potion') return potionTexture(s.potion ?? 'healing');
+  if (s.id === 'tipped_arrow') return tippedArrowTexture(s.potion ?? 'slow_falling');
+  if (s.id === 'respawn_anchor') return 'block/respawn_anchor_side0';
+  if (s.id === 'ender_chest') return enderChestFace();
   // Block items use their block texture (a cube in the GUI and the hand; a flat sprite for webs).
   if (ITEMS[s.id].places !== undefined) return `block/${s.id}`;
   return `item/${s.id}`;
@@ -13,7 +16,72 @@ export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>)
 
 /** Block items drawn as a little isometric cube (the vanilla GUI block model). */
 export function isCubeItem(id: string): boolean {
-  return id === 'oak_planks' || id === 'cobblestone' || id === 'obsidian';
+  return id === 'oak_planks' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';
+}
+
+/** Top texture of a cube item when it differs from its sides. */
+function cubeTop(id: string): string | null {
+  if (id === 'respawn_anchor') return 'block/respawn_anchor_top_off';
+  if (id === 'ender_chest') return enderChestLid();
+  return null;
+}
+
+/** The first 16×16 frame of a pack texture (animated ones are vertical strips). */
+function frame(name: string): HTMLCanvasElement | null {
+  const img = packImage(name);
+  if (!img) return null;
+  const [c, ctx] = blank();
+  ctx.drawImage(img, 0, 0, img.width, img.width, 0, 0, 16, 16);
+  return c;
+}
+
+/** Ender chest front, assembled from the chest entity texture (lid front over body front). */
+function enderChestFace(): string {
+  const name = 'item/ender_chest_face';
+  if (packImage(name)) return name;
+  const tex = packImage('entity/chest/ender');
+  const [c, ctx] = blank();
+  if (tex) {
+    const k = tex.width / 64;
+    ctx.drawImage(tex, 14 * k, 14 * k, 14 * k, 5 * k, 1, 1, 14, 5);
+    ctx.drawImage(tex, 14 * k, 33 * k, 14 * k, 10 * k, 1, 6, 14, 10);
+    ctx.drawImage(tex, 1 * k, 1 * k, 2 * k, 4 * k, 7, 4, 2, 4);
+  }
+  registerPackImage(name, c);
+  return name;
+}
+
+function enderChestLid(): string {
+  const name = 'item/ender_chest_lid';
+  if (packImage(name)) return name;
+  const tex = packImage('entity/chest/ender');
+  const [c, ctx] = blank();
+  if (tex) {
+    const k = tex.width / 64;
+    ctx.drawImage(tex, 14 * k, 0, 14 * k, 14 * k, 1, 1, 14, 14);
+  }
+  registerPackImage(name, c);
+  return name;
+}
+
+/** Tipped arrows: the arrow head tinted with the potion colour over the shaft. */
+export function tippedArrowTexture(potion: PotionId): string {
+  const name = `item/tipped_arrow_${potion}`;
+  if (packImage(name)) return name;
+  const base = packImage('item/tipped_arrow_base');
+  const head = packImage('item/tipped_arrow_head');
+  if (!base || !head) return 'item/arrow';
+  const [c, ctx] = blank();
+  ctx.drawImage(head, 0, 0, 16, 16);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = `#${POTIONS[potion].color.toString(16).padStart(6, '0')}`;
+  ctx.fillRect(0, 0, 16, 16);
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(head, 0, 0, 16, 16);
+  ctx.globalCompositeOperation = 'destination-over';
+  ctx.drawImage(base, 0, 0, 16, 16);
+  registerPackImage(name, c);
+  return name;
 }
 
 /**
@@ -160,8 +228,10 @@ export function itemIcon(s: ItemStack): HTMLCanvasElement | undefined {
   let base: HTMLCanvasElement | undefined;
   if (s.id === 'shield') base = shieldIcon();
   else if (isCubeItem(s.id)) {
-    const img = packImage(tex);
-    if (img) base = isoCube(img, img);
+    const side = frame(tex);
+    const topName = cubeTop(s.id);
+    const top = topName ? frame(topName) : side;
+    if (side && top) base = isoCube(top, side);
   } else {
     const img = packImage(tex);
     if (img) {

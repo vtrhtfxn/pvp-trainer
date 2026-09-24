@@ -29,17 +29,24 @@ export type ItemId =
   | 'oak_planks'
   | 'cobweb'
   | 'cobblestone'
-  | 'obsidian';
-export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance';
+  | 'obsidian'
+  | 'end_crystal'
+  | 'respawn_anchor'
+  | 'glowstone'
+  | 'ender_chest'
+  | 'ender_pearl'
+  | 'netherite_pickaxe'
+  | 'tipped_arrow';
+export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance' | 'slow_falling';
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket';
+export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal';
 
 /** Mining tool classes (the mineable/* block tags). */
 export type ToolKind = 'axe' | 'pickaxe' | 'sword';
 
 /** The splash potions NethPot uses (vanilla potion registry names in the comments). */
-export type PotionId = 'strength' | 'swiftness' | 'fire_resistance' | 'healing' | 'regeneration';
+export type PotionId = 'strength' | 'swiftness' | 'fire_resistance' | 'healing' | 'regeneration' | 'slow_falling';
 
 export interface PotionDef {
   id: PotionId;
@@ -63,6 +70,8 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   healing: { id: 'healing', name: 'Healing', color: 0xf82423, effect: 'instant_health', amplifier: 1, duration: 1 },
   // long_regeneration: Regeneration I, 1:30 (half a heart every 2.5 s)
   regeneration: { id: 'regeneration', name: 'Regeneration', color: 0xcd5cab, effect: 'regeneration', amplifier: 0, duration: 1800 },
+  // long_slow_falling: 4:00 (a tipped arrow carries an eighth of it: 30 s)
+  slow_falling: { id: 'slow_falling', name: 'Slow Falling', color: 0xf3cfb9, effect: 'slow_falling', amplifier: 0, duration: 4800 },
 };
 
 /** MobEffect colours (potion swirls). */
@@ -72,6 +81,7 @@ export const EFFECT_COLORS: Record<EffectId, number> = {
   strength: 0xffc700,
   speed: 0x33ebff,
   fire_resistance: 0xff9900,
+  slow_falling: 0xf3cfb9,
 };
 
 export const EFFECT_NAMES: Record<EffectId, string> = {
@@ -80,6 +90,7 @@ export const EFFECT_NAMES: Record<EffectId, string> = {
   strength: 'Strength',
   speed: 'Speed',
   fire_resistance: 'Fire Resistance',
+  slow_falling: 'Slow Falling',
 };
 
 /** Armor slot index: 0 head, 1 chest, 2 legs, 3 feet. */
@@ -146,6 +157,12 @@ export interface Enchants {
   efficiency?: number;
   power?: number;
   piercing?: number;
+  blastProtection?: number;
+  featherFalling?: number;
+  knockback?: number;
+  multishot?: number;
+  quickCharge?: number;
+  silkTouch?: number;
 }
 
 export interface ItemStack {
@@ -154,6 +171,8 @@ export interface ItemStack {
   ench?: Enchants;
   /** Crossbow: loaded with an arrow. */
   charged?: boolean;
+  /** Crossbow: the loaded arrow was tipped with this potion. */
+  chargedPotion?: PotionId;
   /** Splash potion contents. */
   potion?: PotionId;
   /** Durability used up (ItemStack damage value). */
@@ -169,6 +188,7 @@ function armor(id: ItemId, name: string, slot: ArmorSlot, points: number, maxDam
 export const ITEMS: Record<ItemId, ItemDef> = {
   diamond_sword: { id: 'diamond_sword', name: 'Diamond Sword', maxStack: 1, attackDamage: 7, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 1561, hitCost: 1, tool: 'sword', toolSpeed: 15 },
   netherite_sword: { id: 'netherite_sword', name: 'Netherite Sword', maxStack: 1, attackDamage: 8, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 2031, hitCost: 1, tool: 'sword', toolSpeed: 15 },
+  netherite_pickaxe: { id: 'netherite_pickaxe', name: 'Netherite Pickaxe', maxStack: 1, attackDamage: 6, attackSpeed: 1.2, use: 'none', handheld: true, maxDamage: 2031, hitCost: 2, tool: 'pickaxe', toolSpeed: 9 },
   diamond_pickaxe: { id: 'diamond_pickaxe', name: 'Diamond Pickaxe', maxStack: 1, attackDamage: 5, attackSpeed: 1.2, use: 'none', handheld: true, maxDamage: 1561, hitCost: 2, tool: 'pickaxe', toolSpeed: 8 },
   diamond_axe: {
     id: 'diamond_axe',
@@ -243,6 +263,13 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   cobweb: { id: 'cobweb', name: 'Cobweb', maxStack: 64, ...MELEE_FIST, use: 'place', places: 2 },
   cobblestone: { id: 'cobblestone', name: 'Cobblestone', maxStack: 64, ...MELEE_FIST, use: 'place', places: 3 },
   obsidian: { id: 'obsidian', name: 'Obsidian', maxStack: 64, ...MELEE_FIST, use: 'place', places: 4 },
+  glowstone: { id: 'glowstone', name: 'Glowstone', maxStack: 64, ...MELEE_FIST, use: 'place', places: 8 },
+  respawn_anchor: { id: 'respawn_anchor', name: 'Respawn Anchor', maxStack: 64, ...MELEE_FIST, use: 'place', places: 9 },
+  ender_chest: { id: 'ender_chest', name: 'Ender Chest', maxStack: 64, ...MELEE_FIST, use: 'place', places: 10 },
+  end_crystal: { id: 'end_crystal', name: 'End Crystal', maxStack: 64, ...MELEE_FIST, use: 'crystal' },
+  // Thrown like a potion (speed 1.5, gravity 0.03); 1 s cooldown; lands you where it hits for 5 fall damage.
+  ender_pearl: { id: 'ender_pearl', name: 'Ender Pearl', maxStack: 16, ...MELEE_FIST, use: 'throw', cooldown: 20 },
+  tipped_arrow: { id: 'tipped_arrow', name: 'Tipped Arrow', maxStack: 64, ...MELEE_FIST, use: 'none' },
   cooked_beef: {
     id: 'cooked_beef',
     name: 'Steak',
@@ -291,6 +318,7 @@ export function sameItem(a: ItemStack, b: ItemStack): boolean {
 /** Display name, e.g. "Splash Potion of Healing". */
 export function stackName(s: ItemStack): string {
   if (s.id === 'splash_potion' && s.potion) return `Splash Potion of ${POTIONS[s.potion].name}`;
+  if (s.id === 'tipped_arrow' && s.potion) return `Arrow of ${POTIONS[s.potion].name}`;
   return ITEMS[s.id].name;
 }
 
@@ -316,13 +344,21 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.sharpness) out.push(`Sharpness ${roman(e.sharpness)}`);
   if (e?.protection) out.push(`Protection ${roman(e.protection)}`);
   if (e?.fireAspect) out.push(`Fire Aspect ${roman(e.fireAspect)}`);
+  if (e?.blastProtection) out.push(`Blast Protection ${roman(e.blastProtection)}`);
+  if (e?.featherFalling) out.push(`Feather Falling ${roman(e.featherFalling)}`);
+  if (e?.knockback) out.push(`Knockback ${roman(e.knockback)}`);
   if (e?.efficiency) out.push(`Efficiency ${roman(e.efficiency)}`);
+  if (e?.silkTouch) out.push('Silk Touch');
+  if (e?.multishot) out.push('Multishot');
+  if (e?.quickCharge) out.push(`Quick Charge ${roman(e.quickCharge)}`);
   if (e?.power) out.push(`Power ${roman(e.power)}`);
   if (e?.piercing) out.push(`Piercing ${roman(e.piercing)}`);
   if (e?.unbreaking) out.push(`Unbreaking ${roman(e.unbreaking)}`);
   if (e?.mending) out.push('Mending');
   if (s.charged) out.push('Projectile: [Arrow]');
-  if (s.potion) {
+  if (s.potion && s.id === 'tipped_arrow') {
+    out.push(`${EFFECT_NAMES[POTIONS[s.potion].effect as EffectId]} (${formatTicks(POTIONS[s.potion].duration / 8)})`);
+  } else if (s.potion) {
     const p = POTIONS[s.potion];
     const lvl = p.amplifier > 0 ? ` ${roman(p.amplifier + 1)}` : '';
     if (p.effect === 'instant_health') out.push(`Instant Health${lvl}`);

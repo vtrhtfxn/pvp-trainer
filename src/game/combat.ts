@@ -63,7 +63,18 @@ const NO_DAMAGE: HurtResult = { damaged: false, fullHit: false, dealt: 0 };
  * Resistance cancels it outright, and it skips armor points (so it doesn't wear armor either)
  * but Protection still reduces it. Lethal damage pops a totem if one is held.
  */
-export function hurt(target: Fighter, amount: number, attacker: Fighter | null, crit: boolean, fire = false, bypassArmor = fire): HurtResult {
+/** Damage types with their own enchantment protection (Blast Protection, Feather Falling). */
+export type DamageKind = 'generic' | 'explosion' | 'fall';
+
+export function hurt(
+  target: Fighter,
+  amount: number,
+  attacker: Fighter | null,
+  crit: boolean,
+  fire = false,
+  bypassArmor = fire,
+  kind: DamageKind = 'generic',
+): HurtResult {
   if (target.dead || amount <= 0) return NO_DAMAGE;
   if (fire && target.effects.has('fire_resistance')) return NO_DAMAGE;
   amount *= target.world.damageMultiplier;
@@ -87,7 +98,8 @@ export function hurt(target: Fighter, amount: number, attacker: Fighter | null, 
     target.damageArmor(applied);
     dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness);
   }
-  dmg = damageAfterProtection(dmg, target.armor.protectionEpf);
+  const a = target.armor;
+  dmg = damageAfterProtection(dmg, a.protectionEpf + (kind === 'explosion' ? a.blastEpf : kind === 'fall' ? a.fallEpf : 0));
   const absorbed = Math.min(target.absorption, dmg);
   target.absorption -= absorbed;
   const toHealth = dmg - absorbed;
@@ -154,7 +166,8 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
   }
 
   const strong = scale > C.STRONG_ATTACK_SCALE;
-  let kbLevel = 0;
+  // The Knockback enchantment adds a level on top of the sprint's.
+  let kbLevel = weapon?.ench?.knockback ?? 0;
   let sprint = false;
   if (attacker.serverSprinting && strong) {
     kbLevel++;
@@ -287,7 +300,7 @@ export function burn(target: Fighter) {
 
 /** Fall damage: bypasses armor points, not Protection. */
 export function fallHurt(target: Fighter, amount: number) {
-  hurt(target, amount, null, false, false, true);
+  hurt(target, amount, null, false, false, true, 'fall');
 }
 
 /** Entity.lavaHurt: 4 fire damage that armor does reduce. */

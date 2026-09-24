@@ -280,6 +280,31 @@ export class Particles {
     }
   }
 
+  /** Ender pearl landing / teleport: a burst of purple portal specks. */
+  portal(x: number, y: number, z: number) {
+    for (let i = 0; i < 32; i++) {
+      const life = 0.4 + Math.random() * 0.6;
+      const shade = 0.6 + Math.random() * 0.4;
+      this.squares.spawn({
+        x: x + (Math.random() - 0.5) * 0.8,
+        y: y + Math.random() * 1.8,
+        z: z + (Math.random() - 0.5) * 0.8,
+        vx: (Math.random() - 0.5) * 0.1,
+        vy: (Math.random() - 0.5) * 0.1,
+        vz: (Math.random() - 0.5) * 0.1,
+        r: 0.8 * shade,
+        g: 0.3 * shade,
+        b: shade,
+        size: 0.05,
+        life,
+        maxLife: life,
+        gravity: 0,
+        drag: 0.9,
+        grow: 0,
+      });
+    }
+  }
+
   /** Totem of Undying: a fountain of green and yellow sparks around the player. */
   totem(x: number, y: number, z: number) {
     for (let i = 0; i < 90; i++) {

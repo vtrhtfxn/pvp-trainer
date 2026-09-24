@@ -29,7 +29,7 @@ interface RemoteSample {
  * opponent, driven entirely from snapshots.
  */
 export class NetMatch {
-  readonly world = new World(24);
+  readonly world = new World();
   readonly kit = kitById('sword');
   readonly player: Fighter;
   readonly bot: Fighter;

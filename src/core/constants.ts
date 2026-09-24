@@ -92,6 +92,11 @@ export const POTION_GRAVITY = 0.05;
 export const XP_BOTTLE_THROW_SPEED = 0.7;
 export const XP_BOTTLE_GRAVITY = 0.07;
 export const THROWN_DRAG = 0.99;
+/** Ender pearls: thrown straight along the crosshair at 1.5 blocks/tick, gravity 0.03. */
+export const PEARL_THROW_SPEED = 1.5;
+export const PEARL_GRAVITY = 0.03;
+/** Landing a pearl: 5 fall damage (Feather Falling reduces it). */
+export const PEARL_DAMAGE = 5;
 /** Splash radius: full strength on a direct hit, fading linearly to nothing 4 blocks out. */
 export const SPLASH_RADIUS = 4;
 
