@@ -1,6 +1,7 @@
 import * as C from '../core/constants';
 import { V3, rayAABB, type AABB } from '../core/math';
 import { applyKnockback, type Fighter } from './Fighter';
+import type { RayHit } from './Blocks';
 import { defOf, sharpnessBonus } from './items';
 
 /** Damage after armor points and toughness (CombatRules.getDamageAfterAbsorb). */
@@ -19,6 +20,7 @@ export function damageAfterProtection(damage: number, epf: number): number {
 const tmpEye = new V3();
 const tmpDir = new V3();
 const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
+const rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 
 /** Distance along the attacker's crosshair ray to the target hitbox, or -1 if out of reach. */
 export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = C.ATTACK_REACH): number {
@@ -26,7 +28,11 @@ export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = 
   attacker.eyePos(tmpEye);
   attacker.look(tmpDir);
   const t = rayAABB(tmpEye, tmpDir, target.aabbInto(tmpBox));
-  return t >= 0 && t <= reach ? t : -1;
+  if (t < 0 || t > reach) return -1;
+  // A block between us (placed planks, a pillar) is what the crosshair hits instead.
+  const blocks = attacker.world.blocks;
+  if (blocks.count && blocks.raycast(tmpEye.x, tmpEye.y, tmpEye.z, tmpDir.x, tmpDir.y, tmpDir.z, t, 'outline', rayHit)) return -1;
+  return t;
 }
 
 /**
@@ -57,7 +63,7 @@ const NO_DAMAGE: HurtResult = { damaged: false, fullHit: false, dealt: 0 };
  * Resistance cancels it outright, and it skips armor points (so it doesn't wear armor either)
  * but Protection still reduces it. Lethal damage pops a totem if one is held.
  */
-export function hurt(target: Fighter, amount: number, attacker: Fighter | null, crit: boolean, fire = false): HurtResult {
+export function hurt(target: Fighter, amount: number, attacker: Fighter | null, crit: boolean, fire = false, bypassArmor = fire): HurtResult {
   if (target.dead || amount <= 0) return NO_DAMAGE;
   if (fire && target.effects.has('fire_resistance')) return NO_DAMAGE;
   amount *= target.world.damageMultiplier;
@@ -77,7 +83,7 @@ export function hurt(target: Fighter, amount: number, attacker: Fighter | null, 
   }
 
   let dmg = applied;
-  if (!fire) {
+  if (!bypassArmor) {
     target.damageArmor(applied);
     dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness);
   }
@@ -262,6 +268,11 @@ function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: num
   if (disabled) {
     target.disableShield();
     attacker.stats.shieldsDisabled++;
+    // mcpvp.club stuns: the disable clears hurt immunity, so the follow-up lands at once.
+    if (attacker.world.shieldStuns) {
+      target.invulnerableTime = 0;
+      target.lastHurt = 0;
+    }
   }
   target.stats.blocked++;
   target.events.push({ type: 'shieldBlock', attacker });
@@ -272,6 +283,16 @@ function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: num
 /** One tick of burning (Entity.baseTick every 20 fire ticks). */
 export function burn(target: Fighter) {
   hurt(target, C.FIRE_DAMAGE, null, false, true);
+}
+
+/** Fall damage: bypasses armor points, not Protection. */
+export function fallHurt(target: Fighter, amount: number) {
+  hurt(target, amount, null, false, false, true);
+}
+
+/** Entity.lavaHurt: 4 fire damage that armor does reduce. */
+export function lavaHurt(target: Fighter) {
+  hurt(target, C.LAVA_DAMAGE, null, false, true, false);
 }
 
 const boxA: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };

@@ -308,8 +308,8 @@ export class Menus {
       ['Space', 'Jump (hold to bunny-hop)'],
       ['Ctrl', 'Sprint (toggle by default) · or double-tap W'],
       ['Shift', 'Sneak'],
-      ['Left Click', 'Attack — full damage every 0.6 s, clicking early resets the cooldown'],
-      ['Right Click (hold)', 'Use: eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion or XP bottle. Main hand first, then off hand'],
+      ['Left Click', 'Attack — full damage every 0.6 s, clicking early resets the cooldown. Hold on a block to mine it'],
+      ['Right Click (hold)', 'Use: eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion or XP bottle, place a block, pour or fill a bucket. Main hand first, then off hand'],
       ['1 – 9 / Scroll', 'Hotbar (switching items resets the attack cooldown on the next tick)'],
       ['F', 'Swap main hand and off hand'],
       ['E', 'Inventory — drag or click items, shift-click to quick-move, 1–9 / F over a slot to swap'],
@@ -345,6 +345,7 @@ export class Menus {
       h('li', {}, 'NethPot: look straight down to pot — a splash heals less the further from your feet it lands (nothing past 4 blocks). Healing II is 4 hearts at best.'),
       h('li', {}, 'NethPot: after a totem pops, re-totem fast — slot key + F with a hotbar totem, or E, hover a totem, F.'),
       h('li', {}, 'P-crit: when a hit knocks you up, let go of sprint and hit on the way down — a crit without jumping.'),
+      h('li', {}, 'UHC: hold left click to mine (axe for planks, sword for webs); right click places blocks and pours buckets — a bucket ignores players, so aim at the floor under their feet to lava them. Water puts fire out.'),
       h('li', {}, 'Diamond Pot: combos win — W-tap between sprint hits to keep them in the air. Low? Sprint away and pot at your feet (the potion carries your speed). Eat steak before hunger stops your sprint.'),
       h(
         'li',

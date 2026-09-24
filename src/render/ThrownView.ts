@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { lerp } from '../core/math';
+import type { DroppedItem } from '../game/DroppedItem';
+import type { ItemStack } from '../game/items';
 import type { Thrown } from '../game/Thrown';
 import type { XpOrb } from '../game/XpOrb';
 import { itemIcon } from './itemIcons';
@@ -23,6 +25,26 @@ export class ThrownView {
   private readonly orbs: THREE.Sprite[] = [];
   private readonly itemMats = new Map<string, THREE.SpriteMaterial>();
   private readonly orbMats: THREE.SpriteMaterial[] = [];
+  private readonly drops: THREE.Sprite[] = [];
+  private readonly stackMats = new Map<string, THREE.SpriteMaterial>();
+
+  /** A billboard of the item's GUI icon (dropped items render flat-ish at this size anyway). */
+  private stackMat(s: ItemStack): THREE.SpriteMaterial {
+    const key = `${s.id}:${s.potion ?? ''}`;
+    let m = this.stackMats.get(key);
+    if (!m) {
+      const icon = itemIcon(s);
+      const tex = icon ? new THREE.CanvasTexture(icon) : null;
+      if (tex) {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.colorSpace = THREE.SRGBColorSpace;
+      }
+      m = new THREE.SpriteMaterial({ map: tex, alphaTest: 0.1 });
+      this.stackMats.set(key, m);
+    }
+    return m;
+  }
 
   private itemMat(t: Thrown): THREE.SpriteMaterial {
     const key = t.kind === 'xp' ? 'xp' : (t.potion ?? 'healing');
@@ -57,7 +79,23 @@ export class ThrownView {
     return m;
   }
 
-  update(thrown: readonly Thrown[], orbs: readonly XpOrb[], a: number, time: number) {
+  update(thrown: readonly Thrown[], orbs: readonly XpOrb[], a: number, time: number, items: readonly DroppedItem[] = []) {
+    while (this.drops.length < items.length) {
+      const s = new THREE.Sprite();
+      s.scale.setScalar(0.35);
+      this.drops.push(s);
+      this.group.add(s);
+    }
+    for (let i = 0; i < this.drops.length; i++) {
+      const s = this.drops[i];
+      const it = items[i];
+      s.visible = !!it;
+      if (!it) continue;
+      s.material = this.stackMat(it.stack);
+      // ItemEntityRenderer bobs the item up and down.
+      const bob = Math.sin((it.age + a) / 10) * 0.1 + 0.1;
+      s.position.set(lerp(it.prevPos.x, it.pos.x, a), lerp(it.prevPos.y, it.pos.y, a) + 0.18 + bob, lerp(it.prevPos.z, it.pos.z, a));
+    }
     while (this.items.length < thrown.length) {
       const s = new THREE.Sprite();
       s.scale.setScalar(0.5);

@@ -287,6 +287,40 @@ export class Sound {
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.25, 'highpass', 3000, 1500, 0.7, 0.45);
   }
 
+  /** Placing or breaking a block: wood thunks, stone clacks, webs rustle. */
+  block(pos: { x: number; y: number; z: number }, kind: 'wood' | 'stone' | 'web', broke: boolean) {
+    const d = this.out(pos, broke ? 0.8 : 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    if (kind === 'web') this.noiseBurst(d, t, 0.12, 'highpass', 4000, 2500, 0.7, 0.35);
+    else if (kind === 'wood') {
+      this.noiseBurst(d, t, broke ? 0.16 : 0.1, 'lowpass', 900, 300, 1.4, 0.8);
+      this.tone(d, t, 0.08, 'triangle', 190, 120, 0.25);
+    } else {
+      this.noiseBurst(d, t, broke ? 0.14 : 0.09, 'bandpass', 1800, 700, 1.2, 0.8);
+    }
+  }
+
+  /** A mining tick (the quiet hit sound while digging). */
+  dig(pos: { x: number; y: number; z: number }, kind: 'wood' | 'stone' | 'web') {
+    const d = this.out(pos, 0.25);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.05, kind === 'wood' ? 'lowpass' : 'bandpass', kind === 'wood' ? 700 : 1600, 400, 1, 0.5);
+  }
+
+  bucket(pos: { x: number; y: number; z: number }, lava: boolean, fill: boolean) {
+    const d = this.out(pos, 0.6);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, lava ? 0.4 : 0.3, 'lowpass', fill ? 600 : 1500, fill ? 1500 : 400, 1, lava ? 0.5 : 0.7);
+    if (lava) this.tone(d, t, 0.3, 'sine', 90, 60, 0.3);
+  }
+
+  /** Lava meeting water (block.lava.extinguish). */
+  fizz(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.7);
+    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.45, 'highpass', 5000, 2000, 0.6, 0.6);
+  }
+
   equip() {
     const d = this.out(undefined, 0.3);
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.08, 'bandpass', 1200, 700, 1, 0.3);

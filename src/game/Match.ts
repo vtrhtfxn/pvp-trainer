@@ -32,6 +32,8 @@ export class Match {
   private queuedUse = 0;
   private queuedSwap = 0;
   useHeld = false;
+  /** Left button held: keeps mining the block under the crosshair. */
+  attackHeld = false;
   /** Last outcome of a player click (for HUD feedback). */
   lastPlayerAttack: AttackOutcome | null = null;
 
@@ -45,6 +47,7 @@ export class Match {
     this.bot = new Fighter('bot', `${profile.name} Bot`, this.world);
     this.world.fighters.push(this.player, this.bot);
     this.world.damageMultiplier = kit.damageMultiplier ?? 1;
+    this.world.shieldStuns = !!kit.shieldStuns;
     this.world.rng = new Rng(this.rng.int(0, 2 ** 30));
     this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () =>
       performAttack(this.bot, this.player),
@@ -57,6 +60,7 @@ export class Match {
     this.player.reset(0, half, 0, this.kit);
     this.bot.reset(0, -half, Math.PI, this.kit);
     this.world.clearEntities();
+    this.player.naturalRegen = this.bot.naturalRegen = this.kit.naturalRegen ?? true;
     this.brain.resetRound();
     this.phase = 'countdown';
     this.phaseTicks = 0;
@@ -67,6 +71,7 @@ export class Match {
     this.queuedUse = 0;
     this.queuedSwap = 0;
     this.useHeld = false;
+    this.attackHeld = false;
     this.lastPlayerAttack = null;
   }
 
@@ -149,10 +154,15 @@ export class Match {
       this.queuedClicks = 0; // clicks are swallowed while an item is in use
       this.queuedUse = 0;
     } else {
+      // A click on a block starts mining it (and is not an attack: no cooldown reset); holding
+      // the button keeps mining. Anything else is a swing at the opponent.
+      let mined = false;
       while (this.queuedClicks > 0) {
         this.queuedClicks--;
-        this.lastPlayerAttack = performAttack(p, this.bot);
+        if (!mined && p.tickMining(true, true)) mined = true;
+        else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot);
       }
+      if (!mined) p.tickMining(this.attackHeld, false);
       while (this.queuedUse > 0) {
         this.queuedUse--;
         p.startUsingItem(true);

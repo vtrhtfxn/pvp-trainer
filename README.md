@@ -42,8 +42,8 @@ Then open http://localhost:5173.
 | Space | Jump (hold to bunny-hop) |
 | Ctrl | Sprint (toggle by default, or double-tap W) |
 | Shift | Sneak |
-| Left click | Attack |
-| Right click (hold) | Use — eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion / XP bottle (main hand first, then off hand) |
+| Left click | Attack (hold on a block to mine it) |
+| Right click (hold) | Use — eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion / XP bottle, place a block, pour or fill a bucket (main hand first, then off hand) |
 | 1–9 / scroll | Hotbar |
 | F | Swap main hand and off hand |
 | E | Inventory |
@@ -132,7 +132,8 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **Axe** — Diamond Axe, Diamond Sword, Crossbow, Bow, 6 Arrows, Shield (off hand), Diamond armor (unenchanted) | ✅ Playable (vs bot) |
 | **NethPot** — Netherite Sword (Sharpness V, Fire Aspect II, Unbreaking III, Mending), Netherite armor (Protection IV, Unbreaking III, Mending), 3 totems (one in the off hand), 64 golden apples, 3× Strength II, 3× Speed II, 3× Fire Resistance (8:00), 21× Splash Healing II, 2 stacks of Bottles o' Enchanting | ✅ Playable (vs bot) |
 | **Diamond Pot** — Diamond Sword (Sharpness V), Diamond armor (Protection IV, Unbreaking III), 26× Splash Healing II, 3× Strength II, 3× Speed II, 3× Regeneration (all 1:30), 5 steak (off hand); all damage +33% | ✅ Playable (vs bot) |
-| UHC, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
+| **UHC** (mcpvp.club tier-test kit) — Diamond Sword (Sharp III), Diamond Axe (Eff III), Shield, Diamond armor (Prot III/II/II/III), 8 golden apples, 2 golden heads, 4 water + 2 lava buckets, 8 cobwebs, 2 stacks of oak planks, Diamond Pickaxe (Eff III), Bow (Power I), Crossbow (Piercing I), 10 arrows · no natural regeneration, stuns on | ✅ Playable (vs bot) |
+| Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
 
 Online duels use the Sword kit; the inventory screen and F work online too.
 
@@ -225,6 +226,28 @@ duel fighting back. Its nametag reads *Passive*.
 - **Regeneration I** (splash, 1:30): half a heart every 2.5 s. **Steak**: 8 hunger + 12.8 saturation in
   1.6 s, only edible below full hunger; in the off hand it is eaten behind the sword. Sprinting stops at
   6 hunger, so long pot fights need it.
+- **UHC blocks** (build limit 12 above the floor; the map itself can't be broken): right click places
+  a block against the face you are looking at (4.5-block reach) — never into a player, except cobwebs.
+  Hold left click to mine: speed = the right tool's speed (diamond 8, + Efficiency level² + 1), ÷ 5 in
+  the air or with your head under water, ÷ (hardness × 30), or × 100 if the tool can't harvest it.
+  Efficiency III axe on planks: 4 ticks; sword on a cobweb: 8 ticks (webs drop nothing); bare hand on
+  planks: 3 s. Broken blocks drop items you can pick up; arrows stuck in a broken block fall.
+- **Buckets**: a bucket's ray ignores players, so you can pour lava straight at someone's feet. An empty
+  bucket picks a source back up. **Water** flows 7 blocks (every 5 ticks), pushes you along its current,
+  slows you (×0.8, ×0.9 sprinting) and puts out fire; two sources make a third. **Lava** flows 3 blocks
+  (every 30 ticks); standing in it deals 4 damage (armor applies) and sets you alight for 15 s. Water
+  hardens a lava source into **obsidian** and flowing lava into **cobblestone**; lava falling into water
+  makes stone. Pouring onto a cobweb washes it away.
+- **Cobwebs**: movement × 0.25 horizontally and × 0.05 vertically, velocity wiped every tick (so
+  knockback does nothing) and no fall distance (so no crits).
+- **Golden head** (server item): 1 s to eat, Regeneration III for 5 s (4 hearts), Absorption I for
+  2 min, then a 10 s cooldown (the white sweep over its slot).
+- **Stuns** (mcpvp.club): an axe disabling a shield also clears the defender's hurt immunity, so the
+  follow-up hit lands at once.
+- **Power I** bow: +1 arrow base damage. **Piercing I** crossbow: bolts go straight through a raised
+  shield.
+- **Fall damage**: ⌈fall − 3⌉, through armor (Protection still reduces it); water and webs cancel it.
+- **No natural regeneration** in UHC: health only comes back from golden apples and heads.
 - **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
   `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
   Absorption I for 2 min, 4 hunger and 9.6 saturation.
@@ -268,6 +291,17 @@ In **NethPot** it plays the pot game:
   when you are far away
 - goes for jump crits and **P-crits** (Hard 55%, Expert 80% of the times you hit it)
 
+In **UHC** it plays the Axe-kit shield game (with stuns) plus:
+
+- pours **lava** at your feet when you're 2–4 blocks away and not fire-resistant, then picks it back
+  up once you've burned (Normal+), and never walks into lava itself
+- **webs** you as you come in, or itself when it's being comboed low (Normal+)
+- puts itself out with a **water** bucket at its feet, washes webs off, and picks the water back up
+- eats a **golden head** the moment it's low and the head is off cooldown
+- **pillars** three blocks up to eat golden apples when you're close (Hard+), and **mines** the pillar
+  out from under you — or any planks between you — with its Efficiency III axe
+- shoots you off a pillar with its crossbow
+
 In **Diamond Pot** it plays for combos instead: with normal knockback, Speed II and Strength II the
 damage comes from sprint-hit chains (W-/S-taps between hits), with crits only as a bonus. When it is
 being comboed low on health it sprints out of range (Normal+), **run-pots** — sprinting away and
@@ -278,8 +312,9 @@ steak from the off hand before its hunger gets low enough to stop sprinting.
 
 ```
 src/core      constants (all vanilla values), math, rng
-src/game      Fighter (movement/inventory/items/effects/durability), combat, Arrow, Thrown (potions, XP bottles),
-              XpOrb (mending), Match (tick order), Game (glue), kits, items
+src/game      Fighter (movement/inventory/items/effects/durability/mining), combat, Arrow, Thrown (potions, XP bottles),
+              XpOrb (mending), Blocks (placed blocks, collision, raycasts, water/lava flow), DroppedItem,
+              Match (tick order), Game (glue), kits, items
 src/ai        BotBrain + difficulty profiles
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
               first-person hands, item meshes from the resource pack, arrows, particles

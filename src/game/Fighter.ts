@@ -1,9 +1,11 @@
 import * as C from '../core/constants';
-import { V3, clamp, forwardX, forwardZ, lookDir, wrapAngle, type AABB } from '../core/math';
+import { V3, clamp, forwardX, forwardZ, lookDir, rayAABB, wrapAngle, type AABB } from '../core/math';
 import { Arrow } from './Arrow';
 import { FIST, ITEMS, cloneStack, defOf, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
-import { burn } from './combat';
+import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks';
+import { DroppedItem } from './DroppedItem';
+import { burn, fallHurt, lavaHurt } from './combat';
 import { Thrown } from './Thrown';
 import type { World } from './World';
 
@@ -99,6 +101,9 @@ export type FighterEvent =
   | { type: 'totem' }
   | { type: 'itemBreak'; id: ItemId }
   | { type: 'xpPickup'; value: number }
+  | { type: 'bucket'; fluid: number; fill: boolean }
+  /** A mining swing (the block-hit tick sound). */
+  | { type: 'mineHit'; block: number }
   /** `attacker` is null for damage without a source entity (burning). */
   | { type: 'hurt'; attacker: Fighter | null; damage: number; crit: boolean; fire?: boolean }
   | { type: 'death' }
@@ -176,6 +181,10 @@ export class FoodData {
     }
   }
 }
+
+const tmpEye = new V3();
+const tmpLook = new V3();
+const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 
 /** Knocks `v` away from the source direction (x, z), like LivingEntity.knockback. */
 export function applyKnockback(v: V3, strength: number, x: number, z: number, onGround: boolean) {
@@ -278,6 +287,19 @@ export class Fighter {
   fireTicks = 0;
   /** Player.takeXpDelay: an orb can only be absorbed when this is 0. */
   takeXpDelay = 0;
+  /** Touching water / lava this tick (Entity.wasTouchingWater, isInLava). */
+  inWater = false;
+  inLava = false;
+  /** How deep the fluid we are in reaches up our legs (for swimming up out of it). */
+  fluidDepth = 0;
+  /** Inside a cobweb: the next move is slowed to (0.25, 0.05, 0.25) and velocity is zeroed. */
+  inWeb = false;
+  /** ItemCooldowns: item → ticks left (and the full length, for the HUD sweep). */
+  readonly cooldowns = new Map<ItemId, { ticks: number; total: number }>();
+  /** The block being mined and how far along (0..1). */
+  mining: { x: number; y: number; z: number; block: number } | null = null;
+  mineProgress = 0;
+  private destroyDelay = 0;
 
   armor: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, knockbackResistance: 0 };
 
@@ -347,6 +369,12 @@ export class Fighter {
     this.shieldCooldown = 0;
     this.fireTicks = 0;
     this.takeXpDelay = 0;
+    this.inWater = this.inLava = this.inWeb = false;
+    this.fluidDepth = 0;
+    this.cooldowns.clear();
+    this.mining = null;
+    this.mineProgress = 0;
+    this.destroyDelay = 0;
     this.recomputeArmor();
     this.walkDist = this.walkDistO = this.moveDist = 0;
     this.nextStep = 1;
@@ -679,14 +707,199 @@ export class Fighter {
   startUsingItem(click = false): boolean {
     if (this.usingItem || this.dead) return false;
     if (!click && this.rightClickDelay > 0) return false;
+    // A block under the crosshair (not hidden behind a player) is what blocks get placed against.
+    let hit: RayHit | null | undefined;
     for (const hand of ['main', 'off'] as const) {
       const s = this.stackIn(hand);
-      if (s && this.tryUse(s, hand)) {
+      if (!s || this.cooldowns.has(s.id)) continue;
+      const def = ITEMS[s.id];
+      let ok = false;
+      if (def.use === 'place') {
+        if (hit === undefined) hit = this.crosshairBlock(C.BLOCK_REACH, true);
+        // Aiming at a block: the placement either works or FAILs, and a failure ends the click
+        // (it does not fall through to the other hand). Aiming at nothing passes.
+        if (hit) {
+          if (!this.placeBlock(s, hand, hit)) return false;
+          ok = true;
+        }
+      } else if (def.use === 'bucket') ok = this.useBucket(s, hand);
+      else ok = this.tryUse(s, hand);
+      if (ok) {
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
       }
     }
     return false;
+  }
+
+  // ---------------------------------------------------------------- blocks
+
+  private readonly rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
+
+  /**
+   * The block under the crosshair within `reach`, or null. With `entities`, a player whose
+   * hitbox is closer (and within attack reach) hides it — that is what the crosshair targets.
+   */
+  crosshairBlock(reach = C.BLOCK_REACH, entities = true, mode: 'outline' | 'source' = 'outline'): RayHit | null {
+    const eye = this.eyePos(tmpEye);
+    const d = this.look(tmpLook);
+    const hit = this.world.blocks.raycast(eye.x, eye.y, eye.z, d.x, d.y, d.z, reach, mode, this.rayHit);
+    if (!hit) return null;
+    if (entities) {
+      for (const f of this.world.fighters) {
+        if (f === this || f.dead) continue;
+        const t = rayAABB(eye, d, f.aabbInto(tmpBox));
+        if (t >= 0 && t <= C.ATTACK_REACH && t < hit.t) return null;
+      }
+    }
+    return hit;
+  }
+
+  /** BlockItem.place: against the face we are looking at, never into a player (webs excepted). */
+  private placeBlock(s: ItemStack, hand: Hand, hit: RayHit): boolean {
+    const blocks = this.world.blocks;
+    const id = ITEMS[s.id].places!;
+    const x = hit.x + hit.nx;
+    const y = hit.y + hit.ny;
+    const z = hit.z + hit.nz;
+    if (!blocks.inside(x, y, z)) return false;
+    const cur = blocks.get(x, y, z);
+    if (cur !== B.AIR && !isFluid(cur)) return false;
+    if (isSolid(id)) {
+      for (const f of this.world.fighters) {
+        if (f.dead) continue;
+        const bb = f.aabbInto(tmpBox);
+        if (Blocks.boxOverlapsCell(bb.minX, bb.minY, bb.minZ, bb.maxX, bb.maxY, bb.maxZ, x, y, z)) return false;
+      }
+    }
+    blocks.set(x, y, z, id);
+    s.count--;
+    if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+    if (hand === 'main') this.swing();
+    this.world.emit({ type: 'blockPlace', x, y, z, block: id });
+    return true;
+  }
+
+  /**
+   * BucketItem.use: casts its own ray, ignoring players — so lava can be poured at someone's
+   * feet through their hitbox. An empty bucket picks up a source; a full one pours a source into
+   * the space in front of the block face it hits.
+   */
+  private useBucket(s: ItemStack, hand: Hand): boolean {
+    const blocks = this.world.blocks;
+    const fluid = ITEMS[s.id].bucket!;
+    const slot = this.handSlot(hand);
+    if (fluid === 0) {
+      const hit = this.crosshairBlock(C.BLOCK_REACH, false, 'source');
+      if (!hit || !isFluid(hit.id)) return false;
+      blocks.set(hit.x, hit.y, hit.z, B.AIR);
+      const full: ItemStack = { id: hit.id === B.WATER ? 'water_bucket' : 'lava_bucket', count: 1 };
+      if (s.count <= 1) this.setSlot(slot, full);
+      else {
+        s.count--;
+        this.addItem(full);
+      }
+      if (hand === 'main') this.swing();
+      this.events.push({ type: 'bucket', fluid: hit.id, fill: true });
+      return true;
+    }
+    const hit = this.crosshairBlock(C.BLOCK_REACH, false);
+    if (!hit) return false;
+    // A web is replaceable by fluids: pouring onto one fills its own cell (and washes it away).
+    const intoWeb = hit.id === B.COBWEB;
+    const x = intoWeb ? hit.x : hit.x + hit.nx;
+    const y = intoWeb ? hit.y : hit.y + hit.ny;
+    const z = intoWeb ? hit.z : hit.z + hit.nz;
+    if (!blocks.inside(x, y, z)) return false;
+    const cur = blocks.get(x, y, z);
+    if (cur !== B.AIR && cur !== B.COBWEB && !isFluid(cur)) return false;
+    if (cur === B.COBWEB) this.world.emit({ type: 'blockConvert', x, y, z, from: B.COBWEB, to: fluid });
+    blocks.placeSource(x, y, z, fluid as typeof B.WATER | typeof B.LAVA);
+    this.setSlot(slot, { id: 'bucket', count: 1 });
+    if (hand === 'main') this.swing();
+    this.events.push({ type: 'bucket', fluid, fill: false });
+    return true;
+  }
+
+  /**
+   * Player.getDestroySpeed / BlockBehaviour.getDestroyProgress: the right tool's speed (plus
+   * Efficiency's level² + 1), a fifth of it in the air or with our head under water, divided by
+   * hardness × 30 — or × 100 when this tool can't harvest the block.
+   */
+  destroyProgress(block: number): number {
+    const props = BLOCK_PROPS[block];
+    if (!props) return 0;
+    const st = this.heldStack();
+    const def = defOf(st);
+    const correct = !!def.tool && def.tool === props.tool;
+    let speed = correct ? (def.toolSpeed ?? 1) : 1;
+    const eff = st?.ench?.efficiency ?? 0;
+    if (eff > 0 && speed > 1) speed += eff * eff + 1;
+    if (!this.onGround) speed /= 5;
+    if (this.inWater && this.fluidDepth > this.eyeHeight()) speed /= 5;
+    const harvest = !props.needsTool || correct;
+    return speed / props.hardness / (harvest ? 30 : 100);
+  }
+
+  /**
+   * One tick of the left mouse button on blocks (MultiPlayerGameMode.startDestroyBlock /
+   * continueDestroyBlock). `held` is the button being down; `click` a fresh press this tick.
+   * Returns true if the crosshair was on a block (so the click was not an attack).
+   */
+  tickMining(held: boolean, click: boolean): boolean {
+    if ((!held && !click) || this.dead || this.usingItem) {
+      this.mining = null;
+      this.mineProgress = 0;
+      return false;
+    }
+    const hit = this.crosshairBlock(C.BLOCK_REACH, true);
+    if (!hit) {
+      this.mining = null;
+      this.mineProgress = 0;
+      return false;
+    }
+    const breakable = !!BLOCK_PROPS[hit.id];
+    // A fresh click (startDestroyBlock) ignores the delay; only holding the button waits it out.
+    if (click) this.destroyDelay = 0;
+    if (this.destroyDelay > 0) {
+      this.destroyDelay--;
+      return true;
+    }
+    if (!breakable) {
+      this.mining = null;
+      if (click) this.swing();
+      return true;
+    }
+    const m = this.mining;
+    const fresh = !m || m.x !== hit.x || m.y !== hit.y || m.z !== hit.z || m.block !== hit.id;
+    if (fresh) {
+      this.mining = { x: hit.x, y: hit.y, z: hit.z, block: hit.id };
+      this.mineProgress = 0;
+    }
+    this.mineProgress += this.destroyProgress(hit.id);
+    this.swing();
+    this.events.push({ type: 'mineHit', block: hit.id });
+    if (this.mineProgress >= 1) {
+      this.breakBlock(hit.x, hit.y, hit.z, hit.id);
+      // Instant breaks (one tick) have no delay; anything slower waits 5 ticks for the next block.
+      if (!fresh) this.destroyDelay = C.DESTROY_DELAY;
+      this.mining = null;
+      this.mineProgress = 0;
+    }
+    return true;
+  }
+
+  private breakBlock(x: number, y: number, z: number, block: number) {
+    const props = BLOCK_PROPS[block]!;
+    const def = this.heldDef();
+    const correct = !!def.tool && def.tool === props.tool;
+    this.world.blocks.set(x, y, z, B.AIR);
+    this.world.emit({ type: 'blockBreak', x, y, z, block });
+    if (props.drop && (!props.needsTool || correct)) {
+      this.world.items.push(new DroppedItem({ id: props.drop, count: 1 }, x + 0.5, y + 0.25, z + 0.5, this.world.rng));
+    }
+    // Tools wear by 1 per block; swords (not made for it) by 2.
+    if (def.maxDamage && props.hardness > 0) this.damageItem(this.selected, def.tool === 'sword' ? 2 : 1);
   }
 
   private beginUse(hand: Hand, id: ItemId, duration: number) {
@@ -720,7 +933,7 @@ export class Fighter {
         if (s.charged) {
           // A loaded crossbow fires on the click itself.
           s.charged = false;
-          this.shootArrow(C.CROSSBOW_SPEED, true, false);
+          this.shootArrow(C.CROSSBOW_SPEED, true, false, s);
           this.events.push({ type: 'shoot', crossbow: true, power: 1 });
           return true;
         }
@@ -759,7 +972,7 @@ export class Fighter {
       if (s.id === 'bow') {
         const power = bowPower(ticks);
         if (power >= 0.1 && this.consumeAmmo()) {
-          this.shootArrow(power * C.BOW_MAX_SPEED, power >= 1, true);
+          this.shootArrow(power * C.BOW_MAX_SPEED, power >= 1, true, s);
           this.events.push({ type: 'shoot', crossbow: false, power });
         }
       } else if (s.id === 'crossbow' && ticks >= C.CROSSBOW_CHARGE_TICKS && !s.charged && this.consumeAmmo()) {
@@ -797,9 +1010,13 @@ export class Fighter {
     this.events.push({ type: 'shieldDisabled' });
   }
 
-  private shootArrow(speed: number, crit: boolean, addMotion: boolean) {
+  private shootArrow(speed: number, crit: boolean, addMotion: boolean, weapon: ItemStack) {
     const eyeY = this.pos.y + this.eyeHeight() - 0.1;
     const arrow = new Arrow(this, this.pos.x, eyeY, this.pos.z, crit);
+    // Power: +0.5 × level + 0.5 base damage. Piercing: goes through shields (and extra entities).
+    const pow = weapon.ench?.power ?? 0;
+    if (pow > 0) arrow.baseDamage += 0.5 * pow + 0.5;
+    arrow.pierce = weapon.ench?.piercing ?? 0;
     const d = this.look();
     arrow.shoot(d.x, d.y, d.z, speed, 1, this.world.rng);
     if (addMotion) {
@@ -864,9 +1081,19 @@ export class Fighter {
     if (this.shieldCooldown > 0) this.shieldCooldown--;
     if (this.invulnerableTime > 0) this.invulnerableTime--;
     if (this.takeXpDelay > 0) this.takeXpDelay--;
+    if (this.cooldowns.size) {
+      for (const [id, c] of this.cooldowns) if (--c.ticks <= 0) this.cooldowns.delete(id);
+    }
+    this.updateFluids();
     if (this.fireTicks > 0 && !this.dead) {
       if (this.fireTicks % 20 === 0) burn(this);
       this.fireTicks--;
+    }
+    if (this.inLava && !this.dead) {
+      // Entity.lavaHurt: fire resistance or not, you catch fire; the damage is fire-typed.
+      this.ignite(C.LAVA_FIRE_TICKS);
+      lavaHurt(this);
+      this.fallDistance *= 0.5;
     }
     if (this.dead) {
       this.deathTime++;
@@ -945,7 +1172,8 @@ export class Fighter {
         else this.offhand = null;
       }
       this.stopUsingItem();
-      if (def.id === 'golden_apple') this.stats.gapplesEaten++;
+      if (def.cooldown) this.cooldowns.set(def.id, { ticks: def.cooldown, total: def.cooldown });
+      if (def.id === 'golden_apple' || def.id === 'golden_head') this.stats.gapplesEaten++;
       this.events.push({ type: 'eatDone' });
     }
   }
@@ -985,9 +1213,13 @@ export class Fighter {
     }
     this.hadEnoughImpulse = enough;
 
-    // --- jumping
+    // --- jumping (LivingEntity.aiStep): in a fluid, jump swims up instead
     if (this.input.jump && !this.dead) {
-      if (this.onGround && this.noJumpDelay === 0) {
+      const inFluid = this.inWater || this.inLava;
+      const threshold = 0.4;
+      if (inFluid && (!this.onGround || this.fluidDepth > threshold)) {
+        this.vel.y += 0.04; // jumpInLiquid
+      } else if (this.onGround && this.noJumpDelay === 0) {
         this.jumpFromGround();
         this.noJumpDelay = C.JUMP_DELAY_TICKS;
       }
@@ -1056,6 +1288,10 @@ export class Fighter {
   }
 
   private travel(strafe: number, forward: number) {
+    if (this.inWater || this.inLava) {
+      this.travelInFluid(strafe, forward);
+      return;
+    }
     const onGround = this.onGround;
     const friction = onGround ? C.GROUND_FRICTION : C.AIR_FRICTION;
     const speed = onGround
@@ -1091,8 +1327,103 @@ export class Fighter {
     }
   }
 
+  /**
+   * LivingEntity.travelInWater / travelInLava: a weak 0.02 push, then heavy drag — water
+   * ×0.8 (×0.9 sprinting) and gravity / 16, lava ×0.5 and gravity / 4.
+   */
+  private travelInFluid(strafe: number, forward: number) {
+    this.moveRelative(strafe, forward, 0.02);
+    const water = this.inWater;
+    this.move(this.vel.x, this.vel.y, this.vel.z);
+    const h = water ? (this.sprinting ? 0.9 : 0.8) : 0.5;
+    this.vel.x *= h;
+    this.vel.z *= h;
+    this.vel.y *= water ? 0.8 : 0.5;
+    this.vel.y -= water ? C.GRAVITY / 16 : C.GRAVITY / 4;
+    // Climbing out at the edge of a pool: a little hop when we bump a block (vanilla does the same check).
+    if (this.horizontalCollision && this.canStepOutOfFluid()) this.vel.y = 0.3;
+  }
+
+  private canStepOutOfFluid(): boolean {
+    const b = this.world.blocks;
+    const hw = C.PLAYER_WIDTH / 2;
+    const y = this.pos.y + this.vel.y + 0.6;
+    return !b.boxHasSolid(this.pos.x + this.vel.x - hw, y, this.pos.z + this.vel.z - hw, this.pos.x + this.vel.x + hw, y + this.height(), this.pos.z + this.vel.z + hw);
+  }
+
+  private moveRelative(strafe: number, forward: number, speed: number) {
+    let ix = strafe;
+    let iz = forward;
+    const lsq = ix * ix + iz * iz;
+    if (lsq < 1e-7) return;
+    if (lsq > 1) {
+      const l = Math.sqrt(lsq);
+      ix /= l;
+      iz /= l;
+    }
+    ix *= speed;
+    iz *= speed;
+    const s = Math.sin(this.yaw);
+    const c = Math.cos(this.yaw);
+    this.vel.x += -s * iz + c * ix;
+    this.vel.z += -c * iz - s * ix;
+  }
+
+  private readonly push = { x: 0, z: 0, n: 0, depth: 0 };
+
+  /**
+   * Entity.updateInWaterStateAndDoFluidPushing + the cobweb check: which fluids we touch, the
+   * water current (0.014 per block, averaged), putting out fire in water, and whether we are
+   * stuck in a web.
+   */
+  private updateFluids() {
+    const b = this.world.blocks;
+    if (!b.count) {
+      this.inWater = this.inLava = this.inWeb = false;
+      this.fluidDepth = 0;
+      return;
+    }
+    const hw = C.PLAYER_WIDTH / 2 - 0.001;
+    const x0 = this.pos.x - hw;
+    const x1 = this.pos.x + hw;
+    const y0 = this.pos.y + 0.001;
+    const y1 = this.pos.y + this.height() - 0.001;
+    const z0 = this.pos.z - hw;
+    const z1 = this.pos.z + hw;
+    this.fluidDepth = 0;
+    const w = b.fluidPush(x0, y0, z0, x1, y1, z1, B.WATER, this.push);
+    this.inWater = w.n > 0;
+    if (this.inWater) {
+      this.fluidDepth = w.depth;
+      this.fireTicks = 0;
+      this.fallDistance = 0;
+      if (!this.networked && (w.x || w.z)) {
+        this.vel.x += (w.x / w.n) * 0.014;
+        this.vel.z += (w.z / w.n) * 0.014;
+      }
+    }
+    const l = b.fluidPush(x0, y0, z0, x1, y1, z1, B.LAVA, this.push);
+    this.inLava = l.n > 0;
+    if (this.inLava) {
+      this.fluidDepth = Math.max(this.fluidDepth, l.depth);
+      if (!this.networked && (l.x || l.z)) {
+        this.vel.x += (l.x / l.n) * 0.0023333333;
+        this.vel.z += (l.z / l.n) * 0.0023333333;
+      }
+    }
+    this.inWeb = b.boxTouches(x0, this.pos.y, z0, x1, this.pos.y + this.height(), z1, B.COBWEB);
+    if (this.inWeb) this.fallDistance = 0;
+  }
+
   private move(dx: number, dy: number, dz: number) {
-    const r = this.world.move(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz);
+    if (this.inWeb) {
+      // Entity.move with a stuckSpeedMultiplier: the movement shrinks and velocity is wiped.
+      dx *= C.WEB_SLOW_H;
+      dy *= C.WEB_SLOW_V;
+      dz *= C.WEB_SLOW_H;
+      this.vel.set(0, 0, 0);
+    }
+    const r = this.world.move(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, C.PLAYER_WIDTH / 2, this.height());
     const horizontal = Math.hypot(r.x - this.pos.x, r.z - this.pos.z);
     this.pos.set(r.x, r.y, r.z);
     this.horizontalCollision = r.hitX || r.hitZ;
@@ -1102,7 +1433,12 @@ export class Fighter {
     if (r.hitZ) this.vel.z = 0;
     if (r.hitY) this.vel.y = 0;
     if (this.onGround) {
-      if (wasAirborne && this.fallDistance > 0) this.events.push({ type: 'land', fall: this.fallDistance });
+      if (wasAirborne && this.fallDistance > 0) {
+        this.events.push({ type: 'land', fall: this.fallDistance });
+        // LivingEntity.causeFallDamage: ceil(distance − 3), through armor (Protection still counts).
+        const dmg = Math.ceil(this.fallDistance - 3);
+        if (dmg > 0 && !this.dead) fallHurt(this, dmg);
+      }
       this.fallDistance = 0;
     } else if (dy < 0) {
       this.fallDistance -= dy;
@@ -1121,6 +1457,17 @@ export class Fighter {
     if (Math.abs(sv.x) < C.MIN_VELOCITY) sv.x = 0;
     if (Math.abs(sv.y) < C.MIN_VELOCITY) sv.y = 0;
     if (Math.abs(sv.z) < C.MIN_VELOCITY) sv.z = 0;
+    if (this.inWeb) {
+      sv.set(0, 0, 0);
+      return;
+    }
+    if (this.inWater || this.inLava) {
+      const k = this.inWater ? 0.8 : 0.5;
+      sv.x *= k;
+      sv.z *= k;
+      sv.y = sv.y * k - (this.inWater ? C.GRAVITY / 16 : C.GRAVITY / 4);
+      return;
+    }
     const friction = this.onGround ? C.GROUND_FRICTION : C.AIR_FRICTION;
     if (this.onGround && sv.y < 0) sv.y = 0;
     sv.y = (sv.y - C.GRAVITY) * C.VERTICAL_DRAG;

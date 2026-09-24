@@ -2,9 +2,11 @@ import * as C from '../core/constants';
 import { V3, rayAABB, type AABB } from '../core/math';
 import { hurt, shieldFaces } from './combat';
 import { applyKnockback, type Fighter } from './Fighter';
+import { isSolid, type RayHit } from './Blocks';
 import type { World } from './World';
 
 const tmpDir = new V3();
+const rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 
 /**
@@ -21,6 +23,12 @@ export class Arrow {
   prevYaw = 0;
   prevPitch = 0;
   inGround = false;
+  /** Damage per unit of speed (2; Power adds 0.5 × level + 0.5). */
+  baseDamage = C.ARROW_BASE_DAMAGE;
+  /** Piercing level: a pierce arrow goes straight through a raised shield. */
+  pierce = 0;
+  /** The block it is stuck in; if that block is broken the arrow falls again. */
+  private stuck = { x: 0, y: 0, z: 0 };
   /** Ticks since it stuck (for despawn and the pickup delay). */
   groundTicks = 0;
   age = 0;
@@ -61,6 +69,11 @@ export class Arrow {
     this.prevYaw = this.yaw;
     this.prevPitch = this.pitch;
     this.age++;
+    if (this.inGround && !isSolid(world.blocks.get(this.stuck.x, this.stuck.y, this.stuck.z))) {
+      this.inGround = false;
+      this.groundTicks = 0;
+      this.vel.set(0, -0.05, 0);
+    }
     if (this.inGround) {
       this.groundTicks++;
       if (this.groundTicks >= C.ARROW_DESPAWN_TICKS) this.removed = true;
@@ -77,10 +90,17 @@ export class Arrow {
     let travel = 1; // fraction of this tick's motion before hitting something
 
     // Blocks: the floor and the four walls.
-    const tFloor = v.y < 0 ? (world.floorY - this.pos.y) / v.y : Infinity;
-    const tX = v.x > 0 ? (world.maxX - this.pos.x) / v.x : v.x < 0 ? (world.minX - this.pos.x) / v.x : Infinity;
-    const tZ = v.z > 0 ? (world.maxZ - this.pos.z) / v.z : v.z < 0 ? (world.minZ - this.pos.z) / v.z : Infinity;
-    const tBlock = Math.min(tFloor, tX, tZ);
+    // Blocks: the floor, the walls and anything placed (voxel ray through this tick's motion).
+    let tBlock = Infinity;
+    if (speed > 1e-6) {
+      const h = world.blocks.raycast(this.pos.x, this.pos.y, this.pos.z, v.x / speed, v.y / speed, v.z / speed, speed, 'collider', rayHit);
+      if (h) {
+        tBlock = h.t / speed;
+        this.stuck.x = h.x;
+        this.stuck.y = h.y;
+        this.stuck.z = h.z;
+      }
+    }
     const hitsBlock = tBlock >= 0 && tBlock <= 1;
     if (hitsBlock) travel = tBlock;
 
@@ -123,11 +143,11 @@ export class Arrow {
 
   private hitEntity(target: Fighter, speed: number, world: World) {
     const owner = this.owner;
-    let dmg = Math.ceil(Math.max(0, speed * C.ARROW_BASE_DAMAGE));
+    let dmg = Math.ceil(Math.max(0, speed * this.baseDamage));
     if (this.crit) dmg += Math.floor(world.rng.next() * (Math.floor(dmg / 2) + 2));
 
     // A raised shield facing the arrow stops it dead; it drops to the floor.
-    if (target.isBlocking() && shieldFaces(target, this.pos.x, this.pos.z)) {
+    if (this.pierce === 0 && target.isBlocking() && shieldFaces(target, this.pos.x, this.pos.z)) {
       target.events.push({ type: 'shieldBlock', attacker: owner });
       target.stats.blocked++;
       this.bounce();

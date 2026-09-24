@@ -25,6 +25,8 @@ export class Input {
   private lookX = 0;
   private lookY = 0;
   useHeld = false;
+  /** Left button held (mining). */
+  attackHeld = false;
   sprintToggled = false;
   toggleSprint = true;
   sensitivity = 0.5;
@@ -40,6 +42,7 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.useHeld = false;
+      this.attackHeld = false;
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
@@ -50,7 +53,10 @@ export class Input {
     });
     document.addEventListener('mousedown', (e) => {
       if (!this.locked || !this.enabled) return;
-      if (e.button === 0) this.cb.onClick();
+      if (e.button === 0) {
+        this.attackHeld = true;
+        this.cb.onClick();
+      }
       else if (e.button === 2) {
         this.useHeld = true;
         this.cb.onUse();
@@ -59,6 +65,7 @@ export class Input {
     });
     document.addEventListener('mouseup', (e) => {
       if (e.button === 2) this.useHeld = false;
+      if (e.button === 0) this.attackHeld = false;
     });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener(
@@ -73,6 +80,7 @@ export class Input {
       if (!this.locked) {
         this.keys.clear();
         this.useHeld = false;
+        this.attackHeld = false;
       }
       this.cb.onPointerLockChange(this.locked);
     });
@@ -83,6 +91,7 @@ export class Input {
       this.enabled = false;
       this.keys.clear();
       this.useHeld = false;
+      this.attackHeld = false;
       this.unlock();
     };
     window.addEventListener('pagehide', release);

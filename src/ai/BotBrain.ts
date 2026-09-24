@@ -1,7 +1,8 @@
 import * as C from '../core/constants';
-import { DEG, clamp, wrapAngle, yawTowards } from '../core/math';
+import { DEG, V3, clamp, rayAABB, wrapAngle, yawTowards } from '../core/math';
 import type { Rng } from '../core/rng';
 import { rayDistanceToTarget, shieldFaces, type AttackOutcome } from '../game/combat';
+import { B, isSolid as isSolidBlock, type RayHit } from '../game/Blocks';
 import { SLOT_ARMOR, SLOT_OFFHAND, type Fighter, type MoveInput } from '../game/Fighter';
 import { ITEMS, durabilityFraction, type ItemId, type PotionId } from '../game/items';
 import type { World } from '../game/World';
@@ -24,6 +25,15 @@ interface Seen {
 /** Something the NethPot bot is throwing at its own feet. */
 type ThrowPlan = { what: PotionId | 'xp'; left: number };
 
+/** A multi-tick UHC manoeuvre. Cells are block coordinates. */
+type UhcPlan =
+  | { kind: 'water'; x: number; y: number; z: number; phase: 'place' | 'wait' | 'pickup'; timer: number }
+  | { kind: 'lava'; x: number; y: number; z: number; phase: 'place' | 'wait' | 'pickup'; timer: number }
+  | { kind: 'web'; x: number; y: number; z: number; ax: number; ay: number; az: number; timer: number }
+  | { kind: 'mine'; x: number; y: number; z: number; timer: number; started: boolean }
+  | { kind: 'pillar'; baseY: number; height: number; timer: number; phase: 'build' | 'eat' }
+  | { kind: 'head'; timer: number; count: number };
+
 /** An open inventory: a delay, then slot swaps (number key / F over a slot) one by one. */
 interface InvPlan {
   timer: number;
@@ -43,6 +53,8 @@ interface Perceived extends Seen {
  * look with human-like delay and error, left click and right click. All combat rules come
  * from the same simulation the player uses.
  */
+const uhcRay: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
+
 export class BotBrain {
   state: BotState = 'engage';
   private seen: Seen[] = [];
@@ -108,6 +120,15 @@ export class BotBrain {
   private gapCooldown = 0;
   private potLabel = '';
 
+  // ---- UHC
+  private uhcKit = false;
+  private plan: UhcPlan | null = null;
+  private uhcCooldown = 0;
+  private settle = 0;
+  private uhcLabel = '';
+  /** Ticks before it tries to rescue itself again (water, cutting a web) after a failed attempt. */
+  private selfHelpCooldown = 0;
+
   constructor(
     private readonly bot: Fighter,
     private readonly target: Fighter,
@@ -121,6 +142,7 @@ export class BotBrain {
 
   get label(): string {
     if (this.potLabel) return this.potLabel;
+    if (this.uhcLabel) return this.uhcLabel;
     if (this.state === 'retreat') return 'Retreating';
     if (this.state === 'eat') return this.bot.usingItem ? 'Eating' : 'Healing';
     if (this.bot.raisingShield()) return 'Blocking';
@@ -174,6 +196,12 @@ export class BotBrain {
     this.eating = false;
     this.gapCooldown = 0;
     this.potLabel = '';
+    this.uhcKit = b.countItem('water_bucket') + b.countItem('lava_bucket') + b.countItem('cobweb') > 0;
+    this.plan = null;
+    this.uhcCooldown = 0;
+    this.settle = 0;
+    this.uhcLabel = '';
+    this.selfHelpCooldown = 0;
   }
 
   tick() {
@@ -203,11 +231,20 @@ export class BotBrain {
       b.input = input;
       return;
     }
+    if (this.uhcKit) {
+      this.uhcLabel = '';
+      if (this.uhcStep(per, trueDist, justHurt, input)) {
+        this.avoidLava(input);
+        b.input = input;
+        return;
+      }
+    }
     this.updateState(trueDist);
     if (this.state === 'engage' && this.shieldKit) this.engageShield(per, dist, justHurt, input);
     else if (this.state === 'engage') this.engage(per, dist, justHurt, input);
     else if (this.state === 'retreat') this.retreat(per, trueDist, input);
     else this.eat(per, trueDist, input);
+    if (this.uhcKit) this.avoidLava(input);
     b.input = input;
   }
 
@@ -595,6 +632,8 @@ export class BotBrain {
     const xb = b.slotOf('crossbow');
     const charged = xb >= 0 && !!b.inventory[xb]?.charged;
     if (charged && dist > 6) return true;
+    // UHC: out of sword reach up a pillar — shoot them down.
+    if (this.uhcKit && this.targetUp() && xb >= 0 && (charged || b.hasAmmo())) return true;
     if (dist < 10 || this.closingSpeed(per) > 0.12) return false;
     if (xb >= 0 && b.hasAmmo()) return true;
     return A.ranged >= 2 && b.slotOf('bow') >= 0 && b.hasAmmo() && dist > 11;
@@ -613,7 +652,7 @@ export class BotBrain {
       this.rangedTimer = 0;
     }
     this.rangedTimer++;
-    const abortAt = this.ranged === 'fireCrossbow' ? 4 : 6.5;
+    const abortAt = this.uhcKit && this.targetUp() ? 0 : this.ranged === 'fireCrossbow' ? 4 : 6.5;
     if (dist < abortAt || this.rangedTimer > 90) {
       if (b.usingItem) b.stopUsingItem();
       this.ranged = 'none';
@@ -1002,6 +1041,390 @@ export class BotBrain {
       }
     }
     return moves;
+  }
+
+  // ------------------------------------------------------------ UHC
+
+  private targetUp(): boolean {
+    return this.target.pos.y - this.bot.pos.y > 1.4;
+  }
+
+  /**
+   * UHC tricks on top of the Axe-kit shield game. Returns true when a plan owns this tick.
+   * Priorities: put out fire / wash off a web; eat a golden head; pillar up to eat when low;
+   * break the pillar they stand on or the blocks between us; pour lava on them; web them.
+   */
+  private uhcStep(per: Perceived, trueDist: number, justHurt: boolean, input: MoveInput): boolean {
+    const b = this.bot;
+    const T = this.target;
+    const U = this.profile.uhc;
+    const P = this.profile;
+    const rng = this.rng;
+    const blocks = this.world.blocks;
+    if (this.uhcCooldown > 0) this.uhcCooldown--;
+    if (this.selfHelpCooldown > 0) this.selfHelpCooldown--;
+    if (this.plan) {
+      const r = this.runPlan(per, trueDist, input);
+      if (r === 'own') return true;
+      if (this.plan) return false; // running in the background (lava waiting to be picked up)
+    } else if (b.mining) b.tickMining(false, false);
+
+    const cellX = Math.floor(b.pos.x);
+    const cellY = Math.floor(b.pos.y + 0.01);
+    const cellZ = Math.floor(b.pos.z);
+
+    // ---- Fire or lava on us: water at our feet (then pick it back up).
+    const burning = b.inLava || (b.fireTicks > 30 && !b.effects.has('fire_resistance'));
+    if (U.water && burning && !b.inWater && b.slotOf('water_bucket') >= 0 && this.selfHelpCooldown === 0) {
+      this.plan = { kind: 'water', x: cellX, y: cellY, z: cellZ, phase: 'place', timer: 0 };
+      return this.runPlan(per, trueDist, input) === 'own';
+    }
+    // ---- Stuck in a web: wash it away, or cut it with the sword — unless they are right here,
+    // in which case fighting back (sword and shield still work in a web) is the better answer.
+    if (b.inWeb && trueDist > 3.2 && this.selfHelpCooldown === 0) {
+      if (U.water && b.slotOf('water_bucket') >= 0) {
+        this.plan = { kind: 'water', x: cellX, y: cellY, z: cellZ, phase: 'place', timer: 0 };
+        return this.runPlan(per, trueDist, input) === 'own';
+      }
+      if (U.mine) {
+        const y = blocks.get(cellX, cellY, cellZ) === B.COBWEB ? cellY : cellY + 1;
+        if (blocks.get(cellX, y, cellZ) === B.COBWEB) {
+          this.plan = { kind: 'mine', x: cellX, y, z: cellZ, timer: 0, started: false };
+          return this.runPlan(per, trueDist, input) === 'own';
+        }
+      }
+    }
+    // ---- A golden head: one second, four hearts.
+    if (
+      b.health <= U.headHP &&
+      b.countItem('golden_head') > 0 &&
+      !b.cooldowns.has('golden_head') &&
+      !b.effects.has('regeneration') &&
+      trueDist > 2.4
+    ) {
+      this.plan = { kind: 'head', timer: 0, count: b.countItem('golden_head') };
+      return this.runPlan(per, trueDist, input) === 'own';
+    }
+    // ---- Low with apples to eat and them close: pillar up out of reach and eat on top.
+    if (
+      U.pillar &&
+      !P.passive &&
+      b.effectiveHealth() <= P.retreatHP &&
+      !b.effects.has('regeneration') &&
+      b.countItem('golden_apple') > 0 &&
+      b.slotOf('oak_planks') >= 0 &&
+      b.onGround &&
+      trueDist < 6 &&
+      this.columnClear(cellX, cellY, cellZ, 5)
+    ) {
+      this.plan = { kind: 'pillar', baseY: cellY, height: 0, timer: 0, phase: 'build' };
+      return this.runPlan(per, trueDist, input) === 'own';
+    }
+    if (P.passive) return false;
+    // ---- They are up a pillar next to us: break the block they stand on.
+    if (U.mine && this.targetUp() && trueDist < 3.2) {
+      const tx = Math.floor(T.pos.x);
+      const ty = Math.floor(T.pos.y + 0.01) - 1;
+      const tz = Math.floor(T.pos.z);
+      if (blocks.get(tx, ty, tz) === B.PLANKS) {
+        this.plan = { kind: 'mine', x: tx, y: ty, z: tz, timer: 0, started: false };
+        return this.runPlan(per, trueDist, input) === 'own';
+      }
+    }
+    // ---- A wall between us: dig through it.
+    if (U.mine && trueDist < 4.3 && blocks.count) {
+      const eye = b.eyePos();
+      const dx = T.pos.x - eye.x;
+      const dy = T.pos.y + 1.2 - eye.y;
+      const dz = T.pos.z - eye.z;
+      const len = Math.hypot(dx, dy, dz);
+      const hit = blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, Math.min(len, C.BLOCK_REACH), 'outline', uhcRay);
+      if (hit && (hit.id === B.PLANKS || hit.id === B.COBWEB)) {
+        this.plan = { kind: 'mine', x: hit.x, y: hit.y, z: hit.z, timer: 0, started: false };
+        return this.runPlan(per, trueDist, input) === 'own';
+      }
+    }
+    if (this.uhcCooldown > 0) return false;
+    const tCell = { x: Math.floor(T.pos.x), y: Math.floor(T.pos.y + 0.01), z: Math.floor(T.pos.z) };
+    const level = Math.abs(T.pos.y - b.pos.y) < 1 && T.onGround;
+    // ---- Lava at their feet.
+    if (
+      U.lava > 0 &&
+      b.slotOf('lava_bucket') >= 0 &&
+      level &&
+      trueDist > 2 &&
+      trueDist < 4.2 &&
+      !T.inWater &&
+      !T.inLava &&
+      !T.effects.has('fire_resistance') &&
+      blocks.get(tCell.x, tCell.y, tCell.z) === B.AIR
+    ) {
+      if (rng.chance(U.lava)) {
+        this.plan = { kind: 'lava', ...tCell, phase: 'place', timer: 0 };
+        return this.runPlan(per, trueDist, input) === 'own';
+      }
+      this.uhcCooldown = 40;
+      return false;
+    }
+    // ---- A web where they are walking in, or on ourselves to stop a combo.
+    if (U.web > 0 && b.slotOf('cobweb') >= 0) {
+      const comboed = justHurt && this.hitsTaken >= 3 && b.health < 10 && !b.inWeb;
+      if (comboed && rng.chance(U.web)) {
+        this.plan = { kind: 'web', x: cellX, y: cellY, z: cellZ, ax: b.pos.x, ay: cellY, az: b.pos.z, timer: 0 };
+        return this.runPlan(per, trueDist, input) === 'own';
+      }
+      if (level && trueDist > 2 && trueDist < 4.2 && this.closingSpeed(per) > 0.05 && !T.inWeb && blocks.get(tCell.x, tCell.y, tCell.z) === B.AIR) {
+        const aim = this.webAim(tCell.x, tCell.y, tCell.z);
+        if (aim && rng.chance(U.web)) {
+          this.plan = { kind: 'web', ...tCell, ax: aim[0], ay: aim[1], az: aim[2], timer: 0 };
+          return this.runPlan(per, trueDist, input) === 'own';
+        }
+        this.uhcCooldown = 30;
+      }
+    }
+    return false;
+  }
+
+  /** One tick of the current plan: 'own' (it used the tick), 'fight' (let the fight run), 'done'. */
+  private runPlan(per: Perceived, trueDist: number, input: MoveInput): 'own' | 'fight' | 'done' {
+    const b = this.bot;
+    const U = this.profile.uhc;
+    const P = this.profile;
+    const blocks = this.world.blocks;
+    const plan = this.plan!;
+    plan.timer++;
+    const finish = (cooldown = 20): 'done' => {
+      this.plan = null;
+      this.uhcCooldown = Math.max(this.uhcCooldown, cooldown);
+      this.settle = 0;
+      if (b.mining) b.tickMining(false, false);
+      return 'done';
+    };
+    switch (plan.kind) {
+      case 'water':
+      case 'lava': {
+        this.uhcLabel = plan.kind === 'lava' ? 'Lava!' : 'Water';
+        const full: ItemId = plan.kind === 'lava' ? 'lava_bucket' : 'water_bucket';
+        const fluid = plan.kind === 'lava' ? B.LAVA : B.WATER;
+        if (plan.phase === 'place') {
+          if (plan.timer > 16 || !this.equip(full)) {
+            if (plan.kind === 'water') this.selfHelpCooldown = 30;
+            return finish(plan.kind === 'lava' ? 60 : 10);
+          }
+          if (b.usingItem) b.stopUsingItem();
+          // The floor (or block top) under the cell: a bucket ray ignores players.
+          this.aimPoint(plan.x + 0.5, plan.y + 0.001, plan.z + 0.5);
+          const hit = b.crosshairBlock(C.BLOCK_REACH, false);
+          const on =
+            !!hit &&
+            ((hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z) ||
+              // Our own web: pouring into it works as well.
+              (plan.kind === 'water' && hit.id === B.COBWEB && Math.abs(hit.x - plan.x) + Math.abs(hit.z - plan.z) === 0));
+          if (on && this.settle >= U.aimSettle && b.startUsingItem(true)) {
+            plan.phase = 'wait';
+            plan.timer = 0;
+          }
+          return 'own';
+        }
+        if (plan.phase === 'wait') {
+          const hold = plan.kind === 'lava' ? 30 : 6;
+          if (plan.timer >= hold) {
+            plan.phase = 'pickup';
+            plan.timer = 0;
+          }
+          return plan.kind === 'lava' ? 'fight' : 'own';
+        }
+        // pickup
+        if (plan.kind === 'lava' && !U.lavaPickup) return finish(60);
+        const cx = plan.x + 0.5;
+        const cz = plan.z + 0.5;
+        const reachable = Math.hypot(cx - b.pos.x, plan.y + 0.5 - (b.pos.y + b.eyeHeight()), cz - b.pos.z) < C.BLOCK_REACH - 0.3;
+        if (plan.timer > 25 || !blocks.isSource(plan.x, plan.y, plan.z) || blocks.get(plan.x, plan.y, plan.z) !== fluid || !reachable) {
+          return finish(plan.kind === 'lava' ? 80 : 10);
+        }
+        if (!this.equip('bucket')) return finish(40);
+        if (b.usingItem) b.stopUsingItem();
+        this.aimPoint(cx, plan.y + 0.4, cz);
+        const hit = b.crosshairBlock(C.BLOCK_REACH, false, 'source');
+        if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z && this.settle >= U.aimSettle && b.startUsingItem(true)) {
+          return finish(plan.kind === 'lava' ? 80 : 10);
+        }
+        return 'own';
+      }
+      case 'web': {
+        this.uhcLabel = 'Web';
+        if (plan.timer > 12 || blocks.get(plan.x, plan.y, plan.z) !== B.AIR || !this.equip('cobweb')) return finish(50);
+        if (b.usingItem) b.stopUsingItem();
+        this.aimPoint(plan.ax, plan.ay + 0.001, plan.az);
+        const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+        const on = !!hit && hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z;
+        if (on && this.settle >= U.aimSettle && b.startUsingItem(true)) return finish(50);
+        return 'own';
+      }
+      case 'mine': {
+        this.uhcLabel = 'Mining';
+        const id = blocks.get(plan.x, plan.y, plan.z);
+        if (plan.timer > 90 || (id !== B.PLANKS && id !== B.COBWEB)) {
+          if (plan.timer > 90) this.selfHelpCooldown = 40;
+          return finish(5);
+        }
+        if (b.usingItem) b.stopUsingItem();
+        this.equip(id === B.COBWEB ? 'diamond_sword' : b.slotOf('diamond_axe') >= 0 ? 'diamond_axe' : 'diamond_sword');
+        this.aimPoint(plan.x + 0.5, plan.y + 0.5, plan.z + 0.5);
+        const dist = Math.hypot(plan.x + 0.5 - b.pos.x, plan.z + 0.5 - b.pos.z);
+        if (dist > 3.4) input.forward = 1;
+        const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+        if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
+          b.tickMining(true, !plan.started);
+          plan.started = true;
+        } else if (b.mining) b.tickMining(false, false);
+        return 'own';
+      }
+      case 'pillar': {
+        this.uhcLabel = plan.phase === 'build' ? 'Pillaring' : 'Eating';
+        const top = plan.baseY + plan.height;
+        if (plan.phase === 'build') {
+          if (plan.timer > 80 || !this.equip('oak_planks')) return finish(60);
+          if (b.usingItem) b.stopUsingItem();
+          this.turnTo(b.yaw, -Math.PI / 2 + 0.01, 3);
+          input.jump = true;
+          if (!b.onGround && b.pos.y >= top + 1 && b.startUsingItem(true)) {
+            plan.height++;
+            if (plan.height >= 3) {
+              plan.phase = 'eat';
+              plan.timer = 0;
+            }
+          }
+          return 'own';
+        }
+        // On top: stand still and eat until healthy, out of food, or knocked off.
+        const fell = b.pos.y < top - 0.5;
+        const food: ItemId | null = b.countItem('golden_head') > 0 && !b.cooldowns.has('golden_head') ? 'golden_head' : b.countItem('golden_apple') > 0 ? 'golden_apple' : null;
+        if (fell || !food || b.effectiveHealth() >= P.returnHP || plan.timer > 260) {
+          if (b.usingItem && fell) b.stopUsingItem();
+          if (!b.usingItem) return finish(100);
+        }
+        if (!b.usingItem && food) {
+          this.equip(food);
+          b.startUsingItem();
+        }
+        this.aimAt(per.x, per.y + 1.2, per.z, 0.5);
+        return 'own';
+      }
+      case 'head': {
+        this.uhcLabel = 'Eating';
+        if (plan.timer > 40 || b.countItem('golden_head') < plan.count || !this.equip('golden_head')) {
+          if (b.usingItem && plan.timer > 40) b.stopUsingItem();
+          return finish(10);
+        }
+        if (!b.usingItem) b.startUsingItem();
+        this.backOff(per, trueDist, input);
+        return 'own';
+      }
+    }
+  }
+
+  /** Turn toward a point quickly (placing and mining are deliberate flicks); counts settled ticks. */
+  private aimPoint(x: number, y: number, z: number) {
+    const b = this.bot;
+    const dx = x - b.pos.x;
+    const dy = y - (b.pos.y + b.eyeHeight());
+    const dz = z - b.pos.z;
+    const h = Math.hypot(dx, dz);
+    const yaw = h > 1e-4 ? yawTowards(dx, dz) : b.yaw;
+    const pitch = Math.atan2(dy, Math.max(h, 1e-4));
+    this.turnTo(yaw, pitch, 2.5);
+    const err = Math.abs(wrapAngle(b.yaw - yaw)) + Math.abs(b.pitch - Math.max(-1.55, Math.min(1.55, pitch)));
+    this.settle = err < 3 * DEG ? this.settle + 1 : 0;
+  }
+
+  /** A floor point in the target's cell whose ray isn't blocked by their hitbox (webs need a clear face). */
+  private webAim(x: number, y: number, z: number): [number, number, number] | null {
+    const b = this.bot;
+    const eye = b.eyePos();
+    const box = this.target.aabb();
+    for (const [u, v] of [
+      [0.5, 0.5],
+      [0.15, 0.15],
+      [0.85, 0.15],
+      [0.15, 0.85],
+      [0.85, 0.85],
+      [0.5, 0.12],
+      [0.5, 0.88],
+      [0.12, 0.5],
+      [0.88, 0.5],
+    ]) {
+      const px = x + u;
+      const pz = z + v;
+      const dx = px - eye.x;
+      const dy = y - eye.y;
+      const dz = pz - eye.z;
+      const len = Math.hypot(dx, dy, dz);
+      if (len > C.BLOCK_REACH) continue;
+      const d = new V3(dx / len, dy / len, dz / len);
+      const t = rayAABB(eye, d, box);
+      if (t >= 0 && t < len) continue;
+      return [px, y, pz];
+    }
+    return null;
+  }
+
+  private columnClear(x: number, y: number, z: number, h: number): boolean {
+    for (let i = 0; i < h; i++) if (this.world.blocks.get(x, y + i, z) !== B.AIR && i > 0) return false;
+    return y + h < this.world.blocks.height;
+  }
+
+  /** Never walk into lava (ours or theirs); step out if we are in it. */
+  private avoidLava(input: MoveInput) {
+    const b = this.bot;
+    const blocks = this.world.blocks;
+    if (!blocks.count) return;
+    const y = Math.floor(b.pos.y + 0.01);
+    if (b.inLava) {
+      // Walk toward the nearest cell without lava.
+      let best: [number, number] | null = null;
+      for (const [dx, dz] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+        [1, 1],
+        [1, -1],
+        [-1, 1],
+        [-1, -1],
+      ]) {
+        const cx = Math.floor(b.pos.x) + dx;
+        const cz = Math.floor(b.pos.z) + dz;
+        if (blocks.get(cx, y, cz) === B.AIR && !isSolidBlock(blocks.get(cx, y, cz))) {
+          best = [cx + 0.5, cz + 0.5];
+          break;
+        }
+      }
+      if (best) {
+        b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(yawTowards(best[0] - b.pos.x, best[1] - b.pos.z) - b.yaw), -0.8, 0.8));
+        input.forward = 1;
+        input.strafe = 0;
+        input.jump = true;
+      }
+      return;
+    }
+    const s = Math.sin(b.yaw);
+    const c = Math.cos(b.yaw);
+    const mx = -s * input.forward + c * input.strafe;
+    const mz = -c * input.forward - s * input.strafe;
+    const len = Math.hypot(mx, mz);
+    if (len < 1e-3) return;
+    for (const k of [0.6, 1.2]) {
+      const px = Math.floor(b.pos.x + (mx / len) * k);
+      const pz = Math.floor(b.pos.z + (mz / len) * k);
+      if (blocks.get(px, y, pz) === B.LAVA || blocks.get(px, y - 1, pz) === B.LAVA) {
+        input.forward = input.forward > 0 ? 0 : input.forward;
+        input.strafe = -input.strafe;
+        input.sprint = false;
+        input.jump = false;
+        return;
+      }
+    }
   }
 
   private retreat(per: Perceived, trueDist: number, input: MoveInput) {

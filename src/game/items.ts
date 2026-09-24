@@ -20,11 +20,23 @@ export type ItemId =
   | 'totem_of_undying'
   | 'splash_potion'
   | 'experience_bottle'
-  | 'cooked_beef';
+  | 'cooked_beef'
+  | 'diamond_pickaxe'
+  | 'golden_head'
+  | 'water_bucket'
+  | 'lava_bucket'
+  | 'bucket'
+  | 'oak_planks'
+  | 'cobweb'
+  | 'cobblestone'
+  | 'obsidian';
 export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance';
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw';
+export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket';
+
+/** Mining tool classes (the mineable/* block tags). */
+export type ToolKind = 'axe' | 'pickaxe' | 'sword';
 
 /** The splash potions NethPot uses (vanilla potion registry names in the comments). */
 export type PotionId = 'strength' | 'swiftness' | 'fire_resistance' | 'healing' | 'regeneration';
@@ -111,6 +123,15 @@ export interface ItemDef {
   maxDamage?: number;
   /** Durability lost per entity hit (swords 1, axes 2). */
   hitCost?: number;
+  /** Mining: what it is a tool for, and its destroy speed on those blocks (diamond: 8). */
+  tool?: ToolKind;
+  toolSpeed?: number;
+  /** Block item: the block (Blocks B.*) it places. */
+  places?: number;
+  /** Bucket contents: the fluid (Blocks B.WATER / B.LAVA), or 0 for an empty bucket. */
+  bucket?: number;
+  /** ItemCooldowns: ticks the item is unusable after being used (golden heads: 10 s). */
+  cooldown?: number;
   food?: FoodProps;
   armor?: ArmorProps;
 }
@@ -122,6 +143,9 @@ export interface Enchants {
   unbreaking?: number;
   fireAspect?: number;
   mending?: number;
+  efficiency?: number;
+  power?: number;
+  piercing?: number;
 }
 
 export interface ItemStack {
@@ -143,8 +167,9 @@ function armor(id: ItemId, name: string, slot: ArmorSlot, points: number, maxDam
 }
 
 export const ITEMS: Record<ItemId, ItemDef> = {
-  diamond_sword: { id: 'diamond_sword', name: 'Diamond Sword', maxStack: 1, attackDamage: 7, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 1561, hitCost: 1 },
-  netherite_sword: { id: 'netherite_sword', name: 'Netherite Sword', maxStack: 1, attackDamage: 8, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 2031, hitCost: 1 },
+  diamond_sword: { id: 'diamond_sword', name: 'Diamond Sword', maxStack: 1, attackDamage: 7, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 1561, hitCost: 1, tool: 'sword', toolSpeed: 15 },
+  netherite_sword: { id: 'netherite_sword', name: 'Netherite Sword', maxStack: 1, attackDamage: 8, attackSpeed: 1.6, use: 'none', handheld: true, maxDamage: 2031, hitCost: 1, tool: 'sword', toolSpeed: 15 },
+  diamond_pickaxe: { id: 'diamond_pickaxe', name: 'Diamond Pickaxe', maxStack: 1, attackDamage: 5, attackSpeed: 1.2, use: 'none', handheld: true, maxDamage: 1561, hitCost: 2, tool: 'pickaxe', toolSpeed: 8 },
   diamond_axe: {
     id: 'diamond_axe',
     name: 'Diamond Axe',
@@ -156,6 +181,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     disablesShield: true,
     maxDamage: 1561,
     hitCost: 2,
+    tool: 'axe',
+    toolSpeed: 8,
   },
   golden_apple: {
     id: 'golden_apple',
@@ -190,6 +217,32 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   totem_of_undying: { id: 'totem_of_undying', name: 'Totem of Undying', maxStack: 1, ...MELEE_FIST, use: 'none' },
   splash_potion: { id: 'splash_potion', name: 'Splash Potion', maxStack: 1, ...MELEE_FIST, use: 'throw' },
   experience_bottle: { id: 'experience_bottle', name: "Bottle o' Enchanting", maxStack: 64, ...MELEE_FIST, use: 'throw' },
+  golden_head: {
+    id: 'golden_head',
+    name: 'Golden Head',
+    maxStack: 64,
+    ...MELEE_FIST,
+    use: 'food',
+    // Server item (UHC tier tests): 1 s to eat, Regeneration III 5 s (4 hearts), Absorption I 2 min, 10 s cooldown.
+    food: {
+      nutrition: 4,
+      saturationModifier: 1.2,
+      useTicks: 20,
+      alwaysEdible: true,
+      effects: [
+        { id: 'regeneration', amplifier: 2, duration: 100 },
+        { id: 'absorption', amplifier: 0, duration: 2400 },
+      ],
+    },
+    cooldown: 200,
+  },
+  water_bucket: { id: 'water_bucket', name: 'Water Bucket', maxStack: 1, ...MELEE_FIST, use: 'bucket', bucket: 6 },
+  lava_bucket: { id: 'lava_bucket', name: 'Lava Bucket', maxStack: 1, ...MELEE_FIST, use: 'bucket', bucket: 7 },
+  bucket: { id: 'bucket', name: 'Bucket', maxStack: 16, ...MELEE_FIST, use: 'bucket', bucket: 0 },
+  oak_planks: { id: 'oak_planks', name: 'Oak Planks', maxStack: 64, ...MELEE_FIST, use: 'place', places: 1 },
+  cobweb: { id: 'cobweb', name: 'Cobweb', maxStack: 64, ...MELEE_FIST, use: 'place', places: 2 },
+  cobblestone: { id: 'cobblestone', name: 'Cobblestone', maxStack: 64, ...MELEE_FIST, use: 'place', places: 3 },
+  obsidian: { id: 'obsidian', name: 'Obsidian', maxStack: 64, ...MELEE_FIST, use: 'place', places: 4 },
   cooked_beef: {
     id: 'cooked_beef',
     name: 'Steak',
@@ -263,6 +316,9 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.sharpness) out.push(`Sharpness ${roman(e.sharpness)}`);
   if (e?.protection) out.push(`Protection ${roman(e.protection)}`);
   if (e?.fireAspect) out.push(`Fire Aspect ${roman(e.fireAspect)}`);
+  if (e?.efficiency) out.push(`Efficiency ${roman(e.efficiency)}`);
+  if (e?.power) out.push(`Power ${roman(e.power)}`);
+  if (e?.piercing) out.push(`Piercing ${roman(e.piercing)}`);
   if (e?.unbreaking) out.push(`Unbreaking ${roman(e.unbreaking)}`);
   if (e?.mending) out.push('Mending');
   if (s.charged) out.push('Projectile: [Arrow]');

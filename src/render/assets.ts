@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import playerUrl from '../assets/models/player.glb?url';
+import { registerGoldenHead } from './itemIcons';
 import { loadPack } from './pack';
 
 export type PartName = 'head' | 'body' | 'rightArm' | 'leftArm' | 'rightLeg' | 'leftLeg';
@@ -141,5 +142,7 @@ export async function loadAssets(): Promise<Assets> {
   // Items, armor, the shield, arrows, blocks and HUD sprites all come from the resource pack;
   // only the rigged player body is still a model file.
   const [player] = await Promise.all([load(playerUrl), loadPack()]);
-  return { rig: buildRig(player) };
+  const rig = buildRig(player);
+  registerGoldenHead();
+  return { rig };
 }

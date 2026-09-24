@@ -249,6 +249,37 @@ export class Particles {
     }
   }
 
+  /** Block break (level event 2001): chunks of the block's colour burst out of the cell. */
+  blockBreak(x: number, y: number, z: number, color: number) {
+    const r = ((color >> 16) & 255) / 255;
+    const g = ((color >> 8) & 255) / 255;
+    const b = (color & 255) / 255;
+    for (let i = 0; i < 30; i++) {
+      const life = 0.4 + Math.random() * 0.5;
+      const shade = 0.7 + Math.random() * 0.3;
+      const px = x + 0.1 + Math.random() * 0.8;
+      const py = y + 0.1 + Math.random() * 0.8;
+      const pz = z + 0.1 + Math.random() * 0.8;
+      this.squares.spawn({
+        x: px,
+        y: py,
+        z: pz,
+        vx: (px - x - 0.5) * 0.15,
+        vy: 0.05 + Math.random() * 0.1,
+        vz: (pz - z - 0.5) * 0.15,
+        r: r * shade,
+        g: g * shade,
+        b: b * shade,
+        size: 0.07,
+        life,
+        maxLife: life,
+        gravity: 0.03,
+        drag: 0.95,
+        grow: 0,
+      });
+    }
+  }
+
   /** Totem of Undying: a fountain of green and yellow sparks around the player. */
   totem(x: number, y: number, z: number) {
     for (let i = 0; i < 90; i++) {

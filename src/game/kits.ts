@@ -35,6 +35,10 @@ export interface KitDef extends Loadout {
    * damage before armor, like a plugin changing the base damage of every hit.
    */
   damageMultiplier?: number;
+  /** UHC: health only comes back from golden apples and heads. */
+  naturalRegen?: boolean;
+  /** mcpvp.club "stuns": a shield disable clears hurt immunity for an instant follow-up. */
+  shieldStuns?: boolean;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
@@ -113,6 +117,41 @@ function diamondPotLoadout(): Loadout {
   return { hotbar, main, armor, offhand: { id: 'cooked_beef', count: 5 } };
 }
 
+/**
+ * The UHC tier-test kit, laid out as on mcpvp.club: sword, axe, golden heads, gapples, water,
+ * lava, crossbow, planks and webs in the hotbar; shield in the off hand; spare buckets, arrows,
+ * bow, pickaxe and a second stack of planks in the inventory.
+ */
+function uhcLoadout(): Loadout {
+  const prot = [3, 2, 2, 3];
+  const armor = (['diamond_helmet', 'diamond_chestplate', 'diamond_leggings', 'diamond_boots'] as const).map((id, i) => ({
+    id,
+    count: 1,
+    ench: { protection: prot[i] },
+  }));
+  const hotbar: ItemStack[] = [
+    { id: 'diamond_sword', count: 1, ench: { sharpness: 3 } },
+    { id: 'diamond_axe', count: 1, ench: { efficiency: 3 } },
+    { id: 'golden_head', count: 2 },
+    { id: 'golden_apple', count: 8 },
+    { id: 'water_bucket', count: 1 },
+    { id: 'lava_bucket', count: 1 },
+    { id: 'crossbow', count: 1, ench: { piercing: 1 } },
+    { id: 'oak_planks', count: 64 },
+    { id: 'cobweb', count: 8 },
+  ];
+  const main: (ItemStack | null)[] = new Array(27).fill(null);
+  main[3] = { id: 'water_bucket', count: 1 };
+  main[4] = { id: 'water_bucket', count: 1 };
+  main[5] = { id: 'water_bucket', count: 1 };
+  main[8] = { id: 'arrow', count: 10 };
+  main[13] = { id: 'lava_bucket', count: 1 };
+  main[17] = { id: 'bow', count: 1, ench: { power: 1 } };
+  main[22] = { id: 'diamond_pickaxe', count: 1, ench: { efficiency: 3 } };
+  main[26] = { id: 'oak_planks', count: 64 };
+  return { hotbar, main, armor, offhand: { id: 'shield', count: 1 } };
+}
+
 function soon(id: KitId, name: string, icon: KitIcon, summary: string): KitDef {
   return { id, name, icon, available: false, summary, contents: [], hotbar: [], armor: [], offhand: null, armorLabel: '' };
 }
@@ -156,7 +195,24 @@ export const KITS: KitDef[] = [
     offhand: { id: 'shield', count: 1 },
     armorLabel: 'Diamond',
   },
-  soon('uhc', 'UHC', 'uhc', 'No natural regen, lava, water and webs.'),
+  {
+    id: 'uhc',
+    name: 'UHC',
+    icon: 'uhc',
+    available: true,
+    summary: 'No natural regen: shields, lava, water, webs and blocks.',
+    contents: [
+      'Diamond Sword (Sharp III) · Diamond Axe (Eff III) · Shield',
+      'Diamond armor — Prot III / II / II / III',
+      '8× Golden Apple · 2× Golden Head',
+      '4× Water Bucket · 2× Lava Bucket · 8× Cobweb · 128× Oak Planks',
+      'Bow (Power I) · Crossbow (Piercing I) · 10× Arrow · Pickaxe (Eff III)',
+    ],
+    ...uhcLoadout(),
+    armorLabel: 'Diamond · Prot III/II',
+    naturalRegen: false,
+    shieldStuns: true,
+  },
   {
     id: 'diamond_pot',
     name: 'Diamond Pot',
