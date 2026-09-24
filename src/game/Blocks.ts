@@ -656,11 +656,16 @@ export class Blocks {
     const cz1 = Math.floor(Math.max(maxZ, maxZ + dz));
     const boxes = tmpBoxes;
     boxes.length = 0;
+    const hf = this.half;
     for (let cy = cy0; cy <= cy1; cy++) {
-      if (cy >= this.height) break;
+      // Above build height only the arena walls remain: they go up forever, so a Wind Burst or
+      // an elytra can't carry anyone out of the arena.
+      const above = cy >= this.height;
       for (let cz = cz0; cz <= cz1; cz++)
         for (let cx = cx0; cx <= cx1; cx++) {
-          if (!isSolid(this.get(cx, cy, cz))) continue;
+          if (above) {
+            if (cx >= -hf && cx < hf && cz >= -hf && cz < hf) continue;
+          } else if (!isSolid(this.get(cx, cy, cz))) continue;
           // The floor and the walls are merged per cell; fine at this scale.
           boxes.push(cx, cy, cz);
         }

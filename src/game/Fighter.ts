@@ -1,7 +1,7 @@
 import * as C from '../core/constants';
 import { V3, clamp, forwardX, forwardZ, lookDir, rayAABB, wrapAngle, type AABB } from '../core/math';
 import { Arrow } from './Arrow';
-import { FIST, ITEMS, cloneStack, defOf, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
+import { FIST, ITEMS, cloneStack, defOf, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
 import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks';
 import { DroppedItem } from './DroppedItem';
@@ -32,6 +32,8 @@ export interface MoveInput {
 export interface EffectInstance {
   amplifier: number;
   duration: number;
+  /** A weaker, longer instance of the same effect that resumes when this one ends. */
+  hidden?: EffectInstance;
 }
 
 export interface FighterStats {
@@ -210,6 +212,30 @@ export class FoodData {
       this.tickTimer = 0;
     }
   }
+}
+
+/**
+ * MobEffectInstance.update: a stronger effect replaces the current one (which, if it would
+ * have lasted longer, waits underneath as a hidden effect); a weaker but longer one is kept
+ * hidden until the stronger one runs out. True when the visible effect changed.
+ */
+function mergeEffect(cur: EffectInstance, amplifier: number, duration: number): boolean {
+  if (amplifier > cur.amplifier) {
+    if (cur.duration > duration) cur.hidden = { amplifier: cur.amplifier, duration: cur.duration, hidden: cur.hidden };
+    cur.amplifier = amplifier;
+    cur.duration = duration;
+    return true;
+  }
+  if (amplifier === cur.amplifier) {
+    if (duration <= cur.duration) return false;
+    cur.duration = duration;
+    return true;
+  }
+  if (duration > cur.duration) {
+    if (!cur.hidden) cur.hidden = { amplifier, duration };
+    else mergeEffect(cur.hidden, amplifier, duration);
+  }
+  return false;
 }
 
 const tmpEye = new V3();
@@ -620,7 +646,11 @@ export class Fighter {
   /** LivingEntity.doHurtEquipment for armor: each piece loses max(1, damage / 4). */
   damageArmor(amount: number) {
     const per = Math.max(1, Math.floor(amount / 4));
-    for (let i = 0; i < 4; i++) if (this.armorSlots[i]) this.damageItem(SLOT_ARMOR + i, per);
+    // Only real armor wears from hits — an elytra in the chest slot does not (doHurtEquipment).
+    for (let i = 0; i < 4; i++) {
+      const st = this.armorSlots[i];
+      if (st && !ITEMS[st.id].armor?.glider) this.damageItem(SLOT_ARMOR + i, per);
+    }
   }
 
   /** The slot index the hand holds (main hand = selected hotbar slot). */
@@ -687,7 +717,7 @@ export class Fighter {
     const max = ITEMS[stack.id].maxStack;
     let left = stack.count;
     const top = (s: ItemStack | null) => {
-      if (!s || s.id !== stack.id || left <= 0) return;
+      if (!s || !sameItem(s, stack) || left <= 0) return;
       const n = Math.min(left, max - s.count);
       if (n > 0) {
         s.count += n;
@@ -933,6 +963,11 @@ export class Fighter {
         const bb = f.aabbInto(tmpBox);
         if (Blocks.boxOverlapsCell(bb.minX, bb.minY, bb.minZ, bb.maxX, bb.maxY, bb.maxZ, x, y, z)) return false;
       }
+      // End crystals block building too (their 2×2×2 box).
+      for (const c of this.world.crystals) {
+        if (c.removed) continue;
+        if (Blocks.boxOverlapsCell(c.x - 1, c.y, c.z - 1, c.x + 1, c.y + 2, c.z + 1, x, y, z)) return false;
+      }
     }
     blocks.set(x, y, z, id);
     s.count--;
@@ -959,7 +994,8 @@ export class Fighter {
       if (s.count <= 1) this.setSlot(slot, full);
       else {
         s.count--;
-        this.addItem(full);
+        // A full inventory drops it at our feet, as vanilla does.
+        if (!this.addItem(full)) this.world.items.push(new DroppedItem(full, this.pos.x, this.pos.y + 0.5, this.pos.z, this.world.rng));
       }
       if (hand === 'main') this.swing();
       this.events.push({ type: 'bucket', fluid: hit.id, fill: true });
@@ -1246,9 +1282,7 @@ export class Fighter {
   addEffect(id: EffectId, amplifier: number, duration: number) {
     const cur = this.effects.get(id);
     if (!cur) this.effects.set(id, { amplifier, duration });
-    else if (amplifier > cur.amplifier) Object.assign(cur, { amplifier, duration });
-    else if (amplifier === cur.amplifier && duration > cur.duration) cur.duration = duration;
-    else return;
+    else if (!mergeEffect(cur, amplifier, duration)) return;
     if (id === 'absorption') this.absorption = Math.max(this.absorption, 4 * (amplifier + 1));
   }
 
@@ -1338,7 +1372,18 @@ export class Fighter {
         if ((k <= 0 || e.duration % k === 0) && this.health < this.maxHealth) this.heal(1);
       }
       e.duration--;
+      for (let h = e.hidden; h; h = h.hidden) h.duration--;
       if (e.duration <= 0) {
+        // A weaker, longer effect underneath (a gapple's Absorption I under a totem's II) takes over.
+        let next = e.hidden;
+        while (next && next.duration <= 0) next = next.hidden;
+        if (next) {
+          e.amplifier = next.amplifier;
+          e.duration = next.duration;
+          e.hidden = next.hidden;
+          if (id === 'absorption') this.absorption = Math.max(this.absorption, 4 * (e.amplifier + 1));
+          continue;
+        }
         this.effects.delete(id);
         if (id === 'absorption') this.absorption = 0;
       }
@@ -1494,7 +1539,7 @@ export class Fighter {
         let fall = this.fallDistance + Math.max(0, lastY - y);
         if (this.impulseY !== null) fall = Math.min(fall, Math.max(0, this.impulseY - y));
         const dmg = Math.ceil(fall - 3);
-        if (dmg > 0 && this.fallDistance > 0) fallHurt(this, dmg);
+        if (dmg > 0 && this.fallDistance > 0 && !this.touchesWater()) fallHurt(this, dmg);
         this.impulseY = null;
       }
       this.fallDistance = 0;
@@ -1672,6 +1717,18 @@ export class Fighter {
    * water current (0.014 per block, averaged), putting out fire in water, and whether we are
    * stuck in a web.
    */
+  /**
+   * LivingEntity.checkFallDamage re-checks for water before landing, so a fall that ends in
+   * water (a water-bucket clutch) never hurts, whatever tick it splashed down on.
+   */
+  private touchesWater(): boolean {
+    const b = this.world.blocks;
+    if (!b.count) return false;
+    const hw = C.PLAYER_WIDTH / 2 - 0.001;
+    const p = this.pos;
+    return b.boxTouches(p.x - hw, p.y + 0.001, p.z - hw, p.x + hw, p.y + this.height() - 0.001, p.z + hw, B.WATER);
+  }
+
   private updateFluids() {
     const b = this.world.blocks;
     if (!b.count) {
@@ -1741,7 +1798,7 @@ export class Fighter {
         let fall = this.fallDistance;
         if (this.impulseY !== null) fall = Math.min(fall, Math.max(0, this.impulseY - this.pos.y));
         const dmg = Math.ceil(fall - 3);
-        if (dmg > 0 && !this.dead && !this.replica) fallHurt(this, dmg);
+        if (dmg > 0 && !this.dead && !this.replica && !this.touchesWater()) fallHurt(this, dmg);
       }
       this.fallDistance = 0;
       this.impulseY = null;

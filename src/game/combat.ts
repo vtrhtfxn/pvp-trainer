@@ -193,13 +193,15 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
     kbLevel++;
     sprint = true;
   }
-  const crit = strong && attacker.fallDistance > 0 && !attacker.onGround && !attacker.serverSprinting && !attacker.fallFlying;
-  if (crit) base *= C.CRIT_MULTIPLIER;
-  // The mace's smash bonus is added after the cooldown scaling and the crit.
+  // The mace's smash bonus (Item.getAttackDamageBonus) joins the damage after the cooldown
+  // scaling and before the crit check, so a critical smash multiplies it too.
   const smash = canSmash(attacker);
   const fall = attacker.fallDistance;
-  const bonus = smash ? smashBonus(fall, weapon?.ench?.density ?? 0) : 0;
-  const total = base + ench + bonus;
+  if (smash) base += smashBonus(fall, weapon?.ench?.density ?? 0);
+  // Gliding counts as falling (an elytra holds fall distance at 1), so elytra hits can crit.
+  const crit = strong && attacker.fallDistance > 0 && !attacker.onGround && !attacker.inWater && !attacker.serverSprinting;
+  if (crit) base *= C.CRIT_MULTIPLIER;
+  const total = base + ench;
 
   // The server computes knockback on its own copy of the victim's velocity and sends the
   // result to the victim's client (ClientboundSetEntityMotionPacket), which replaces its own.

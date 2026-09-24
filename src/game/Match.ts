@@ -120,6 +120,7 @@ export class Match {
     } else {
       this.queuedClicks = 0;
       this.queuedUse = 0;
+      this.queuedSwap = 0;
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
       if (this.phase === 'countdown') {
         b.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
