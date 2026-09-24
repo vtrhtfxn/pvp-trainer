@@ -185,7 +185,7 @@ describe('damage', () => {
 });
 
 describe('golden apple', () => {
-  it('takes the configured time and gives Regeneration II + Absorption', () => {
+  it('takes 32 ticks (1.6 s) and gives Regeneration II + Absorption', () => {
     const { a } = setup();
     a.health = 10;
     a.selectSlot(1);
@@ -196,7 +196,7 @@ describe('golden apple', () => {
       step(a);
       ticks++;
     }
-    expect(ticks).toBe(30);
+    expect(ticks).toBe(32);
     expect(a.inventory[1]?.count).toBe(4);
     expect(a.absorption).toBe(4);
     expect(a.effects.get('regeneration')?.amplifier).toBe(1);

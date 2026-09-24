@@ -188,6 +188,7 @@ export class Game {
     this.input.sensitivity = s.sensitivity;
     this.input.toggleSprint = s.toggleSprint;
     this.input.rawInput = s.rawInput;
+    this.input.fullscreenLock = s.fullscreenLock;
     this.sound.volume = s.volume;
     this.hud.layout(s);
     this.inventory.root.style.setProperty('--gui', String(this.hud.guiScale));
@@ -230,7 +231,9 @@ export class Game {
     this.inventory.hide();
     this.state = 'menu';
     this.input.enabled = false;
+    this.input.closeGuard = false;
     this.input.unlock();
+    this.input.releaseShortcuts();
     this.netMatch = null;
     this.net.close();
     this.match = this.newDemo();
@@ -262,6 +265,7 @@ export class Game {
     this.hud.setVisible(true);
     this.state = 'playing';
     this.input.enabled = true;
+    this.input.closeGuard = true;
     void this.input.lock();
   }
 
@@ -293,7 +297,9 @@ export class Game {
       if (wasPlaying) {
         this.state = 'menu';
         this.input.enabled = false;
+        this.input.closeGuard = false;
         this.input.unlock();
+        this.input.releaseShortcuts();
         this.match = this.newDemo();
         this.demoBrain = this.makeDemoBrain(this.match as Match);
         this.view.cameraMode = 'orbit';
@@ -341,6 +347,7 @@ export class Game {
     this.hud.setVisible(true);
     this.state = 'playing';
     this.input.enabled = true;
+    this.input.closeGuard = true;
     void this.input.lock();
   }
 

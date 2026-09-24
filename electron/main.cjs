@@ -1,4 +1,4 @@
-// macOS app shell for PvP Trainer.
+// Desktop app shell for PvP Trainer (macOS and Windows).
 //
 // The built game (dist/index.html) is served over a private "pvp://" scheme rather than
 // file://, so it gets a real web origin: localStorage keeps your settings and records, and
@@ -40,6 +40,13 @@ function toggleHitboxes() {
 }
 
 function buildMenu() {
+  // Windows / Linux: no menu bar at all. Its default shortcuts (Ctrl+W closes the window,
+  // Ctrl+R reloads) sit right next to the game's keys — Ctrl is sprint, W is forward — and
+  // would end a duel mid-fight. The game handles Ctrl+M itself; F11 is wired up below.
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   const template = [
     {
       label: app.name,
@@ -84,6 +91,7 @@ function createWindow() {
     minHeight: 540,
     backgroundColor: '#1b1b1b',
     title: 'PvP Trainer',
+    icon: process.platform === 'win32' ? path.join(__dirname, 'icon.ico') : undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -95,6 +103,17 @@ function createWindow() {
   });
 
   win.once('ready-to-show', () => win?.show());
+  if (process.platform !== 'darwin') {
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      if (input.key === 'F11') {
+        event.preventDefault();
+        win?.setFullScreen(!win.isFullScreen());
+      } else if (input.key === 'F12' && input.control && input.shift) {
+        win?.webContents.toggleDevTools();
+      }
+    });
+  }
   // The game has no outbound links; if one ever appears, hand it to the real browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url);

@@ -34,8 +34,9 @@ export class NetClient {
   /** The kit of the room we are in (from the lobby / start messages). */
   kit = 'sword';
 
-  connect(url: string, room: string, name: string, kit = 'sword') {
+  connect(address: string, room: string, name: string, kit = 'sword') {
     this.close();
+    const url = normalizeServerUrl(address);
     this.setStatus('connecting', `Connecting to ${url} …`);
     let ws: WebSocket;
     try {
@@ -111,16 +112,12 @@ export class NetClient {
   }
 
   /**
-   * The overwhelmingly common cause is opening game.html by double-clicking it: the page then
-   * has no host of its own, so the address defaults to localhost and there is nothing there.
+   * The overwhelmingly common cause is a page with no host of its own (game.html opened as a
+   * file, or the desktop app): the address then defaults to localhost and there is nothing there.
    */
   private unreachable(url: string): string {
-    const openedAsFile = location.protocol !== 'http:' && location.protocol !== 'https:';
-    if (openedAsFile) {
-      return `Nothing is running at ${url}. You opened the game as a file — for multiplayer, open the http:// address the host's server window prints (for example http://192.168.1.23:4180) instead of double-clicking game.html.`;
-    }
     if (/\/\/(localhost|127\.0\.0\.1)[:/]/.test(url)) {
-      return `Nothing is running at ${url}. "localhost" means this computer — if you are not the host, put the host's address here instead.`;
+      return `Nothing is running at ${url}. "localhost" means this computer — if you are not the host, type the host's address in Server (the one their server window prints, for example 192.168.1.23).`;
     }
     return `Could not reach ${url}. Check the host's server window is still open, that you typed the same address it prints, and that the host allowed it through their firewall.`;
   }
@@ -129,5 +126,24 @@ export class NetClient {
     this.status = s;
     this.detail = detail;
     this.handlers.onStatus(s, detail);
+  }
+}
+
+/**
+ * Accepts whatever people type for the server: "192.168.1.23", "192.168.1.23:4180",
+ * "http://192.168.1.23:4180" (the address the server prints) or a full ws:// URL.
+ */
+export function normalizeServerUrl(input: string): string {
+  let s = input.trim();
+  if (!s) return NetClient.defaultUrl();
+  s = s.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
+  if (!/^wss?:\/\//i.test(s)) s = `ws://${s}`;
+  try {
+    const u = new URL(s);
+    if (!u.port && u.protocol === 'ws:') u.port = '4180';
+    if (u.pathname === '/' || u.pathname === '') u.pathname = '/ws';
+    return u.toString();
+  } catch {
+    return s;
   }
 }

@@ -11,6 +11,8 @@ export interface Settings {
   toggleSprint: boolean;
   doubleTapSprint: boolean;
   rawInput: boolean;
+  /** Fullscreen while playing, so Ctrl+W (sprint + forward) cannot close the tab. */
+  fullscreenLock: boolean;
   showReach: boolean;
   showCombo: boolean;
   showCps: boolean;
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   toggleSprint: true,
   doubleTapSprint: true,
   rawInput: true,
+  fullscreenLock: true,
   showReach: true,
   showCombo: true,
   showCps: true,

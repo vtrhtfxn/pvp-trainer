@@ -1,4 +1,4 @@
-// Generates electron/icon.icns: a pixel-art diamond sword on a dark slate tile.
+// Generates electron/icon.ico (and icon.icns on a Mac): a pixel-art diamond sword on a dark slate tile.
 // Pure Node — the PNG encoder is here so the build needs no image dependencies.
 
 import { execFileSync } from 'node:child_process';
@@ -162,15 +162,42 @@ function renderIcon(size) {
   return encodePng(size, size, img);
 }
 
-const iconset = path.join(HERE, 'icon.iconset');
-fs.rmSync(iconset, { recursive: true, force: true });
-fs.mkdirSync(iconset, { recursive: true });
-for (const base of [16, 32, 128, 256, 512]) {
-  fs.writeFileSync(path.join(iconset, `icon_${base}x${base}.png`), renderIcon(base));
-  fs.writeFileSync(path.join(iconset, `icon_${base}x${base}@2x.png`), renderIcon(base * 2));
+// Windows: an .ico whose entries are plain PNGs (supported since Vista).
+function encodeIco(sizes) {
+  const pngs = sizes.map((n) => renderIcon(n));
+  const header = Buffer.alloc(6 + 16 * pngs.length);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2); // icon
+  header.writeUInt16LE(pngs.length, 4);
+  let offset = header.length;
+  pngs.forEach((png, i) => {
+    const e = 6 + 16 * i;
+    header[e] = sizes[i] >= 256 ? 0 : sizes[i];
+    header[e + 1] = sizes[i] >= 256 ? 0 : sizes[i];
+    header.writeUInt16LE(1, e + 4); // planes
+    header.writeUInt16LE(32, e + 6); // bits per pixel
+    header.writeUInt32LE(png.length, e + 8);
+    header.writeUInt32LE(offset, e + 12);
+    offset += png.length;
+  });
+  return Buffer.concat([header, ...pngs]);
 }
 
-const icns = path.join(HERE, 'icon.icns');
-execFileSync('iconutil', ['-c', 'icns', iconset, '-o', icns]);
-fs.rmSync(iconset, { recursive: true, force: true });
-console.log(`icon → ${path.relative(process.cwd(), icns)} (${fs.statSync(icns).size} bytes)`);
+const ico = path.join(HERE, 'icon.ico');
+fs.writeFileSync(ico, encodeIco([16, 24, 32, 48, 64, 128, 256]));
+console.log(`icon → ${path.relative(process.cwd(), ico)} (${fs.statSync(ico).size} bytes)`);
+
+// macOS: iconutil only exists there; the committed icon.icns is used elsewhere.
+if (process.platform === 'darwin') {
+  const iconset = path.join(HERE, 'icon.iconset');
+  fs.rmSync(iconset, { recursive: true, force: true });
+  fs.mkdirSync(iconset, { recursive: true });
+  for (const base of [16, 32, 128, 256, 512]) {
+    fs.writeFileSync(path.join(iconset, `icon_${base}x${base}.png`), renderIcon(base));
+    fs.writeFileSync(path.join(iconset, `icon_${base}x${base}@2x.png`), renderIcon(base * 2));
+  }
+  const icns = path.join(HERE, 'icon.icns');
+  execFileSync('iconutil', ['-c', 'icns', iconset, '-o', icns]);
+  fs.rmSync(iconset, { recursive: true, force: true });
+  console.log(`icon → ${path.relative(process.cwd(), icns)} (${fs.statSync(icns).size} bytes)`);
+}

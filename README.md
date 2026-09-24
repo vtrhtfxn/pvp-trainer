@@ -26,7 +26,23 @@ ad-hoc signed (unsigned by a developer ID), so if you ever move it between machi
 `xattr -dr com.apple.quarantine "PvP Trainer.app"` first. Pass `--universal` or
 `--arch=x64` to `node electron/build-app.mjs` for other Macs.
 
+**Windows app (for friends):**
+
+```bash
+npm run app:win
+```
+
+builds `dist-app/PvP Trainer (Windows).zip` from any OS: extract it, double-click
+`PvP Trainer.exe`. No install and no internet needed for bot duels. It has no menu bar, so
+Ctrl+W, Ctrl+R and friends do nothing (F11 is fullscreen) — sprinting next to W can never
+close the game. For multiplayer, type the host's address (e.g. `192.168.1.23`) in
+**Multiplayer → Server**. The zip carries a `READ ME FIRST.txt` with these steps.
+
 **In a browser:** double-click `dist/index.html` (Chrome recommended; Safari works too).
+Browsers never let a page cancel Ctrl+W, so during a match the game goes fullscreen, where
+Chrome and Edge hand those keys to the page (Keyboard Lock API, on `localhost`, files and
+https). Everywhere else, closing the tab mid-match asks "Leave site?" first. Turn off
+**Settings → Fullscreen** if you prefer a window.
 
 **Dev server:**
 
@@ -84,6 +100,10 @@ double-click launchers for Windows (`.bat`), macOS (`.command`) and Linux. It ha
 dependencies at all**: the WebSocket server is implemented in
 [`src/server/ws.ts`](src/server/ws.ts) and the whole thing bundles to one ~50 kB file, so the
 host only needs Node installed. Zip that folder and send it to whoever is hosting.
+
+Players in the Windows or macOS app, or with `game.html` opened as a file, type the host's
+address in **Multiplayer → Server** — `192.168.1.23`, `192.168.1.23:4180` and the printed
+`http://…` all work.
 
 The server prints every address a friend could actually reach — deliberately skipping carrier-NAT (`100.64.0.0/10`,
 what a phone hotspot hands out) and link-local addresses, which nobody can route to. Friends
@@ -327,9 +347,16 @@ nametag reads *Passive*.
   (look down to gain speed, up to trade it for height), a 0.6-block hitbox, fall distance held at 1
   unless you dive faster than 0.5 blocks/tick, 1 durability per second, and (speed lost × 10) − 3
   damage for flying into a wall. Swap the chestplate back on to stop gliding — then smash.
-- **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
-  `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
-  Absorption I for 2 min, 4 hunger and 9.6 saturation.
+- **Golden apple**: 1.6 s (32 ticks) to eat, as in vanilla (`GOLDEN_APPLE_EAT_TICKS` in
+  `src/core/constants.ts`). Eating slows you to 20% speed and your clicks do nothing until
+  it finishes or you let go. It gives Regeneration II for 5 s (one heart every 1.25 s, 2 hearts
+  in total), Absorption I for 2 min (2 golden hearts; eating another refills them), 4 hunger and
+  9.6 saturation. No cooldown. Golden heads (UHC): 1 s, Regeneration III, Absorption I.
+- **Clicking**: Java has no click-speed cap. Every click that arrives is played on the next game
+  tick (20 per second), even several in one tick. What limits you is the 1.9+ attack cooldown:
+  each swing, hit or miss, restarts it, so a hit landed early does only 20% + 80% × (charge)²
+  of the damage and can't crit or sprint-knock back (that needs 90% charge). A sword is ready
+  every 12.5 ticks (0.625 s), an axe every 20 ticks and a mace every 33.
 
 ## The bot
 
