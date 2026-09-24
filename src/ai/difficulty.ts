@@ -61,6 +61,23 @@ export interface BotProfile {
   uhc: UhcSkill;
   /** End crystals, respawn anchors and pearls for the Crystal kit. */
   crystal: CrystalSkill;
+  /** Wind charges, elytra and mace smashes for the Mace kit. */
+  mace: MaceSkill;
+}
+
+export interface MaceSkill {
+  /** Chance, each time it could, that it wind-charges itself up for a smash. */
+  launch: number;
+  /** How well it steers in the air onto you (0..1: share of ticks it gets the direction right). */
+  steer: number;
+  /** Swaps to the elytra after a Wind Burst launch, glides over and dives in, chestplate back on. */
+  elytra: boolean;
+  /** Picks whichever mace (Density or Breach) does more against your armor at that fall height. */
+  pickMace: boolean;
+  /** Against your smash: 0 = nothing, 1 = sidestep, 2 = sidestep or raise the shield. */
+  defend: number;
+  /** Blocks of extra fall it waits for before smashing (more damage, less margin). */
+  smashDepth: number;
 }
 
 export interface CrystalSkill {
@@ -202,6 +219,7 @@ const LT5: Skills = {
     clickGap: 8, aimSettle: 6, comboGap: 30, thinkTicks: 8, selfWeight: 0.3, minDamage: 1,
     anchors: false, iframeTiming: false, breakTheirs: false, pearls: 0, surround: false, crossbow: false, mine: false,
   },
+  mace: { launch: 0.25, steer: 0.4, elytra: false, pickMace: false, defend: 0, smashDepth: 0 },
 };
 
 /** Low Tier 4: starts to space and W-tap; anchors, pearls, water and a crossbow come in. */
@@ -242,6 +260,7 @@ const LT4: Skills = {
     clickGap: 6, aimSettle: 4, comboGap: 20, thinkTicks: 6, selfWeight: 0.5, minDamage: 1.2,
     anchors: true, iframeTiming: false, breakTheirs: false, pearls: 1, surround: false, crossbow: false, mine: false,
   },
+  mace: { launch: 0.55, steer: 0.6, elytra: false, pickMace: true, defend: 1, smashDepth: 0.3 },
 };
 
 /** Low Tier 3: times its hits, sometimes W-taps and crits; uses the crossbow and hotbar totems. */
@@ -285,6 +304,7 @@ const LT3: Skills = {
     clickGap: 4, aimSettle: 3, comboGap: 14, thinkTicks: 5, selfWeight: 0.7, minDamage: 1.5,
     anchors: true, iframeTiming: false, breakTheirs: true, pearls: 1, surround: false, crossbow: true, mine: false,
   },
+  mace: { launch: 0.8, steer: 0.75, elytra: true, pickMace: true, defend: 1, smashDepth: 0.6 },
 };
 
 /** Low Tier 2: W-taps, jump-resets, crits, attribute swaps, surrounds and digs — every item. */
@@ -328,6 +348,7 @@ const LT2: Skills = {
     clickGap: 2, aimSettle: 2, comboGap: 6, thinkTicks: 3, selfWeight: 0.9, minDamage: 2,
     anchors: true, iframeTiming: true, breakTheirs: true, pearls: 2, surround: true, crossbow: true, mine: true,
   },
+  mace: { launch: 0.9, steer: 0.88, elytra: true, pickMace: true, defend: 2, smashDepth: 1 },
 };
 
 /** Low Tier 1: tier-tester level — near-perfect timing and spacing. */
@@ -360,6 +381,7 @@ const LT1: Skills = {
   neth: { potHP: 11, potNoiseDeg: 2, potGap: 2, invTicks: 4, totemReact: 3, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.8, gapDist: 5.5 },
   uhc: { lava: 0.9, lavaPickup: true, web: 0.7, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 1 },
   crystal: { ...LT2.crystal, clickGap: 1, aimSettle: 1, comboGap: 3, thinkTicks: 2, selfWeight: 1 },
+  mace: { launch: 0.97, steer: 0.95, elytra: true, pickMace: true, defend: 2, smashDepth: 1.3 },
 };
 
 /** High Tier 1: the best there is — one-tick reactions, perfect spacing, no wasted clicks. */
@@ -390,6 +412,7 @@ const HT1: Skills = {
   neth: { potHP: 11.5, potNoiseDeg: 1, potGap: 1, invTicks: 2, totemReact: 1, hotbarTotem: true, rebuff: true, mendAt: 0.85, pcrit: 0.9, gapDist: 5 },
   uhc: { lava: 0.95, lavaPickup: true, web: 0.8, water: true, pillar: true, mine: true, headHP: 12.5, aimSettle: 1 },
   crystal: { ...LT1.crystal, clickGap: 0, comboGap: 1, thinkTicks: 1, selfWeight: 1.1 },
+  mace: { launch: 1, steer: 1, elytra: true, pickMace: true, defend: 2, smashDepth: 1.5 },
 };
 
 /** Tier ladder index (0 = LT5 … 9 = HT1) of each hand-tuned profile; the rest are blended. */
@@ -459,6 +482,7 @@ export const DIFFICULTIES = {
     neth: { ...LT5.neth, potHP: 8, potNoiseDeg: 14, totemReact: 20, gapDist: 6 },
     uhc: { ...LT5.uhc, lava: 0, water: true, mine: true, headHP: 8 },
     crystal: { ...LT5.crystal, clickGap: 10, aimSettle: 8, comboGap: 40, thinkTicks: 10, selfWeight: 1, minDamage: 99 },
+    mace: { ...LT5.mace, launch: 0 },
   },
   ...Object.fromEntries(TIERS.map((t, i) => [t.id, { ...skillsAt(i), ...t, passive: false }])),
 } as Record<DifficultyId, BotProfile>;

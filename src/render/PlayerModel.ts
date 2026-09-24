@@ -110,6 +110,9 @@ export class PlayerModel {
   private readonly pieces: { armor: THREE.Mesh[]; glint: THREE.Mesh[]; layer: 1 | 2; material: string }[] = [];
   private readonly mainHand: HeldItemSlot;
   private readonly offHand: HeldItemSlot;
+  /** ElytraModel: two wings on the back, shown while an elytra is worn. */
+  private readonly wings: THREE.Group[] = [];
+  private readonly wingGlint: THREE.Mesh[] = [];
 
   constructor(assets: Assets, glint: THREE.Material) {
     this.skin = new THREE.MeshLambertMaterial({ map: assets.rig.texture, alphaTest: 0.1, side: THREE.DoubleSide });
@@ -145,6 +148,26 @@ export class PlayerModel {
         entry.glint.push(g);
       }
       this.pieces.push(entry);
+    }
+
+    // Elytra (ElytraLayer: 2 px behind the body; each wing a 10×20×2 box inflated by 1).
+    const wingTex = packTexture('entity/elytra');
+    if (wingTex) {
+      const wingMat = new THREE.MeshLambertMaterial({ map: wingTex, alphaTest: 0.1, side: THREE.DoubleSide });
+      for (const side of [1, -1]) {
+        const b = { pos: [] as number[], nrm: [] as number[], uv: [] as number[] };
+        mcBox(b, side > 0 ? [-10, 0, 0] : [0, 0, 0], [10, 20, 2], [22, 0], [64, 32], 1, side < 0, toOurs);
+        const geo = toGeometry(b);
+        const wing = new THREE.Group();
+        wing.rotation.order = 'ZYX';
+        wing.position.set(5 * side, 0, -2);
+        const g = new THREE.Mesh(geo, glint);
+        g.renderOrder = 2;
+        wing.add(new THREE.Mesh(geo, wingMat), g);
+        this.pivots.body.add(wing);
+        this.wings.push(wing);
+        this.wingGlint.push(g);
+      }
     }
 
     this.mainHand = new HeldItemSlot(glint);
@@ -215,6 +238,13 @@ export class PlayerModel {
     let fall = 0;
     if (f.dead) fall = Math.min(1, Math.sqrt(Math.max(0, ((f.deathTime + a - 1) / 20) * 1.6)));
     this.tilt.rotation.z = (fall * Math.PI) / 2;
+    // PlayerRenderer.setupRotations while gliding: lie along the look direction, easing in over
+    // the first 10 ticks.
+    if (f.fallFlying && !f.dead) {
+      const t = f.fallFlyTicks + a;
+      const k = Math.min(1, (t * t) / 100);
+      this.tilt.rotation.x = -k * (Math.PI / 2 - pitch);
+    } else this.tilt.rotation.x = 0;
 
     const hurt = f.hurtTime > 0 || f.dead;
     this.skin.color.setRGB(1, hurt ? 0.55 : 1, hurt ? 0.55 : 1);
@@ -223,8 +253,10 @@ export class PlayerModel {
       m.color.copy(this.skin.color);
       m.emissive.copy(this.skin.emissive);
     }
+    const chest = f.armorSlots[1];
+    const elytra = !!chest && chest.id === 'elytra';
     for (let i = 0; i < 4; i++) {
-      const st = f.armorSlots[i];
+      const st = i === 1 && elytra ? null : f.armorSlots[i];
       const e = this.pieces[i];
       const material = st ? st.id.slice(0, st.id.indexOf('_')) : e.material;
       if (material !== e.material) {
@@ -342,6 +374,35 @@ export class PlayerModel {
       L.y = 5.2;
       R.y = 5.2;
     }
+    // ElytraModel.setupAnim: folded on the back; spread and swept back while gliding.
+    if (this.wings.length) {
+      let xr = 0.2617994;
+      let zr = -0.2617994;
+      let wy = 0;
+      let yr = 0;
+      if (f.fallFlying) {
+        let f4 = 1;
+        const vl = Math.hypot(f.vel.x, f.vel.y, f.vel.z);
+        if (f.vel.y < 0 && vl > 0) f4 = 1 - Math.pow(-f.vel.y / vl, 1.5);
+        xr = f4 * 0.34906584 + (1 - f4) * xr;
+        zr = f4 * (-Math.PI / 2) + (1 - f4) * zr;
+      } else if (f.sneaking) {
+        xr = 0.6981317;
+        zr = -0.7853982;
+        wy = 3;
+        yr = 0.08726646;
+      }
+      const [lw, rw] = this.wings;
+      lw.visible = rw.visible = elytra && !f.dead;
+      for (const g of this.wingGlint) g.visible = elytra && isEnchanted(chest!);
+      // Minecraft -> ours: rotations (x, -y, -z).
+      lw.position.y = -wy;
+      rw.position.y = -wy;
+      lw.rotation.set(xr, -yr, -zr, 'ZYX');
+      rw.rotation.set(xr, yr, zr, 'ZYX');
+      if (f.fallFlying && f.fallFlyTicks > 4) H.xRot = -Math.PI / 4;
+    }
+
     // AnimationUtils.bobModelPart
     R.zRot += Math.cos(age * 0.09) * 0.05 + 0.05;
     L.zRot -= Math.cos(age * 0.09) * 0.05 + 0.05;

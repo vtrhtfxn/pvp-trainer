@@ -63,6 +63,10 @@ export interface FighterStats {
   crystalsBroken: number;
   anchorsBlown: number;
   pearlsThrown: number;
+  windCharges: number;
+  smashes: number;
+  /** Biggest single mace smash (damage dealt). */
+  maxSmash: number;
   /** Damage your crystals and anchors did to the other player. */
   explosionDamage: number;
 }
@@ -104,7 +108,14 @@ export type FighterEvent =
   | { type: 'arrowHit'; target: Fighter; damage: number; crit: boolean }
   | { type: 'pickup' }
   | { type: 'swapHands' }
-  | { type: 'throw'; kind: 'potion' | 'xp' | 'pearl' }
+  | { type: 'throw'; kind: 'potion' | 'xp' | 'pearl' | 'wind' }
+  /** Right click swapped a piece of armor (or the elytra) on. */
+  | { type: 'equip'; id: ItemId }
+  | { type: 'glide'; on: boolean }
+  /** A wind explosion pushed us (online: the server sends the new velocity to that client). */
+  | { type: 'windLaunch'; vx: number; vy: number; vz: number }
+  /** A mace smash attack landed. */
+  | { type: 'smash'; fall: number; damage: number }
   /** A splash potion's effect reached you (`own`: you threw it). */
   | { type: 'splashed'; potion: PotionId; scale: number; own: boolean }
   | { type: 'totem' }
@@ -146,6 +157,9 @@ export function newStats(): FighterStats {
     crystalsBroken: 0,
     anchorsBlown: 0,
     pearlsThrown: 0,
+    windCharges: 0,
+    smashes: 0,
+    maxSmash: 0,
     explosionDamage: 0,
   };
 }
@@ -239,6 +253,15 @@ export class Fighter {
   onGround = true;
   horizontalCollision = false;
   fallDistance = 0;
+  /** Gliding with an elytra (the FALL_FLYING pose: a 0.6-block hitbox). */
+  fallFlying = false;
+  fallFlyTicks = 0;
+  private prevJumpInput = false;
+  /**
+   * Height a wind charge or Wind Burst launched us from: a fall ending above it deals no damage
+   * (ServerPlayer.currentImpulseImpactPos / ignoreFallDamageFromCurrentImpulse). Null = none.
+   */
+  impulseY: number | null = null;
 
   input: MoveInput = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
   /** Allow double-tapping W to sprint (player only). */
@@ -354,6 +377,10 @@ export class Fighter {
     this.onGround = true;
     this.horizontalCollision = false;
     this.fallDistance = 0;
+    this.fallFlying = false;
+    this.fallFlyTicks = 0;
+    this.prevJumpInput = false;
+    this.impulseY = null;
     this.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
     this.sprinting = this.wasSprinting = this.serverSprinting = false;
     this.sprintTriggerTime = 0;
@@ -407,10 +434,18 @@ export class Fighter {
     return this.input.sneak && !this.dead;
   }
   eyeHeight() {
+    if (this.fallFlying) return C.EYE_HEIGHT_GLIDE;
     return this.sneaking ? C.EYE_HEIGHT_SNEAK : C.EYE_HEIGHT;
   }
   height() {
+    if (this.fallFlying) return C.PLAYER_GLIDE_HEIGHT;
     return this.sneaking ? C.PLAYER_SNEAK_HEIGHT : C.PLAYER_HEIGHT;
+  }
+  /** An elytra in the chest slot that isn't about to break. */
+  canGlide(): boolean {
+    const s = this.armorSlots[1];
+    const def = s ? ITEMS[s.id] : null;
+    return !!def?.armor?.glider && (s!.damage ?? 0) < (def.maxDamage ?? 1) - 1;
   }
   eyePos(out = new V3()): V3 {
     return out.set(this.pos.x, this.pos.y + this.eyeHeight(), this.pos.z);
@@ -775,6 +810,7 @@ export class Fighter {
           ok = true;
         }
       } else if (def.use === 'bucket') ok = this.useBucket(s, hand);
+      else if (def.use === 'equip') ok = this.equipFromHand(s, hand);
       else ok = this.tryUse(s, hand);
       if (ok) {
         this.rightClickDelay = C.USE_ITEM_DELAY;
@@ -782,6 +818,17 @@ export class Fighter {
       }
     }
     return false;
+  }
+
+  /** ArmorItem.swapWithEquipmentSlot: the piece in hand and the one worn trade places. */
+  private equipFromHand(s: ItemStack, hand: Hand): boolean {
+    const slot = ITEMS[s.id].armor!.slot;
+    const worn = this.armorSlots[slot];
+    this.setSlot(SLOT_ARMOR + slot, s);
+    this.setSlot(this.handSlot(hand), worn);
+    if (hand === 'main') this.swing();
+    this.events.push({ type: 'equip', id: s.id });
+    return true;
   }
 
   // ---------------------------------------------------------------- blocks
@@ -1064,6 +1111,19 @@ export class Fighter {
 
   /** Splash potions, XP bottles and pearls leave the hand the moment you click. */
   private throwItem(s: ItemStack, hand: Hand) {
+    if (s.id === 'wind_charge') {
+      // WindChargeItem.use: shot along the crosshair at 1.5 (no pitch offset), then a 10-tick cooldown.
+      const t = new Thrown(this, 'wind', null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
+      t.throwFrom(this, C.WIND_CHARGE_SPEED, this.world.rng, 0);
+      this.world.spawnThrown(t);
+      s.count--;
+      if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+      if (hand === 'main') this.swing();
+      this.cooldowns.set('wind_charge', { ticks: 10, total: 10 });
+      this.stats.windCharges++;
+      this.events.push({ type: 'throw', kind: 'wind' });
+      return;
+    }
     if (s.id === 'ender_pearl') {
       const t = new Thrown(this, 'pearl', null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
       t.throwFrom(this, C.PEARL_THROW_SPEED, this.world.rng, 0);
@@ -1348,6 +1408,15 @@ export class Fighter {
     }
     this.hadEnoughImpulse = enough;
 
+    // --- LocalPlayer.aiStep: a fresh jump press in mid-air with an elytra on starts gliding.
+    const jumpPressed = this.input.jump && !this.prevJumpInput;
+    this.prevJumpInput = this.input.jump;
+    if (jumpPressed && !this.onGround && !this.fallFlying && !this.inWater && !this.inLava && !this.dead && this.canGlide()) {
+      this.fallFlying = true;
+      this.fallFlyTicks = 0;
+      this.events.push({ type: 'glide', on: true });
+    }
+
     // --- jumping (LivingEntity.aiStep): in a fluid, jump swims up instead
     if (this.input.jump && !this.dead) {
       const inFluid = this.inWater || this.inLava;
@@ -1423,6 +1492,11 @@ export class Fighter {
   }
 
   private travel(strafe: number, forward: number) {
+    this.updateFallFlying();
+    if (this.fallFlying) {
+      this.travelFallFlying();
+      return;
+    }
     if (this.inWater || this.inLava) {
       this.travelInFluid(strafe, forward);
       return;
@@ -1465,6 +1539,64 @@ export class Fighter {
     if (this.onGround && this.sprinting) {
       const cm = Math.round(Math.hypot(this.pos.x - ox, this.pos.z - oz) * 100);
       if (cm > 0) this.causeExhaustion(C.EXHAUSTION_SPRINT_PER_BLOCK * cm * 0.01);
+    }
+  }
+
+  /** LivingEntity.updateFallFlying: gliding ends on the ground, in water, or without an elytra. */
+  private updateFallFlying() {
+    if (!this.fallFlying) return;
+    if (this.onGround || this.inWater || this.inLava || this.dead || !this.canGlide()) {
+      this.fallFlying = false;
+      this.events.push({ type: 'glide', on: false });
+      return;
+    }
+    // One point of elytra durability per second of flight.
+    this.fallFlyTicks++;
+    if (this.fallFlyTicks % 20 === 0) this.damageItem(SLOT_ARMOR + 1, 1);
+  }
+
+  /**
+   * LivingEntity.updateFallFlyingMovement + travelFallFlying (vanilla elytra physics). Looking
+   * down trades height for speed, looking up trades speed for lift; the horizontal velocity
+   * slowly turns toward where you look. Fall distance stays at 1 unless you dive faster than 0.5
+   * blocks a tick. Flying into a wall hurts ((speed lost × 10) − 3).
+   */
+  private travelFallFlying() {
+    const v = this.vel;
+    const before = Math.hypot(v.x, v.z);
+    if (v.y > -0.5) this.fallDistance = 1;
+    const look = this.look(tmpLook);
+    const f = -this.pitch; // vanilla xRot: positive looking down
+    const d0 = Math.hypot(look.x, look.z);
+    const d1 = before;
+    let g = C.GRAVITY;
+    if (v.y <= 0 && this.effects.has('slow_falling')) g = 0.01;
+    const d4 = Math.cos(f) ** 2;
+    v.y += g * (-1 + d4 * 0.75);
+    if (v.y < 0 && d0 > 0) {
+      const d5 = v.y * -0.1 * d4;
+      v.x += (look.x * d5) / d0;
+      v.y += d5;
+      v.z += (look.z * d5) / d0;
+    }
+    if (f < 0 && d0 > 0) {
+      const d6 = d1 * -Math.sin(f) * 0.04;
+      v.x += (-look.x * d6) / d0;
+      v.y += d6 * 3.2;
+      v.z += (-look.z * d6) / d0;
+    }
+    if (d0 > 0) {
+      v.x += ((look.x / d0) * d1 - v.x) * 0.1;
+      v.z += ((look.z / d0) * d1 - v.z) * 0.1;
+    }
+    v.x *= 0.99;
+    v.y *= 0.98;
+    v.z *= 0.99;
+    this.move(v.x, v.y, v.z);
+    if (this.horizontalCollision) {
+      const lost = before - Math.hypot(v.x, v.z);
+      const dmg = lost * 10 - 3;
+      if (dmg > 0 && !this.dead) hurt(this, dmg, null, false, false, true);
     }
   }
 
@@ -1582,10 +1714,14 @@ export class Fighter {
       if (wasAirborne && this.fallDistance > 0) {
         this.events.push({ type: 'land', fall: this.fallDistance });
         // LivingEntity.causeFallDamage: ceil(distance − 3), through armor (Protection still counts).
-        const dmg = Math.ceil(this.fallDistance - 3);
+        // After a wind launch only the part of the fall below the launch point counts.
+        let fall = this.fallDistance;
+        if (this.impulseY !== null) fall = Math.min(fall, Math.max(0, this.impulseY - this.pos.y));
+        const dmg = Math.ceil(fall - 3);
         if (dmg > 0 && !this.dead) fallHurt(this, dmg);
       }
       this.fallDistance = 0;
+      this.impulseY = null;
     } else if (dy < 0) {
       this.fallDistance -= dy;
     }

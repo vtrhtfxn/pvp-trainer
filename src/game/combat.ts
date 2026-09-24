@@ -3,12 +3,31 @@ import { V3, rayAABB, type AABB } from '../core/math';
 import { applyKnockback, type Fighter } from './Fighter';
 import type { RayHit } from './Blocks';
 import { defOf, sharpnessBonus } from './items';
+import { windExplosion } from './Explosion';
 
-/** Damage after armor points and toughness (CombatRules.getDamageAfterAbsorb). */
-export function damageAfterArmor(damage: number, armor: number, toughness: number): number {
+/**
+ * Damage after armor points and toughness (CombatRules.getDamageAfterAbsorb). Breach (on the
+ * attacker's mace) takes 0.15 per level straight off the armor's damage-reduction fraction.
+ */
+export function damageAfterArmor(damage: number, armor: number, toughness: number, breach = 0): number {
   const f = 2 + toughness / 4;
   const effective = Math.min(Math.max(armor - damage / f, armor * 0.2), 20);
-  return damage * (1 - effective / 25);
+  let fraction = effective / 25;
+  if (breach > 0) fraction = Math.min(1, Math.max(0, fraction - 0.15 * breach));
+  return damage * (1 - fraction);
+}
+
+/**
+ * MaceItem.getAttackDamageBonus: a smash adds 4 per block for the first 3 blocks fallen, 2 per
+ * block up to 8, then 1 per block — plus Density's 0.5 per level per block.
+ */
+export function smashBonus(fall: number, density = 0): number {
+  const base = fall <= 3 ? 4 * fall : fall <= 8 ? 12 + 2 * (fall - 3) : 22 + (fall - 8);
+  return base + 0.5 * density * fall;
+}
+
+export function canSmash(f: Fighter): boolean {
+  return f.heldStack()?.id === 'mace' && f.fallDistance > C.SMASH_MIN_FALL && !f.fallFlying;
 }
 
 /** Damage after Protection enchantments (CombatRules.getDamageAfterMagicAbsorb). */
@@ -74,6 +93,7 @@ export function hurt(
   fire = false,
   bypassArmor = fire,
   kind: DamageKind = 'generic',
+  breach = 0,
 ): HurtResult {
   if (target.dead || amount <= 0) return NO_DAMAGE;
   if (fire && target.effects.has('fire_resistance')) return NO_DAMAGE;
@@ -96,7 +116,7 @@ export function hurt(
   let dmg = applied;
   if (!bypassArmor) {
     target.damageArmor(applied);
-    dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness);
+    dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness, breach);
   }
   const a = target.armor;
   dmg = damageAfterProtection(dmg, a.protectionEpf + (kind === 'explosion' ? a.blastEpf : kind === 'fall' ? a.fallEpf : 0));
@@ -173,15 +193,29 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
     kbLevel++;
     sprint = true;
   }
-  const crit = strong && attacker.fallDistance > 0 && !attacker.onGround && !attacker.serverSprinting;
+  const crit = strong && attacker.fallDistance > 0 && !attacker.onGround && !attacker.serverSprinting && !attacker.fallFlying;
   if (crit) base *= C.CRIT_MULTIPLIER;
-  const total = base + ench;
+  // The mace's smash bonus is added after the cooldown scaling and the crit.
+  const smash = canSmash(attacker);
+  const fall = attacker.fallDistance;
+  const bonus = smash ? smashBonus(fall, weapon?.ench?.density ?? 0) : 0;
+  const total = base + ench + bonus;
 
   // The server computes knockback on its own copy of the victim's velocity and sends the
   // result to the victim's client (ClientboundSetEntityMotionPacket), which replaces its own.
   const kbVel = target.serverVel.clone();
-  const res = hurt(target, total, attacker, crit);
+  const res = hurt(target, total, attacker, crit, false, false, 'generic', weapon?.ench?.breach ?? 0);
   attacker.swing();
+  if (smash && res.damaged) {
+    // MaceItem.hurtEnemy: the attacker stops falling (vy 0.01) and takes no damage from the rest
+    // of the fall; Wind Burst then launches them from where they are.
+    attacker.vel.y = attacker.serverVel.y = 0.01;
+    attacker.fallDistance = 0;
+    attacker.impulseY = attacker.pos.y;
+    attacker.stats.smashes++;
+    attacker.stats.maxSmash = Math.max(attacker.stats.maxSmash, res.dealt);
+    attacker.events.push({ type: 'smash', fall, damage: res.dealt });
+  }
   if (!res.damaged) {
     attacker.events.push({ type: 'noDamage', target });
     return { ...miss, reach, scale };
@@ -244,6 +278,11 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
     const d = attacker.look(new V3());
     attacker.events.push({ type: 'sweep', x: attacker.pos.x + d.x, y: attacker.pos.y + attacker.height() * 0.5, z: attacker.pos.z + d.z });
   }
+
+  // Wind Burst (post-attack, after the hit's knockback): a radius-3.5 gust at the attacker's feet
+  // that launches them back up — and pushes the target away too.
+  const wb = smash ? (weapon?.ench?.windBurst ?? 0) : 0;
+  if (wb > 0) windExplosion(attacker.world, attacker.pos.x, attacker.pos.y, attacker.pos.z, 3.5, [1.2, 1.75, 2.2][wb - 1] ?? 1.5 + 0.35 * wb);
 
   attacker.causeExhaustion(C.EXHAUSTION_ATTACK);
   const s = attacker.stats;

@@ -8,6 +8,7 @@ import { ITEMS, durabilityFraction, type ItemId, type PotionId } from '../game/i
 import type { World } from '../game/World';
 import type { EndCrystal } from '../game/EndCrystal';
 import { explosionDamageTo } from '../game/Explosion';
+import { damageAfterArmor, damageAfterProtection, smashBonus } from '../game/combat';
 import { ANCHOR_POWER, CRYSTAL_POWER, attackCrystal, canPlaceCrystal, crosshairCrystal } from '../game/crystals';
 import { Blocks } from '../game/Blocks';
 import type { BotProfile } from './difficulty';
@@ -187,6 +188,16 @@ export class BotBrain {
   private pearlCooldown = 0;
   private pearledThisRetreat = false;
 
+  // ---- Mace
+  private maceKit = false;
+  /** An elytra swap or glide in progress. */
+  private glide: { phase: 'equip' | 'start' | 'fly' | 'unequip'; timer: number } | null = null;
+  private launchCooldown = 0;
+  /** Waiting for the look-down before the wind charge leaves the hand. */
+  private launching = 0;
+  /** In the air from a launch (wind charge, Wind Burst) rather than an ordinary jump. */
+  private maceFlight = false;
+
   // ---- Crystal
   private crystalKit = false;
   private cplan: CrystalPlan | null = null;
@@ -268,7 +279,12 @@ export class BotBrain {
     this.uhcLabel = '';
     this.selfHelpCooldown = 0;
     this.crystalKit = b.countItem('end_crystal') > 0;
-    this.smpKit = !this.crystalKit && b.hasShield() && b.countItem('splash_potion') > 0;
+    this.maceKit = b.countItem('mace') > 0;
+    this.glide = null;
+    this.launchCooldown = 40;
+    this.launching = 0;
+    this.maceFlight = false;
+    this.smpKit = !this.crystalKit && !this.maceKit && b.hasShield() && b.countItem('splash_potion') > 0;
     this.axe = b.countItem('netherite_axe') > 0 ? 'netherite_axe' : 'diamond_axe';
     this.offhandReact = -1;
     this.pearlCooldown = 0;
@@ -310,6 +326,11 @@ export class BotBrain {
       this.potLabel = '';
       this.crystalStep(per, dist, trueDist, justHurt, input);
       this.avoidLava(input);
+      b.input = input;
+      return;
+    }
+    if (this.maceKit) {
+      this.maceStep(per, dist, trueDist, justHurt, input);
       b.input = input;
       return;
     }
@@ -1113,8 +1134,8 @@ export class BotBrain {
       if (p && p !== 'healing' && b.effects.has(p === 'swiftness' ? 'speed' : p)) return i;
     }
     for (let i = 8; i >= 0; i--) if (b.inventory[i]?.id === 'splash_potion') return i;
-    // The Crystal hotbar is full: a utility slot takes turns.
-    if (this.crystalKit) return this.spareHotbarSlot();
+    // The Crystal and Mace hotbars are full: a utility slot takes turns.
+    if (this.crystalKit || this.maceKit) return this.spareHotbarSlot();
     return -1;
   }
 
@@ -1279,6 +1300,320 @@ export class BotBrain {
     want('splash_potion', 'fire_resistance');
     want('golden_apple');
     want('ender_pearl');
+    return moves;
+  }
+
+  // ------------------------------------------------------------ Mace
+
+  /** Hotbar slot of the mace that would do the most to them from `fall` blocks (Density vs Breach). */
+  private bestMaceSlot(fall: number): number {
+    const b = this.bot;
+    const T = this.target;
+    const M = this.profile.mace;
+    let best = -1;
+    let bestDmg = -1;
+    const strength = b.effects.get('strength');
+    const base = (6 + (strength ? 3 * (strength.amplifier + 1) : 0)) * 1.5;
+    for (let i = 0; i < 9; i++) {
+      const st = b.inventory[i];
+      if (st?.id !== 'mace') continue;
+      const e = st.ench ?? {};
+      if (!M.pickMace && best >= 0) break;
+      const raw = base + smashBonus(fall, e.density ?? 0);
+      const a = T.armor;
+      const dmg = damageAfterProtection(damageAfterArmor(raw, a.points, a.toughness, e.breach ?? 0), a.protectionEpf);
+      if (dmg > bestDmg) {
+        bestDmg = dmg;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The Mace game. On the ground: sword and axe, gapples, buffs. When there is room it sprints in
+   * and wind-charges itself up (look straight down, throw), steers over you in the air and
+   * smashes on the way down with whichever mace hurts more; Wind Burst throws it back up. From up
+   * there (LT3+), if you are far it swaps the elytra on, glides over, dives, swaps the chestplate
+   * back and smashes again. It sidesteps (or shields) your own smashes.
+   */
+  private maceStep(per: Perceived, dist: number, trueDist: number, justHurt: boolean, input: MoveInput) {
+    const b = this.bot;
+    const T = this.target;
+    const P = this.profile;
+    const M = P.mace;
+    const K = P.crystal;
+    if (this.potCooldown > 0) this.potCooldown--;
+    if (this.throwGap > 0) this.throwGap--;
+    if (this.launchCooldown > 0) this.launchCooldown--;
+    if (this.pearlCooldown > 0) this.pearlCooldown--;
+
+    if (this.retotemStep(per, dist, input)) return;
+    if (P.passive) {
+      this.updateState(trueDist);
+      if (this.state === 'engage') this.engage(per, dist, justHurt, input, false);
+      else if (this.state === 'retreat') this.retreat(per, trueDist, input);
+      else this.eat(per, trueDist, input);
+      return;
+    }
+
+    // ---- In the air after a launch (or gliding): the smash. A big upward kick from a wind
+    // charge or Wind Burst — ours or theirs — counts as a launch too.
+    if (b.onGround && !b.fallFlying) this.maceFlight = false;
+    else if (b.vel.y > 0.6 || b.pos.y - T.pos.y > 3) this.maceFlight = true;
+    if (this.glide || b.fallFlying || (this.maceFlight && !b.onGround)) {
+      if (this.maceAir(per, input)) return;
+    }
+    // Never stand around in an elytra: the chestplate goes back on.
+    if (b.armorSlots[1]?.id === 'elytra' && b.onGround) {
+      this.potLabel = 'Chestplate';
+      const cs = b.slotOf('netherite_chestplate');
+      if (cs >= 0) {
+        if (b.usingItem) b.stopUsingItem();
+        if (b.selected !== cs) b.selectSlot(cs);
+        else b.startUsingItem(true);
+        return;
+      }
+    }
+
+    // ---- Their smash coming down on us: step out from under it (or block it).
+    const theyAbove = T.pos.y - b.pos.y;
+    const hd = Math.hypot(T.pos.x - b.pos.x, T.pos.z - b.pos.z);
+    if (M.defend > 0 && theyAbove > 2.5 && hd < 5 && per.held === 'mace' && !T.onGround && T.vel.y < 0.1) {
+      this.potLabel = 'Dodging';
+      if (M.defend >= 2 && hd < 2.5 && b.slotOf('shield') >= 0 && b.shieldCooldown === 0) {
+        this.equip('shield');
+        if (!b.usingItem) b.startUsingItem(true);
+        this.aimAt(T.pos.x, T.pos.y, T.pos.z, 1.5);
+        input.forward = input.strafe = 0;
+        return;
+      }
+      if (b.usingItem) b.stopUsingItem();
+      const away = yawTowards(b.pos.x - T.pos.x, b.pos.z - T.pos.z);
+      b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(away + 0.6 - b.yaw), -0.8, 0.8));
+      input.forward = 1;
+      input.sprint = true;
+      return;
+    }
+    if (b.usingItem && b.heldStack()?.id === 'shield') b.stopUsingItem();
+
+    // ---- Pearl in when they are far.
+    if (this.cplan && this.runCrystal(per, dist, input)) return;
+    if (K.pearls > 0 && this.pearlCooldown === 0 && trueDist > 18 && b.onGround && this.state === 'engage' && b.countItem('ender_pearl') > 0 && !b.cooldowns.has('ender_pearl')) {
+      const shot = ballistic(trueDist, T.pos.y - (b.pos.y + b.eyeHeight() - 0.1), C.PEARL_THROW_SPEED, C.PEARL_GRAVITY);
+      if (shot) {
+        this.cplan = { kind: 'pearl', yaw: yawTowards(T.pos.x - b.pos.x, T.pos.z - b.pos.z), pitch: shot.pitch, timer: 0 };
+        this.pearlCooldown = 200;
+        this.settle = 0;
+        if (this.runCrystal(per, dist, input)) return;
+      }
+    }
+
+    // ---- Buffs, restock (only with room to do it).
+    if (!this.throwing && this.potCooldown === 0 && this.state !== 'eat' && !b.usingItem && trueDist > 4) this.throwing = this.pickThrow(trueDist);
+    if (this.throwing && this.throwStep(per, dist, input)) return;
+    if (trueDist > 6 && this.state !== 'eat' && !b.usingItem) {
+      const moves = this.maceRestockMoves();
+      if (moves.length) {
+        this.openInv(moves);
+        return;
+      }
+    }
+
+    // ---- Launch: sprint in and wind-charge ourselves up.
+    this.updateState(trueDist);
+    if (this.state === 'engage' && this.launchCooldown === 0 && b.onGround && !b.cooldowns.has('wind_charge') && b.slotOf('wind_charge') >= 0) {
+      if (this.launching > 0 || (trueDist > 2.6 && trueDist < 6.5 && T.onGround)) {
+        if (this.launching === 0 && !this.rng.chance(M.launch)) {
+          this.launchCooldown = 30;
+        } else if (this.launchStep(per, input)) return;
+      }
+    }
+
+    // ---- Otherwise the ground game: sword crits (and the axe for their shield), gapple retreats.
+    if (this.state === 'engage') this.engageShield(per, dist, justHurt, input);
+    else if (this.state === 'retreat') this.retreat(per, trueDist, input);
+    else this.eat(per, trueDist, input);
+  }
+
+  /** Look straight down with a wind charge and throw it while running at them. */
+  private launchStep(per: Perceived, input: MoveInput): boolean {
+    const b = this.bot;
+    this.potLabel = 'Launch';
+    if (b.usingItem) b.stopUsingItem();
+    if (!this.equip('wind_charge')) return false;
+    this.launching++;
+    const toward = yawTowards(per.x - b.pos.x, per.z - b.pos.z);
+    b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(toward - b.yaw), -0.6, 0.6));
+    this.turnTo(b.yaw, -1.55, 3);
+    input.forward = 1;
+    input.sprint = true;
+    if (this.launching > 20) {
+      this.launching = 0;
+      this.launchCooldown = 30;
+      return false;
+    }
+    if (b.pitch < -1.35 && b.startUsingItem(true)) {
+      this.launching = 0;
+      this.launchCooldown = 40;
+      // The mace goes in hand on the way up.
+      const slot = this.bestMaceSlot(6);
+      if (slot >= 0) b.selectSlot(slot);
+    }
+    return true;
+  }
+
+  /**
+   * Airborne: steer over them and smash on the way down; up high and far from them (LT3+), the
+   * elytra — swap it on at the top, glide over, dive, swap the chestplate back, smash.
+   */
+  private maceAir(per: Perceived, input: MoveInput): boolean {
+    const b = this.bot;
+    const T = this.target;
+    const M = this.profile.mace;
+    const above = b.pos.y - T.pos.y;
+    const hd = Math.hypot(per.x - b.pos.x, per.z - b.pos.z);
+    if (b.usingItem) b.stopUsingItem();
+    const toward = yawTowards(per.x - b.pos.x, per.z - b.pos.z);
+
+    // ---- The elytra sequence.
+    const g = this.glide;
+    if (g) {
+      g.timer++;
+      this.potLabel = 'Elytra';
+      if (g.timer > 200 || (b.onGround && g.phase !== 'unequip')) {
+        this.glide = b.armorSlots[1]?.id === 'elytra' ? { phase: 'unequip', timer: 0 } : null;
+        return !!this.glide;
+      }
+      switch (g.phase) {
+        case 'equip': {
+          const es = b.slotOf('elytra');
+          if (b.armorSlots[1]?.id === 'elytra') {
+            g.phase = 'start';
+            g.timer = 0;
+            return true;
+          }
+          if (es < 0) {
+            this.glide = null;
+            return false;
+          }
+          if (b.selected !== es) b.selectSlot(es);
+          else b.startUsingItem(true);
+          return true;
+        }
+        case 'start':
+          // A fresh jump press in the air opens the wings.
+          input.jump = g.timer % 2 === 0;
+          if (b.fallFlying) {
+            g.phase = 'fly';
+            g.timer = 0;
+          } else if (g.timer > 12) g.phase = 'unequip';
+          return true;
+        case 'fly': {
+          if (!b.fallFlying) {
+            g.phase = 'unequip';
+            return true;
+          }
+          // Glide toward them, then dive steeply (so the fall distance builds up).
+          const dive = hd < above * 0.9 + 1.5;
+          const wantPitch = dive ? -1.25 : -0.2;
+          const err = (1 - M.steer) * 0.5 * Math.sin(g.timer * 0.3);
+          this.turnTo(toward + err, wantPitch, 1.5);
+          if ((dive && above < 5.5) || (hd < 2.2 && above < 8) || b.pos.y - b.world.floorY < 3) {
+            g.phase = 'unequip';
+            g.timer = 0;
+          }
+          return true;
+        }
+        case 'unequip': {
+          if (b.armorSlots[1]?.id !== 'elytra') {
+            this.glide = null;
+            const slot = this.bestMaceSlot(Math.max(b.fallDistance, above));
+            if (slot >= 0) b.selectSlot(slot);
+            return true;
+          }
+          const cs = b.slotOf('netherite_chestplate');
+          if (cs < 0) {
+            this.glide = null;
+            return false;
+          }
+          if (b.selected !== cs) b.selectSlot(cs);
+          else b.startUsingItem(true);
+          this.turnTo(toward, -1.1, 1.5);
+          return true;
+        }
+      }
+    }
+
+    // ---- High up and far from them after a Wind Burst: the elytra (LT3+).
+    if (
+      M.elytra &&
+      !b.fallFlying &&
+      b.vel.y < 0.2 &&
+      above > 5 &&
+      hd > 7 &&
+      b.slotOf('elytra') >= 0 &&
+      b.slotOf('netherite_chestplate') < 0 &&
+      b.armorSlots[1]?.id === 'netherite_chestplate'
+    ) {
+      this.glide = { phase: 'equip', timer: 0 };
+      return this.maceAir(per, input);
+    }
+
+    // ---- Falling onto them: steer, pick the mace, smash.
+    this.potLabel = 'Smash';
+    const steerOk = this.rng.chance(M.steer);
+    const aimYaw = steerOk ? toward : toward + (this.rng.chance(0.5) ? 0.9 : -0.9);
+    if (hd > 0.6) {
+      b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(aimYaw - b.yaw), -0.7, 0.7));
+      input.forward = 1;
+      input.sprint = b.vel.y > 0 && hd > 3;
+    } else input.forward = 0;
+    const fall = Math.max(b.fallDistance, 0) + Math.max(0, above - 1.5);
+    const slot = this.bestMaceSlot(fall);
+    if (slot >= 0 && b.selected !== slot && b.vel.y < 0.1) b.selectSlot(slot);
+    const bodyY = T.pos.y + (T.fallFlying ? 0.3 : 1.0);
+    // Look at them (the crosshair steers the hit), keeping the move direction in `aimYaw`.
+    const yawKeep = b.yaw;
+    this.aimAt(per.x, bodyY, per.z, 2);
+    if (hd > 0.6) b.yaw = wrapAngle(yawKeep + clamp(wrapAngle(b.yaw - yawKeep), -0.25, 0.25));
+    if (b.vel.y >= 0) return true;
+    const reach = rayDistanceToTarget(b, T);
+    const inReach = reach >= 0 && reach <= this.profile.maxReach;
+    if (!inReach) return true;
+    // Wait for a bit more fall (more damage) unless it is about to get away.
+    const nextAbove = above + b.vel.y;
+    const late = nextAbove < 1.8 || hd > 2.2;
+    if (b.fallDistance < C.SMASH_MIN_FALL + 0.05 && !late) return true;
+    if (!late && above - M.smashDepth > 1.9 && b.fallDistance < 30) return true;
+    // No sprint on the hit: a crit on top of the smash.
+    input.sprint = false;
+    const r = this.doAttack();
+    if (r.hit) this.launchCooldown = 10;
+    return true;
+  }
+
+  /** Hotbar restock for the Mace kit: the shield, wind charges, pearls, apples and potions. */
+  private maceRestockMoves(): [number, number][] {
+    const b = this.bot;
+    const moves: [number, number][] = [];
+    const empty: number[] = [];
+    for (let i = 0; i < 9; i++) if (!b.inventory[i]) empty.push(i);
+    const taken = new Set<number>();
+    const want = (id: ItemId) => {
+      if (!empty.length || b.slotOf(id) >= 0) return;
+      for (let i = 9; i < SLOT_ARMOR; i++) {
+        if (!taken.has(i) && b.inventory[i]?.id === id) {
+          taken.add(i);
+          moves.push([i, empty.shift()!]);
+          return;
+        }
+      }
+    };
+    want('shield');
+    want('wind_charge');
+    want('ender_pearl');
+    want('golden_apple');
     return moves;
   }
 
@@ -2488,7 +2823,9 @@ export class BotBrain {
       const i = b.slotOf(u);
       if (i >= 0 && !(this.throwing && (u === 'experience_bottle' || u === 'splash_potion'))) return i;
     }
-    if (forId !== 'crossbow' && forId !== 'tipped_arrow' && this.ranged === 'none') return b.slotOf('crossbow');
+    if (forId !== 'crossbow' && forId !== 'tipped_arrow' && this.ranged === 'none' && b.slotOf('crossbow') >= 0) return b.slotOf('crossbow');
+    // Mace kit: the shield's slot takes turns (it comes back with the next restock).
+    if (this.maceKit && forId !== 'shield') return b.slotOf('shield');
     return -1;
   }
 

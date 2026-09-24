@@ -330,6 +330,32 @@ export class Sound {
   }
 
   /** entity.generic.explode: a deep boom with a noisy tail (louder and longer for bigger blasts). */
+  /** entity.wind_charge.wind_burst: a hollow airy thump. */
+  windBurst(pos: { x: number; y: number; z: number }, power: number) {
+    const d = this.out(pos, 0.8);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.35 + power * 0.05, 'bandpass', 250, 1400, 0.9, 0.8);
+    this.tone(d, t, 0.18, 'sine', 140, 60, 0.5);
+  }
+
+  /** item.mace.smash_air / smash_ground(_heavy). */
+  smash(pos: { x: number; y: number; z: number }, heavy: boolean) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, heavy ? 0.4 : 0.25, 'triangle', heavy ? 110 : 160, 35, heavy ? 1 : 0.7);
+    this.noiseBurst(d, t, heavy ? 0.3 : 0.18, 'lowpass', 900, 200, 1, heavy ? 1 : 0.6);
+  }
+
+  /** item.armor.equip_netherite / equip_elytra. */
+  equipArmor(pos: { x: number; y: number; z: number }, elytra: boolean) {
+    const d = this.out(pos, 0.5);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, elytra ? 0.2 : 0.12, 'bandpass', elytra ? 900 : 500, elytra ? 2400 : 300, 1, 0.4);
+  }
+
   explosion(pos: { x: number; y: number; z: number }, power: number) {
     const d = this.out(pos, 1.4);
     if (!d) return;

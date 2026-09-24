@@ -57,7 +57,7 @@ describe('tier ladder', () => {
     }
   });
 
-  const kits: KitId[] = ['sword', 'axe', 'neth_pot', 'diamond_pot', 'uhc', 'crystal', 'smp'];
+  const kits: KitId[] = ['sword', 'axe', 'neth_pot', 'diamond_pot', 'uhc', 'crystal', 'smp', 'mace'];
   for (const kit of kits) {
     it(`${kit}: three tiers up wins`, () => {
       for (const [lo, hi] of [
