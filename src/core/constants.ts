@@ -61,8 +61,8 @@ export const EXHAUSTION_HEAL = 6;
 export const EXHAUSTION_MAX = 40;
 
 // ---- Items ----
-// Vanilla golden apples take 32 ticks (1.6 s). Set to 30 (1.5 s) as requested.
-export const GOLDEN_APPLE_EAT_TICKS = 30;
+// Golden apples take 32 ticks (1.6 s) to eat, like every food (FoodProperties / Consumable).
+export const GOLDEN_APPLE_EAT_TICKS = 32;
 
 // ---- Shields (Java 1.9+)
 /** A raised shield only blocks once it has been held up this long (LivingEntity.isBlocking). */

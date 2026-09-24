@@ -279,13 +279,14 @@ export class Menus {
     toggle('Double-tap W Sprint', () => s.doubleTapSprint, (v) => (s.doubleTapSprint = v));
     toggle('View Bobbing', () => s.viewBobbing, (v) => (s.viewBobbing = v));
     toggle('Raw Mouse Input', () => s.rawInput, (v) => (s.rawInput = v));
+    if (!window.pvpNative) toggle('Fullscreen (blocks Ctrl+W)', () => s.fullscreenLock, (v) => (s.fullscreenLock = v));
     toggle('Reach Display', () => s.showReach, (v) => (s.showReach = v));
     toggle('Combo Counter', () => s.showCombo, (v) => (s.showCombo = v));
     toggle('CPS Counter', () => s.showCps, (v) => (s.showCps = v));
     toggle('Next-hit Coach', () => s.showNextHit, (v) => (s.showNextHit = v));
     toggle('Hit Feedback', () => s.hitFeedback, (v) => (s.hitFeedback = v));
     toggle('Opponent Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v));
-    toggle('Hitboxes (⌘M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
+    toggle(/Mac|iP(hone|ad)/.test(navigator.platform) ? 'Hitboxes (⌘M)' : 'Hitboxes (Ctrl+M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
     panel.append(grid);
     panel.append(this.button('Done', () => this.show(this.settingsReturn), 'big'));
     root.append(panel);
@@ -373,7 +374,7 @@ export class Menus {
       h(
         'div',
         { class: 'mp-intro' },
-        'Real 1v1 over your network. One of you runs the server, the other opens the same address — then share a room code.',
+        'Real 1v1 over your network. One of you runs the server, everyone connects to it — then share a room code.',
       ),
     );
     // Opened by double-clicking game.html there is no server behind the page, so the address
@@ -383,9 +384,9 @@ export class Menus {
         h(
           'div',
           { class: 'mp-warn' },
-          'You opened the game as a file, so it does not know where the server is. Unless you are the host, close this and open the ',
-          h('b', {}, 'http://…:4180'),
-          ' address the host\u2019s server window prints.',
+          'Not the host? Type the host\u2019s address in ',
+          h('b', {}, 'Server'),
+          ' (the one their server window prints, for example 192.168.1.23).',
         ),
       );
     }
@@ -403,9 +404,9 @@ export class Menus {
     );
     this.nameInput = field('Your name', loadNetName(), 'Steve', 16);
     this.roomInput = field('Room code', '', 'blank = create a new one', 8);
-    this.serverInput = field('Server', loadNetServer(), 'ws://localhost:4180/ws', 120);
+    this.serverInput = field('Server', loadNetServer(), '192.168.1.23 (the host\u2019s address)', 120);
     panel.append(
-      h('div', { class: 'mp-hint' }, 'Server = the host\u2019s machine. Joining someone else? Replace "localhost" with their address.'),
+      h('div', { class: 'mp-hint' }, 'Server = the host\u2019s machine. Joining someone else? Type their address, e.g. 192.168.1.23.'),
     );
 
     this.netStatusEl = h('div', { class: 'mp-status' });
@@ -438,7 +439,7 @@ export class Menus {
         { class: 'mp-help' },
         'To host: run the server (',
         h('code', {}, 'npm run server'),
-        ', or the START launcher). Everyone — including the host — opens the http:// address it prints, then comes back here. Same network only.',
+        ', or the START launcher). Players type the address it prints in Server — or open that http:// address in a browser. Same network only.',
       ),
     );
     root.append(panel);
