@@ -945,7 +945,7 @@ export class Fighter {
         else this.offhand = null;
       }
       this.stopUsingItem();
-      this.stats.gapplesEaten++;
+      if (def.id === 'golden_apple') this.stats.gapplesEaten++;
       this.events.push({ type: 'eatDone' });
     }
   }

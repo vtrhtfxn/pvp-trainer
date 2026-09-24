@@ -88,6 +88,15 @@ export class BotBrain {
   private potKit = false;
   /** Best melee weapon in the kit. */
   private weapon: ItemId = 'diamond_sword';
+  /**
+   * Diamond Pot (pots but no totems): a combo game. Normal knockback, Speed II and Strength II
+   * make sprint-hit combos the main damage, crits the exception; low on health it runs out of
+   * range and pots on the move instead of backing off.
+   */
+  private comboStyle = false;
+  private runTimer = 0;
+  private eatId: ItemId | null = null;
+  private eatStartCount = 0;
   private inv: InvPlan | null = null;
   private throwing: ThrowPlan | null = null;
   private throwGap = 0;
@@ -153,6 +162,9 @@ export class BotBrain {
     const b = this.bot;
     this.potKit = b.countItem('splash_potion') > 0;
     this.weapon = b.countItem('netherite_sword') > 0 ? 'netherite_sword' : 'diamond_sword';
+    this.comboStyle = this.potKit && b.countItem('totem_of_undying') === 0;
+    this.runTimer = 0;
+    this.eatId = null;
     this.inv = null;
     this.throwing = null;
     this.throwGap = 0;
@@ -380,7 +392,8 @@ export class BotBrain {
     // Decide per exchange whether to go for jump-crits.
     if (--this.critCheckTimer <= 0) {
       this.critCheckTimer = 12;
-      const chance = targetEating && P.punishEating ? Math.max(P.critChance, 0.7) : P.critChance;
+      const base = this.comboStyle ? P.critChance * 0.4 : P.critChance;
+      const chance = targetEating && P.punishEating ? Math.max(base, 0.7) : base;
       if (dist < 4 && rng.chance(chance)) {
         this.critPlan = true;
         this.critPlanTimer = 24;
@@ -755,21 +768,38 @@ export class BotBrain {
       }
     }
 
-    // ---- 4. Golden apple for absorption while they are away.
-    if (!this.eating && this.potCooldown === 0 && this.gapCooldown === 0 && !b.effects.has('absorption') && b.countItem('golden_apple') > 0 && trueDist > N.gapDist && !P.passive) {
-      this.eating = true;
+    // ---- 4. Eat: a golden apple for absorption, or steak to keep the hunger bar (and sprint) up.
+    if (!this.eating && this.potCooldown === 0 && this.gapCooldown === 0 && !P.passive) {
+      const hungry = b.food.level <= 14 && b.countItem('cooked_beef') > 0;
+      const starving = b.food.level <= 7; // sprinting stops at 6
+      if (!b.effects.has('absorption') && b.countItem('golden_apple') > 0 && trueDist > N.gapDist) this.eatId = 'golden_apple';
+      else if (hungry && (trueDist > N.gapDist || (starving && trueDist > 3.5))) this.eatId = 'cooked_beef';
+      else this.eatId = null;
+      this.eating = this.eatId !== null;
+      if (this.eatId) this.eatStartCount = b.countItem(this.eatId);
     }
-    if (this.eating) {
+    if (this.eating && this.eatId) {
       this.potLabel = 'Eating';
-      if (!this.equip('golden_apple')) {
+      // Food in the off hand (steak) is eaten behind the sword: right click falls through to it.
+      const inOff = b.offhand?.id === this.eatId;
+      const ready = inOff ? this.equip(this.weapon) : this.equip(this.eatId);
+      const left = b.countItem(this.eatId);
+      if (!ready || left === 0 || left < this.eatStartCount) {
+        // Out of food, or the one we started on is finished.
         this.eating = false;
+        this.gapCooldown = 20;
       } else {
-        if (!b.usingItem) b.startUsingItem();
-        this.backOff(per, dist, input);
+        if (!b.usingItem && !b.startUsingItem()) {
+          this.eating = false;
+          this.gapCooldown = 20;
+          return;
+        }
+        if (this.comboStyle) this.runOff(per, input);
+        else this.backOff(per, dist, input);
         const progress = b.usingItem ? 1 - b.useItemRemaining / Math.max(1, b.useItemDuration) : 0;
-        // Too close to finish it: bin the apple and fight.
-        if ((trueDist < 3 && progress < 0.6) || b.effects.has('absorption')) {
-          if (b.usingItem && !b.effects.has('absorption')) b.stopUsingItem();
+        // Too close to finish it: stop eating and fight.
+        if (trueDist < 3 && progress < 0.6) {
+          b.stopUsingItem();
           this.eating = false;
           this.gapCooldown = 60;
         }
@@ -777,8 +807,21 @@ export class BotBrain {
       }
     }
 
+    // ---- 5a. Diamond Pot: getting comboed low on health — use Speed to get out of range.
+    if (this.comboStyle && !P.passive) {
+      if (justHurt && this.hitsTaken >= 2 && b.health < 13 && N.rebuff && trueDist < 4) this.runTimer = 12 + rng.int(0, 8);
+      if (this.runTimer > 0) {
+        this.runTimer--;
+        this.potLabel = 'Escaping';
+        if (b.usingItem) b.stopUsingItem();
+        this.equip(this.weapon);
+        this.runOff(per, input);
+        return;
+      }
+    }
+
     // ---- 5. Fight. A hit on us is a P-crit chance: no sprint, hop, crit on the way down.
-    if (justHurt && !P.passive && rng.chance(N.pcrit)) {
+    if (justHurt && !P.passive && rng.chance(this.comboStyle ? N.pcrit * 0.3 : N.pcrit)) {
       this.critPlan = true;
       this.critPlanTimer = 16;
       this.engage(per, dist, false, input);
@@ -795,8 +838,10 @@ export class BotBrain {
     const T = this.target;
     const N = this.profile.neth;
     const has = (p: PotionId) => b.countItem('splash_potion', p) > 0;
-    const low = (id: 'strength' | 'speed' | 'fire_resistance') => (b.effects.get(id)?.duration ?? 0) < 60;
-    if (b.health <= N.potHP && has('healing')) return { what: 'healing', left: b.health <= N.potHP - 5 ? 2 : 1 };
+    const low = (id: 'strength' | 'speed' | 'fire_resistance' | 'regeneration') => (b.effects.get(id)?.duration ?? 0) < 60;
+    // Diamond Pot hits are 33% harder, so pot earlier.
+    const potHP = N.potHP + (this.comboStyle ? 2 : 0);
+    if (b.health <= potHP && has('healing')) return { what: 'healing', left: b.health <= potHP - 5 ? 2 : 1 };
     const opening = this.ticks < 80;
     const buffOk = (opening || N.rebuff) && trueDist > 3.6;
     const theirSword = T.heldStack();
@@ -804,6 +849,7 @@ export class BotBrain {
     if (buffOk && burns && low('fire_resistance') && has('fire_resistance')) return { what: 'fire_resistance', left: 1 };
     if (buffOk && !this.profile.passive && low('strength') && has('strength')) return { what: 'strength', left: 1 };
     if (buffOk && low('speed') && has('swiftness')) return { what: 'swiftness', left: 1 };
+    if (buffOk && low('regeneration') && has('regeneration')) return { what: 'regeneration', left: 1 };
     // Mending: in bursts whenever a knockback opens a gap.
     if (N.mendAt > 0 && trueDist > 4.5 && b.countItem('experience_bottle') > 0) {
       let worst = 1;
@@ -854,7 +900,10 @@ export class BotBrain {
     if (this.throwAim === 0) this.throwAim = Math.abs(this.rng.gauss()) * N.potNoiseDeg * DEG + 1e-4;
     // Straight down, give or take the skill's error; the flick is fast but not instant.
     this.turnTo(b.yaw, -Math.PI / 2 + this.throwAim, 2.5);
-    this.backOff(per, dist, input);
+    // Diamond Pot run-pot: sprint away and throw at your feet — the potion carries your
+    // speed, so it lands under you. NethPot backs off facing them instead.
+    if (this.comboStyle && t.what === 'healing' && dist < 6) this.runOff(per, input);
+    else this.backOff(per, dist, input);
     input.jump = false;
     if (b.pitch > -Math.PI / 2 + this.throwAim + 0.35 || this.throwGap > 0) return;
     if (t.what === 'xp') {
@@ -878,6 +927,16 @@ export class BotBrain {
     input.forward = dist < 9 ? -1 : 0;
     input.strafe = this.world.wallDistance(b.pos.x, b.pos.z) < 3 ? this.roomySide() : this.strafeDir;
     input.sprint = false;
+  }
+
+  /** Sprint straight away from the target (with Speed II this outruns a chaser's reach). */
+  private runOff(per: Perceived, input: MoveInput) {
+    const b = this.bot;
+    const fy = this.fleeDirection(per);
+    b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(fy - b.yaw), -0.9, 0.9));
+    input.forward = 1;
+    input.sprint = true;
+    input.strafe = 0;
   }
 
   private openInv(moves: [number, number][]) {

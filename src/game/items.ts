@@ -19,14 +19,15 @@ export type ItemId =
   | 'netherite_boots'
   | 'totem_of_undying'
   | 'splash_potion'
-  | 'experience_bottle';
+  | 'experience_bottle'
+  | 'cooked_beef';
 export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance';
 
 /** How an item behaves on right click. */
 export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw';
 
 /** The splash potions NethPot uses (vanilla potion registry names in the comments). */
-export type PotionId = 'strength' | 'swiftness' | 'fire_resistance' | 'healing';
+export type PotionId = 'strength' | 'swiftness' | 'fire_resistance' | 'healing' | 'regeneration';
 
 export interface PotionDef {
   id: PotionId;
@@ -48,6 +49,8 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   fire_resistance: { id: 'fire_resistance', name: 'Fire Resistance', color: 0xff9900, effect: 'fire_resistance', amplifier: 0, duration: 9600 },
   // strong_healing: Instant Health II, 8 HP
   healing: { id: 'healing', name: 'Healing', color: 0xf82423, effect: 'instant_health', amplifier: 1, duration: 1 },
+  // long_regeneration: Regeneration I, 1:30 (half a heart every 2.5 s)
+  regeneration: { id: 'regeneration', name: 'Regeneration', color: 0xcd5cab, effect: 'regeneration', amplifier: 0, duration: 1800 },
 };
 
 /** MobEffect colours (potion swirls). */
@@ -187,6 +190,15 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   totem_of_undying: { id: 'totem_of_undying', name: 'Totem of Undying', maxStack: 1, ...MELEE_FIST, use: 'none' },
   splash_potion: { id: 'splash_potion', name: 'Splash Potion', maxStack: 1, ...MELEE_FIST, use: 'throw' },
   experience_bottle: { id: 'experience_bottle', name: "Bottle o' Enchanting", maxStack: 64, ...MELEE_FIST, use: 'throw' },
+  cooked_beef: {
+    id: 'cooked_beef',
+    name: 'Steak',
+    maxStack: 64,
+    ...MELEE_FIST,
+    use: 'food',
+    // 8 hunger, 12.8 saturation, 1.6 s; only edible when you are hungry.
+    food: { nutrition: 8, saturationModifier: 0.8, useTicks: 32, alwaysEdible: false, effects: [] },
+  },
 };
 
 export const FIST: ItemDef = { id: 'arrow', name: 'Hand', maxStack: 0, ...MELEE_FIST, use: 'none' };

@@ -29,6 +29,8 @@ export class World {
   /** Drained by the game each frame; capped so headless simulations never grow it forever. */
   events: WorldEvent[] = [];
   rng = new Rng(1);
+  /** Kit rule: every hit's raw damage is multiplied by this before armor (Diamond Pot: 1.33). */
+  damageMultiplier = 1;
   constructor(readonly half = 24) {}
 
   get minX() {

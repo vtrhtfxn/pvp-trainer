@@ -131,7 +131,8 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV), 5 golden apples | ✅ Playable |
 | **Axe** — Diamond Axe, Diamond Sword, Crossbow, Bow, 6 Arrows, Shield (off hand), Diamond armor (unenchanted) | ✅ Playable (vs bot) |
 | **NethPot** — Netherite Sword (Sharpness V, Fire Aspect II, Unbreaking III, Mending), Netherite armor (Protection IV, Unbreaking III, Mending), 3 totems (one in the off hand), 64 golden apples, 3× Strength II, 3× Speed II, 3× Fire Resistance (8:00), 21× Splash Healing II, 2 stacks of Bottles o' Enchanting | ✅ Playable (vs bot) |
-| UHC, Diamond Pot, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
+| **Diamond Pot** — Diamond Sword (Sharpness V), Diamond armor (Protection IV, Unbreaking III), 26× Splash Healing II, 3× Strength II, 3× Speed II, 3× Regeneration (all 1:30), 5 steak (off hand); all damage +33% | ✅ Playable (vs bot) |
+| UHC, Crystal, SMP, Mace | Coming soon (cards shown in the menu) |
 
 Online duels use the Sword kit; the inventory screen and F work online too.
 
@@ -217,6 +218,13 @@ duel fighting back. Its nametag reads *Passive*.
   Prot IV that is 3.4 HP; a full non-crit hit is 2.1 HP.
 - **P-crits** (punish crits): a hit on you while you stand on the ground knocks you up. Let go of
   sprint and you are falling a few ticks later with your sword charged — a crit with no jump.
+- **Diamond Pot damage boost**: the kit's server rule multiplies every hit's raw damage by 1.33 before
+  armor (how a plugin changing the base damage behaves; the exact server implementation isn't public).
+  A full-charge Strength II sword hit is (7 + 6 + 3) × 1.33 ≈ 21 before armor — about 3.2 HP through
+  Diamond Prot IV — and a crit about 5.4 HP.
+- **Regeneration I** (splash, 1:30): half a heart every 2.5 s. **Steak**: 8 hunger + 12.8 saturation in
+  1.6 s, only edible below full hunger; in the off hand it is eaten behind the sword. Sprinting stops at
+  6 hunger, so long pot fights need it.
 - **Golden apple**: 1.5 s to eat (vanilla is 1.6 s; change `GOLDEN_APPLE_EAT_TICKS` in
   `src/core/constants.ts`). Eating slows you to 20% speed. It gives Regeneration II for 5 s,
   Absorption I for 2 min, 4 hunger and 9.6 saturation.
@@ -259,6 +267,12 @@ In **NethPot** it plays the pot game:
 - mends its armor with XP bottles in the gaps knockback opens, and eats a golden apple for absorption
   when you are far away
 - goes for jump crits and **P-crits** (Hard 55%, Expert 80% of the times you hit it)
+
+In **Diamond Pot** it plays for combos instead: with normal knockback, Speed II and Strength II the
+damage comes from sprint-hit chains (W-/S-taps between hits), with crits only as a bonus. When it is
+being comboed low on health it sprints out of range (Normal+), **run-pots** — sprinting away and
+throwing at its feet so the potion lands under it — keeps Strength, Speed and Regeneration up, and eats
+steak from the off hand before its hunger gets low enough to stop sprinting.
 
 ## Project layout
 

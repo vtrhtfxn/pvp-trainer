@@ -30,6 +30,11 @@ export interface KitDef extends Loadout {
   summary: string;
   contents: string[];
   armorLabel: string;
+  /**
+   * Server-side damage multiplier some kits run with (Diamond Pot: +33%). Applied to the raw
+   * damage before armor, like a plugin changing the base damage of every hit.
+   */
+  damageMultiplier?: number;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
@@ -94,6 +99,20 @@ function nethPotLoadout(): Loadout {
   return { hotbar, main, armor: netheriteArmor(), offhand: { id: 'totem_of_undying', count: 1 } };
 }
 
+/**
+ * The Pot PvP layout: Sharpness V diamond sword and 8 Splash Healing II in the hotbar, 18 more
+ * healing plus three sets of buffs (Strength II, Speed II, Regeneration — all 1:30) in the
+ * inventory, 5 steak in the off hand.
+ */
+function diamondPotLoadout(): Loadout {
+  const heal = () => pot('healing');
+  const hotbar: ItemStack[] = [{ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }, ...Array.from({ length: 8 }, heal)];
+  const main: ItemStack[] = [];
+  for (let row = 0; row < 3; row++) main.push(...Array.from({ length: 6 }, heal), pot('strength'), pot('swiftness'), pot('regeneration'));
+  const armor = diamondArmor(4).map((s) => ({ ...s!, ench: { protection: 4, unbreaking: 3 } }));
+  return { hotbar, main, armor, offhand: { id: 'cooked_beef', count: 5 } };
+}
+
 function soon(id: KitId, name: string, icon: KitIcon, summary: string): KitDef {
   return { id, name, icon, available: false, summary, contents: [], hotbar: [], armor: [], offhand: null, armorLabel: '' };
 }
@@ -138,7 +157,23 @@ export const KITS: KitDef[] = [
     armorLabel: 'Diamond',
   },
   soon('uhc', 'UHC', 'uhc', 'No natural regen, lava, water and webs.'),
-  soon('diamond_pot', 'Diamond Pot', 'potion', 'Splash healing in diamond gear.'),
+  {
+    id: 'diamond_pot',
+    name: 'Diamond Pot',
+    icon: 'potion',
+    available: true,
+    summary: 'Combo game: Speed II and Strength II to trap, escape and run-pot.',
+    contents: [
+      'Diamond Sword — Sharpness V',
+      'Diamond Armor — Protection IV, Unbreaking III',
+      '26× Splash Healing II · 5× Steak (off hand)',
+      '3× Strength II · 3× Speed II · 3× Regeneration (all 1:30)',
+      'All damage +33%',
+    ],
+    ...diamondPotLoadout(),
+    armorLabel: 'Diamond · Prot IV',
+    damageMultiplier: 1.33,
+  },
   {
     id: 'neth_pot',
     name: 'NethPot',
