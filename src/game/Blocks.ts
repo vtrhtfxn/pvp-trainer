@@ -562,12 +562,12 @@ export class Blocks {
   /** True if any cell overlapping the box has this id (fluids: below their surface). */
   boxTouches(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, id: number): boolean {
     if (!this.count) return false;
-    const x0 = Math.floor(minX);
-    const x1 = Math.floor(maxX - 1e-7);
+    const x0 = Math.max(-this.half - 1, Math.floor(minX));
+    const x1 = Math.min(this.half, Math.floor(maxX - 1e-7));
     const y0 = Math.max(-this.depth, Math.floor(minY));
     const y1 = Math.min(this.height - 1, Math.floor(maxY - 1e-7));
-    const z0 = Math.floor(minZ);
-    const z1 = Math.floor(maxZ - 1e-7);
+    const z0 = Math.max(-this.half - 1, Math.floor(minZ));
+    const z1 = Math.min(this.half, Math.floor(maxZ - 1e-7));
     for (let y = y0; y <= y1; y++)
       for (let z = z0; z <= z1; z++)
         for (let x = x0; x <= x1; x++) {
@@ -594,12 +594,12 @@ export class Blocks {
     out.x = out.z = out.depth = 0;
     out.n = 0;
     if (!this.count) return out;
-    const x0 = Math.floor(minX);
-    const x1 = Math.floor(maxX - 1e-7);
+    const x0 = Math.max(-this.half - 1, Math.floor(minX));
+    const x1 = Math.min(this.half, Math.floor(maxX - 1e-7));
     const y0 = Math.max(-this.depth, Math.floor(minY));
     const y1 = Math.min(this.height - 1, Math.floor(maxY - 1e-7));
-    const z0 = Math.floor(minZ);
-    const z1 = Math.floor(maxZ - 1e-7);
+    const z0 = Math.max(-this.half - 1, Math.floor(minZ));
+    const z1 = Math.min(this.half, Math.floor(maxZ - 1e-7));
     for (let y = y0; y <= y1; y++)
       for (let z = z0; z <= z1; z++)
         for (let x = x0; x <= x1; x++) {

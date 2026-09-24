@@ -11,6 +11,7 @@ export interface NetHandlers {
 /** Thin WebSocket wrapper: reconnect is deliberately manual — a dropped duel is over. */
 export class NetClient {
   private ws: WebSocket | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   status: NetStatus = 'idle';
   you = -1;
   room = '';
@@ -46,13 +47,17 @@ export class NetClient {
       return;
     }
     this.ws = ws;
+    this.room = '';
+    this.you = -1;
     // A wrong IP just hangs until the OS gives up, which looks like the game is broken.
     const timeout = setTimeout(() => {
-      if (ws.readyState !== WebSocket.OPEN) {
+      // Only for this attempt: a later connect or a Disconnect must not be kicked by it.
+      if (this.ws === ws && ws.readyState !== WebSocket.OPEN) {
         this.setStatus('error', this.unreachable(url));
-        ws.close();
+        this.close();
       }
     }, 8000);
+    this.connectTimer = timeout;
     const clearTimer = () => clearTimeout(timeout);
     ws.onopen = () => {
       clearTimer();
@@ -101,6 +106,8 @@ export class NetClient {
   }
 
   close() {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
     const ws = this.ws;
     this.ws = null;
     if (ws) {

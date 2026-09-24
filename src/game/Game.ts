@@ -100,7 +100,9 @@ export class Game {
     this.menus = new Menus(uiRoot, settings, this.records, kitIcons, {
       onStart: () => this.startDuel(),
       onResume: () => this.resume(),
-      onRestart: () => this.startDuel(),
+      onRestart: () => {
+        if (!this.online) this.startDuel();
+      },
       onQuit: () => this.toMenu(),
       onSettingsChanged: () => this.applySettings(),
       onUiSound: () => {
@@ -130,8 +132,10 @@ export class Game {
       onToggleHitboxes: () => this.toggleHitboxes(),
       onRestart: () => {
         if (this.state !== 'results') return;
-        if (this.netMatch) this.netMatch.requestRematch();
-        else this.startDuel();
+        if (this.netMatch) {
+          this.netMatch.requestRematch();
+          this.hud.showCenter('Waiting for rematch…', 'toast', 60);
+        } else this.startDuel();
       },
       onPointerLockChange: (locked) => {
         if (!locked && this.state === 'playing' && !this.inventory.open) this.pause();
@@ -293,22 +297,26 @@ export class Game {
 
   private onNetStatus(status: NetStatus, detail: string) {
     this.menus.setNetStatus(status, detail, this.net.room);
-    if (status === 'error' || status === 'closed') {
-      const wasPlaying = this.netMatch !== null;
-      this.netMatch = null;
-      if (wasPlaying) {
-        this.state = 'menu';
-        this.input.enabled = false;
-        this.input.closeGuard = false;
-        this.input.unlock();
-        this.input.releaseShortcuts();
-        this.match = this.newDemo();
-        this.demoBrain = this.makeDemoBrain(this.match as Match);
-        this.view.cameraMode = 'orbit';
-        this.hud.setVisible(false);
-      }
-      this.menus.show('multiplayer');
+    if (status === 'error' || status === 'closed') this.leaveOnlineMatch();
+  }
+
+  /** Back to the multiplayer screen from an online match (the connection may stay open). */
+  private leaveOnlineMatch() {
+    const wasPlaying = this.netMatch !== null;
+    this.netMatch = null;
+    if (wasPlaying) {
+      this.inventory.hide();
+      this.state = 'menu';
+      this.input.enabled = false;
+      this.input.closeGuard = false;
+      this.input.unlock();
+      this.input.releaseShortcuts();
+      this.match = this.newDemo();
+      this.demoBrain = this.makeDemoBrain(this.match as Match);
+      this.view.cameraMode = 'orbit';
+      this.hud.setVisible(false);
     }
+    this.menus.show('multiplayer');
   }
 
   private onNetMessage(msg: ServerMsg) {
@@ -322,6 +330,12 @@ export class Game {
       return;
     }
     if (!this.netMatch) return;
+    // The server drops back to the lobby when the opponent leaves mid-duel.
+    if (msg.t === 'lobby' && msg.players.length < 2) {
+      this.leaveOnlineMatch();
+      this.menus.setNetStatus('lobby', 'Your opponent left. Waiting for someone to join this room…', this.net.room);
+      return;
+    }
     this.netMatch.handle(msg);
     switch (msg.t) {
       case 'end':
@@ -384,6 +398,7 @@ export class Game {
   private pause() {
     if (this.state !== 'playing') return;
     this.inventory.hide();
+    this.menus.setOnline(this.online);
     this.state = 'paused';
     this.input.enabled = false;
     this.menus.show('pause');
@@ -446,6 +461,13 @@ export class Game {
       m.attackHeld = this.input.attackHeld && !this.inventory.open;
     } else {
       this.input.consumeLook();
+      // Paused online the world goes on: let go of every key, or we would keep walking,
+      // blocking, eating or mining through the pause.
+      if (this.online) {
+        p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
+        m.useHeld = false;
+        m.attackHeld = false;
+      }
     }
 
     // Online: the server keeps ticking whether or not we opened the pause menu, so we have to
