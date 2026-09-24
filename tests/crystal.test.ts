@@ -296,7 +296,7 @@ describe('Crystal bot', () => {
   it('places obsidian, crystals and anchors, blows them up, and finishes duels', () => {
     const total = { placed: 0, broken: 0, anchors: 0 };
     for (let seed = 1; seed <= 3; seed++) {
-      const { m, stuck } = duel('hard', 'hard', seed * 7);
+      const { m, stuck } = duel('lt2', 'lt2', seed * 7);
       expect(m.phase).toBe('ended');
       expect(stuck).toBe(0);
       for (const f of [m.player, m.bot]) {
@@ -312,7 +312,7 @@ describe('Crystal bot', () => {
 
   it('scales with difficulty', () => {
     let wins = 0;
-    for (let seed = 60; seed < 64; seed++) if (duel('expert', 'normal', seed).m.winner?.id === 'bot') wins++;
+    for (let seed = 60; seed < 64; seed++) if (duel('lt1', 'lt3', seed).m.winner?.id === 'bot') wins++;
     expect(wins).toBeGreaterThanOrEqual(3);
   });
 

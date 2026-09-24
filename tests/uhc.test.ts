@@ -300,7 +300,7 @@ describe('UHC bot', () => {
     const total = { lava: 0, water: 0, web: 0, planks: 0, broken: 0 };
     let finished = 0;
     for (let seed = 1; seed <= 5; seed++) {
-      const { m, used } = duel('hard', 'expert', seed * 3);
+      const { m, used } = duel('lt2', 'lt1', seed * 3);
       if (m.phase === 'ended') finished++;
       for (const k of Object.keys(total) as (keyof typeof total)[]) total[k] += used[k];
     }
@@ -313,7 +313,7 @@ describe('UHC bot', () => {
 
   it('scales with difficulty', () => {
     let wins = 0;
-    for (let seed = 60; seed < 66; seed++) if (duel('expert', 'normal', seed).m.winner?.id === 'bot') wins++;
+    for (let seed = 60; seed < 66; seed++) if (duel('lt1', 'lt3', seed).m.winner?.id === 'bot') wins++;
     expect(wins).toBeGreaterThanOrEqual(5);
   });
 });

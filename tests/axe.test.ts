@@ -251,7 +251,7 @@ describe('axe bot', () => {
     let blocked = 0;
     let swaps = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const m = duel('hard', 'hard', seed);
+      const m = duel('lt2', 'lt2', seed);
       if (m.phase === 'ended') finished++;
       disabled += m.bot.stats.shieldsDisabled + m.player.stats.shieldsDisabled;
       blocked += m.bot.stats.blocked + m.player.stats.blocked;
@@ -266,7 +266,7 @@ describe('axe bot', () => {
   it('scales with difficulty', () => {
     let wins = 0;
     for (let seed = 30; seed < 38; seed++) {
-      const m = duel('expert', 'easy', seed);
+      const m = duel('lt1', 'lt5', seed);
       if (m.winner === m.bot) wins++;
     }
     expect(wins).toBeGreaterThanOrEqual(7);
@@ -274,7 +274,7 @@ describe('axe bot', () => {
 
   it('Practice holds its shield up but never swings', () => {
     for (let seed = 50; seed < 53; seed++) {
-      const m = duel('practice', 'normal', seed, 20 * 40);
+      const m = duel('practice', 'lt3', seed, 20 * 40);
       expect(m.bot.stats.swings).toBe(0);
       expect(m.bot.stats.arrowsShot).toBe(0);
       expect(m.bot.stats.blocked).toBeGreaterThan(0);

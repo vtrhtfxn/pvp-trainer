@@ -144,11 +144,11 @@ export class Menus {
     this.kitInfo = h('div', { class: 'kit-info' });
     panel.append(this.kitInfo);
 
-    panel.append(h('div', { class: 'section-title' }, 'Bot difficulty'));
+    panel.append(h('div', { class: 'section-title' }, 'Bot tier'));
     const diffs = h('div', { class: 'diff-row' });
     for (const id of DIFFICULTY_ORDER) {
       const d = DIFFICULTIES[id];
-      const b = h('button', { class: 'diff-btn', 'data-diff': id }, d.name);
+      const b = h('button', { class: id === 'practice' ? 'diff-btn diff-practice' : 'diff-btn', 'data-diff': id }, d.name);
       b.style.setProperty('--diff', d.color);
       b.addEventListener('click', () => {
         this.cb.onUiSound();
