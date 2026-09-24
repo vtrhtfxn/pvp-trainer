@@ -92,6 +92,8 @@ export type FighterEvent =
   | { type: 'noDamage'; target: Fighter }
   /** Your swing hit a raised shield. */
   | { type: 'hitShield'; target: Fighter; disabled: boolean; swap: boolean }
+  /** A sweep attack (full-charge sword hit on the ground, standing still-ish): x/y/z is the arc. */
+  | { type: 'sweep'; x: number; y: number; z: number }
   | { type: 'shieldRaise' }
   | { type: 'shieldBlock'; attacker: Fighter }
   | { type: 'shieldDisabled' }
@@ -461,6 +463,15 @@ export class Fighter {
   }
   isBlocking(): boolean {
     return this.useKind() === 'shield' && this.useTicks() >= C.SHIELD_RAISE_TICKS;
+  }
+  /**
+   * Player.hurtCurrentlyUsedShield: blocking a hit of 3 or more damage costs the shield
+   * 1 + floor(damage) durability (Unbreaking applies); at 0 it breaks.
+   */
+  damageShield(amount: number) {
+    if (amount < 3 || this.useKind() !== 'shield') return;
+    this.damageItem(this.handSlot(this.useHand), 1 + Math.floor(amount));
+    if (!this.hasShield()) this.stopUsingItem();
   }
   hasShield(): boolean {
     return this.offhand?.id === 'shield' || this.heldStack()?.id === 'shield';
@@ -1311,8 +1322,11 @@ export class Fighter {
     let fwd = clamp(this.input.forward, -1, 1);
     let str = clamp(this.input.strafe, -1, 1);
     if (sneak) {
-      fwd *= C.SNEAK_INPUT_MULT;
-      str *= C.SNEAK_INPUT_MULT;
+      // Swift Sneak (leggings): 30% + 15% per level of walking speed.
+      const ss = this.armorSlots[2]?.ench?.swiftSneak ?? 0;
+      const mult = Math.min(1, C.SNEAK_INPUT_MULT + 0.15 * ss);
+      fwd *= mult;
+      str *= mult;
     }
     if (this.usingItem) {
       fwd *= C.USE_ITEM_INPUT_MULT;

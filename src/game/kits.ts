@@ -79,6 +79,48 @@ function netheriteArmor(): (ItemStack | null)[] {
 const pot = (potion: PotionId): ItemStack => ({ id: 'splash_potion', count: 1, potion });
 
 /**
+ * The SMP tier-test kit, laid out as in the reference inventory: sword, gapples, pearls, axe,
+ * the knockback sword, one of each buff and the totem in the hotbar; the shield in the off hand;
+ * the rest of the potions, a stack of XP and the second stacks of gapples and pearls in the
+ * inventory.
+ */
+function smpLoadout(): Loadout {
+  const keep = { unbreaking: 3, mending: 1 };
+  const armor: ItemStack[] = [
+    { id: 'netherite_helmet', count: 1, ench: { protection: 4, ...keep } },
+    { id: 'netherite_chestplate', count: 1, ench: { protection: 4, ...keep } },
+    { id: 'netherite_leggings', count: 1, ench: { protection: 4, swiftSneak: 3, ...keep } },
+    { id: 'netherite_boots', count: 1, ench: { protection: 4, featherFalling: 4, ...keep } },
+  ];
+  const sword = { sharpness: 5, fireAspect: 2, sweepingEdge: 3 };
+  const hotbar: ItemStack[] = [
+    { id: 'netherite_sword', count: 1, ench: sword },
+    { id: 'golden_apple', count: 64 },
+    { id: 'ender_pearl', count: 16 },
+    { id: 'netherite_axe', count: 1, ench: { sharpness: 5 } },
+    { id: 'netherite_sword', count: 1, ench: { ...sword, knockback: 1 } },
+    pot('strength'),
+    pot('swiftness'),
+    pot('fire_resistance'),
+    { id: 'totem_of_undying', count: 1 },
+  ];
+  const main: ItemStack[] = [
+    ...Array.from({ length: 9 }, () => pot('strength')),
+    ...Array.from({ length: 9 }, () => pot('swiftness')),
+    { id: 'experience_bottle', count: 64 },
+    { id: 'golden_apple', count: 64 },
+    { id: 'ender_pearl', count: 16 },
+    pot('strength'),
+    pot('strength'),
+    pot('swiftness'),
+    pot('swiftness'),
+    pot('fire_resistance'),
+    pot('fire_resistance'),
+  ];
+  return { hotbar, main, armor, offhand: { id: 'shield', count: 1, ench: keep } };
+}
+
+/**
  * The NethPot layout from a tier-test inventory: sword, totem, gapples and healing in the
  * hotbar; a spare totem, two stacks of XP and the buff potions in the inventory; a totem in
  * the off hand. Every empty slot is filled with Splash Healing II.
@@ -334,7 +376,22 @@ export const KITS: KitDef[] = [
     armorLabel: 'Netherite · Prot IV / Blast IV',
     floorDepth: 4,
   },
-  soon('smp', 'SMP', 'smp', 'Full SMP loadout, no explosives.'),
+  {
+    id: 'smp',
+    name: 'SMP',
+    icon: 'smp',
+    available: true,
+    summary: 'Shield, axe, two swords, buffs, gapples, pearls and one totem — no explosives.',
+    contents: [
+      'Netherite Armor — Prot IV, Unbreaking III, Mending (Swift Sneak III legs, Feather Falling IV boots)',
+      '2× Netherite Sword — Sharp V, Fire Aspect II, Sweeping Edge III (one with Knockback I)',
+      'Netherite Axe — Sharp V · Shield — Unbreaking III, Mending (off hand)',
+      '12× Strength II · 12× Speed II · 3× Fire Res (8:00) · 1× Totem',
+      '128× Golden Apple · 32× Ender Pearl · 64× Bottle o\' Enchanting',
+    ],
+    ...smpLoadout(),
+    armorLabel: 'Netherite · Prot IV',
+  },
   soon('mace', 'Mace', 'mace', 'Wind charges and smash attacks.'),
 ];
 

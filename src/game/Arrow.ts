@@ -176,6 +176,7 @@ export class Arrow {
     if (this.pierce === 0 && target.isBlocking() && shieldFaces(target, this.pos.x, this.pos.z)) {
       target.events.push({ type: 'shieldBlock', attacker: owner });
       target.stats.blocked++;
+      target.damageShield(dmg);
       this.bounce();
       return;
     }

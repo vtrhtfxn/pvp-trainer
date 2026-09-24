@@ -176,6 +176,17 @@ export class BotBrain {
   /** Ticks before it tries to rescue itself again (water, cutting a web) after a failed attempt. */
   private selfHelpCooldown = 0;
 
+  // ---- SMP
+  /** Shield game plus splash buffs, gapples, pearls, one totem and a knockback sword. */
+  private smpKit = false;
+  /** The axe in the kit (diamond or netherite). */
+  private axe: ItemId = 'diamond_axe';
+  /** Ticks left before it reacts to wanting the totem (or the shield) in the off hand. */
+  private offhandReact = -1;
+  /** Ticks before it will pearl again (pearling back and forth wastes them). */
+  private pearlCooldown = 0;
+  private pearledThisRetreat = false;
+
   // ---- Crystal
   private crystalKit = false;
   private cplan: CrystalPlan | null = null;
@@ -211,7 +222,7 @@ export class BotBrain {
 
   /** The Axe kit (or anything with a shield) switches the bot to its shield game. */
   private get shieldKit(): boolean {
-    return this.bot.hasShield() || this.bot.slotOf('diamond_axe') >= 0;
+    return this.bot.hasShield() || this.bot.slotOf('diamond_axe') >= 0 || this.bot.slotOf('netherite_axe') >= 0;
   }
 
   resetRound() {
@@ -257,6 +268,11 @@ export class BotBrain {
     this.uhcLabel = '';
     this.selfHelpCooldown = 0;
     this.crystalKit = b.countItem('end_crystal') > 0;
+    this.smpKit = !this.crystalKit && b.hasShield() && b.countItem('splash_potion') > 0;
+    this.axe = b.countItem('netherite_axe') > 0 ? 'netherite_axe' : 'diamond_axe';
+    this.offhandReact = -1;
+    this.pearlCooldown = 0;
+    this.pearledThisRetreat = false;
     this.cplan = null;
     this.crystalCooldown = 0;
     this.thinkTimer = 0;
@@ -294,6 +310,11 @@ export class BotBrain {
       this.potLabel = '';
       this.crystalStep(per, dist, trueDist, justHurt, input);
       this.avoidLava(input);
+      b.input = input;
+      return;
+    }
+    if (this.smpKit) {
+      this.smpStep(per, dist, trueDist, justHurt, input);
       b.input = input;
       return;
     }
@@ -582,7 +603,7 @@ export class BotBrain {
     // Back to the sword after an axe swing, or whenever nothing else needs a different item.
     if (this.swapBackTimer > 0) this.swapBackTimer--;
     const held = b.heldStack()?.id ?? null;
-    if (this.swapBackTimer === 0 && this.axeWait < 0 && held !== 'diamond_sword') this.equip('diamond_sword');
+    if (this.swapBackTimer === 0 && this.axeWait < 0 && held !== this.weapon) this.equip(this.weapon);
 
     const seen = this.seenLate(A.shieldReact);
     const targetDown = this.targetShieldDownUntil > this.ticks;
@@ -591,7 +612,7 @@ export class BotBrain {
     const inReach = reach >= 0 && reach <= P.maxReach;
 
     // ---- 1. Their shield is up and facing us: the axe disables it for 5 seconds.
-    const wantsBreak = !P.passive && seen.shield && facingUs && !targetDown && b.slotOf('diamond_axe') >= 0;
+    const wantsBreak = !P.passive && seen.shield && facingUs && !targetDown && b.slotOf(this.axe) >= 0;
     if (wantsBreak || this.axeCommit > 0) {
       if (this.axeCommit > 0) this.axeCommit--;
       this.shieldPlan = false;
@@ -608,15 +629,15 @@ export class BotBrain {
       if (A.swap && wantsBreak) {
         // Attribute swap: the axe goes in the hand and swings on the same tick, before the
         // equipment tick refreshes attributes — sword damage and cooldown, axe disable.
-        this.equip('diamond_axe');
+        this.equip(this.axe);
         this.afterAxeSwing(this.doAttack());
         this.swapBackTimer = 1;
         this.axeWait = -1;
         this.axeCommit = 0;
         return;
       }
-      if (b.heldStack()?.id !== 'diamond_axe') {
-        this.equip('diamond_axe');
+      if (b.heldStack()?.id !== this.axe) {
+        this.equip(this.axe);
         this.axeWait = rng.int(A.axeDelay[0], A.axeDelay[1]);
         this.axeCommit = 40;
         return;
@@ -651,7 +672,7 @@ export class BotBrain {
     const canShield = b.offhand?.id === 'shield' && b.shieldCooldown === 0 && ITEMS[held ?? 'arrow'].use === 'none';
     const p = b.attackStrengthScale(0.5);
     const myHitReady = inReach && p >= Math.min(this.swingThreshold, 0.95) && !(seen.shield && facingUs && !targetDown);
-    const axeRead = theirHeld === 'diamond_axe' && this.readAxeRoll;
+    const axeRead = !!theirHeld && !!ITEMS[theirHeld].disablesShield && this.readAxeRoll;
     let wantShield = canShield && this.shieldPlan && threatened && !axeRead && !myHitReady;
     if (P.passive) wantShield = canShield && this.shieldPlan && dist < 5 && lookingAtUs;
 
@@ -1133,6 +1154,131 @@ export class BotBrain {
         moves.push([from, empty.shift()!]);
       }
     }
+    return moves;
+  }
+
+  // ------------------------------------------------------------ SMP
+
+  /** Hotbar slot of a sword with Knockback (the SMP kit's second sword), or -1. */
+  private kbSwordSlot(): number {
+    const b = this.bot;
+    for (let i = 0; i < 9; i++) {
+      const s = b.inventory[i];
+      if (s && ITEMS[s.id].tool === 'sword' && (s.ench?.knockback ?? 0) > 0) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * The SMP game: the Axe-kit shield game (with the netherite axe) on top of NethPot-style
+   * buffs and mending, gapple retreats, pearls, and one totem that only saves you from the off
+   * hand — so it goes there, instead of the shield, when things get dangerous.
+   */
+  private smpStep(per: Perceived, dist: number, trueDist: number, justHurt: boolean, input: MoveInput) {
+    const b = this.bot;
+    const P = this.profile;
+    const K = P.crystal;
+    if (this.potCooldown > 0) this.potCooldown--;
+    if (this.throwGap > 0) this.throwGap--;
+    if (this.crystalCooldown > 0) this.crystalCooldown--;
+
+    // ---- Off hand: totem when low and they are close; the shield back once safe (or popped).
+    if (this.offhandStep(dist, input)) return;
+
+    // ---- A pearl in flight (in from far away, or out to eat).
+    if (this.cplan && this.runCrystal(per, dist, input)) return;
+    if (this.pearlCooldown > 0) this.pearlCooldown--;
+    if (this.state !== 'retreat') this.pearledThisRetreat = false;
+    if (!P.passive && K.pearls > 0 && this.pearlCooldown === 0 && b.countItem('ender_pearl') > 0 && !b.cooldowns.has('ender_pearl') && !b.usingItem) {
+      // In: they ran far and aren't coming back.
+      if (trueDist > 16 && b.onGround && this.state === 'engage' && this.closingSpeed(per) < 0.05) {
+        const shot = ballistic(trueDist, this.target.pos.y - (b.pos.y + b.eyeHeight() - 0.1), C.PEARL_THROW_SPEED, C.PEARL_GRAVITY);
+        if (shot) this.cplan = { kind: 'pearl', yaw: yawTowards(this.target.pos.x - b.pos.x, this.target.pos.z - b.pos.z), pitch: shot.pitch, timer: 0 };
+      } else if (K.pearls >= 2 && this.state === 'retreat' && !this.pearledThisRetreat && trueDist < 4 && this.stateTimer > this.partingTicks + 10) {
+        // Still chased while trying to get away to eat: pearl out, once.
+        this.cplan = { kind: 'pearl', yaw: this.fleeDirection(per), pitch: 0.4, timer: 0 };
+        this.pearledThisRetreat = true;
+      }
+      if (this.cplan) {
+        this.pearlCooldown = 200;
+        this.settle = 0;
+        if (this.runCrystal(per, dist, input)) return;
+      }
+    }
+
+    // ---- Buffs (Fire Resistance whenever their Fire Aspect has us burning) and mending.
+    if (!this.throwing && this.potCooldown === 0 && this.state !== 'eat' && !b.usingItem) this.throwing = this.pickThrow(trueDist);
+    if (this.throwing && this.throwStep(per, dist, input)) return;
+
+    // ---- Restock the hotbar in a quiet moment.
+    if (trueDist > 5 && this.state !== 'eat' && !b.usingItem) {
+      const moves = this.smpRestockMoves();
+      if (moves.length) {
+        this.openInv(moves);
+        return;
+      }
+    }
+
+    // ---- The shield game, with gapple retreats.
+    this.updateState(trueDist);
+    if (this.state === 'engage') this.engageShield(per, dist, justHurt, input);
+    else if (this.state === 'retreat') this.retreat(per, trueDist, input);
+    else this.eat(per, trueDist, input);
+  }
+
+  /** True while it is swapping hands (two keys over two ticks: the slot, then F). */
+  private offhandStep(dist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    const P = this.profile;
+    const off = b.offhand?.id ?? null;
+    const eff = b.effectiveHealth();
+    let want: ItemId | null = null;
+    if (off !== 'totem_of_undying' && b.slotOf('totem_of_undying') >= 0 && eff <= 7 && dist < 7) want = 'totem_of_undying';
+    else if (off !== 'shield' && b.slotOf('shield') >= 0 && (off === null || (eff >= P.returnHP && dist > 3.5))) want = 'shield';
+    if (!want || P.passive) {
+      this.offhandReact = -1;
+      return false;
+    }
+    if (this.offhandReact < 0) this.offhandReact = P.neth.totemReact;
+    if (this.offhandReact > 0) {
+      this.offhandReact--;
+      return false;
+    }
+    this.potLabel = want === 'shield' ? 'Shield back' : 'Totem';
+    if (b.usingItem) b.stopUsingItem();
+    const slot = b.slotOf(want);
+    if (b.selected !== slot) b.selectSlot(slot);
+    else {
+      b.swapHands();
+      this.offhandReact = -1;
+    }
+    input.forward = dist < 4 ? -1 : 0;
+    return true;
+  }
+
+  /** Buff potions, gapples and pearls back into empty hotbar slots. */
+  private smpRestockMoves(): [number, number][] {
+    const b = this.bot;
+    const moves: [number, number][] = [];
+    const empty: number[] = [];
+    for (let i = 0; i < 9; i++) if (!b.inventory[i]) empty.push(i);
+    const taken = new Set<number>();
+    const want = (id: ItemId, potion?: PotionId) => {
+      if (!empty.length || b.slotOf(id, potion) >= 0) return;
+      for (let i = 9; i < SLOT_ARMOR; i++) {
+        const st = b.inventory[i];
+        if (!taken.has(i) && st?.id === id && (potion === undefined || st.potion === potion)) {
+          taken.add(i);
+          moves.push([i, empty.shift()!]);
+          return;
+        }
+      }
+    };
+    want('splash_potion', 'strength');
+    want('splash_potion', 'swiftness');
+    want('splash_potion', 'fire_resistance');
+    want('golden_apple');
+    want('ender_pearl');
     return moves;
   }
 
@@ -2236,6 +2382,10 @@ export class BotBrain {
       input.sprint = true;
       const reach = rayDistanceToTarget(b, this.target);
       if (reach >= 0 && reach <= P.maxReach && p > C.STRONG_ATTACK_SCALE) {
+        // The knockback sword swapped in on the same tick: the charged sword's cooldown, its
+        // Knockback I — a big push to open the gap.
+        const kb = P.axe.swap ? this.kbSwordSlot() : -1;
+        if (kb >= 0) b.selectSlot(kb);
         this.doAttack();
         this.partingTicks = this.stateTimer;
       } else if (trueDist > 3.3 || p < 0.5) {
