@@ -431,9 +431,7 @@ export class Menus {
           () => (s.maxFps === 0 ? 260 : s.maxFps),
           (v) => (s.maxFps = v >= 260 ? 0 : v),
           (v) => (v >= 260 ? 'Unlimited' : `${v} fps`),
-          window.pvpNative
-            ? 'Unlimited = as fast as your PC can go. Lower it to save battery and heat'
-            : 'Caps the frame rate to save power. Browsers never go past your screen’s refresh rate (60 Hz screen = 60 FPS) — the desktop app does',
+          'Caps the frame rate to save power. Unlimited = your screen’s refresh rate (60 Hz screen = 60 FPS) unless Uncapped FPS is on',
         );
         slider(
           'Render Scale',
@@ -445,6 +443,22 @@ export class Menus {
           (v) => (v < 25 ? 'Auto' : `${v}%`),
           'Auto lowers the resolution only when frames get slow. Lower = smoother on weak computers',
         );
+        const native = window.pvpNative;
+        if (native?.setUncapped) {
+          // Lives in the app shell (a Chromium switch), not in the game's settings.
+          let want = native.uncapped;
+          const b = h('button', { class: 'mc-btn' });
+          b.title = 'VSync off: more FPS and slightly quicker input, but can stutter and makes laptops hot. Applies when you restart the app';
+          const paint = () => (b.textContent = `Uncapped FPS: ${want ? 'ON' : 'OFF'}${want !== native.uncapped ? ' (restart app)' : ''}`);
+          paint();
+          b.addEventListener('click', () => {
+            this.cb.onUiSound();
+            want = !want;
+            void native.setUncapped(want);
+            paint();
+          });
+          grid.append(b);
+        }
         cycle<'all' | 'decreased' | 'minimal'>(
           'Particles',
           [

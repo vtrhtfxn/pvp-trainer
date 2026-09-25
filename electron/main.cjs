@@ -4,7 +4,7 @@
 // file://, so it gets a real web origin: localStorage keeps your settings and records, and
 // pointer lock behaves exactly like it does in Chrome.
 
-const { app, BrowserWindow, Menu, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, protocol, net, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -21,10 +21,31 @@ protocol.registerSchemesAsPrivileged([
 // fixed-step simulation the moment the window loses focus.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
-// Uncapped frame rate: by default Chromium waits for the screen's refresh (VSync), which held
-// the game at 60 FPS on a 60 Hz display. Options → Video → Max Framerate caps it again.
-app.commandLine.appendSwitch('disable-frame-rate-limit');
-app.commandLine.appendSwitch('disable-gpu-vsync');
+// Frames are paced to the screen (VSync) unless the player turns on Options → Video →
+// Uncapped FPS. Uncapped runs as fast as the machine can, out of step with the display: more
+// FPS and slightly quicker input, but stutter, heat and throttling on laptops — so it is
+// opt-in, and it is a Chromium switch, so it takes effect on the next launch.
+const DISPLAY_FILE = path.join(app.getPath('userData'), 'display.json');
+function readUncapped() {
+  try {
+    return JSON.parse(fs.readFileSync(DISPLAY_FILE, 'utf8')).uncapped === true;
+  } catch {
+    return false;
+  }
+}
+const uncapped = readUncapped();
+if (uncapped) {
+  app.commandLine.appendSwitch('disable-frame-rate-limit');
+  app.commandLine.appendSwitch('disable-gpu-vsync');
+}
+ipcMain.handle('pvp:set-uncapped', (_e, on) => {
+  try {
+    fs.mkdirSync(path.dirname(DISPLAY_FILE), { recursive: true });
+    fs.writeFileSync(DISPLAY_FILE, JSON.stringify({ uncapped: !!on }));
+  } catch {
+    /* read-only profile: stays as it is */
+  }
+});
 
 /** @type {BrowserWindow | null} */
 let win = null;
@@ -104,6 +125,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
+      additionalArguments: [`--pvp-uncapped=${uncapped ? 1 : 0}`],
     },
   });
 
