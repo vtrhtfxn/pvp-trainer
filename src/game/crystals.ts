@@ -1,4 +1,3 @@
-import * as C from '../core/constants';
 import { V3, rayAABB, type AABB } from '../core/math';
 import { B, type RayHit } from './Blocks';
 import { EndCrystal } from './EndCrystal';
@@ -41,7 +40,7 @@ export function placeCrystal(world: World, owner: Fighter, x: number, y: number,
 }
 
 /** The crystal under `f`'s crosshair within attack reach (and not behind a block), or null. */
-export function crosshairCrystal(f: Fighter, reach = C.ATTACK_REACH): { crystal: EndCrystal; t: number } | null {
+export function crosshairCrystal(f: Fighter, reach = f.entityReach()): { crystal: EndCrystal; t: number } | null {
   const world = f.world;
   if (!world.crystals.length) return null;
   const eye = f.eyePos(tmpEye);

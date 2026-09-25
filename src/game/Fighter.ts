@@ -1,11 +1,12 @@
 import * as C from '../core/constants';
 import { V3, clamp, forwardX, forwardZ, lookDir, rayAABB, wrapAngle, type AABB } from '../core/math';
 import { Arrow } from './Arrow';
-import { FIST, ITEMS, cloneStack, defOf, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
+import { FIST, INSTANT_EFFECTS, ITEMS, cloneStack, defOf, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
+import { ATTRIBUTES, defaultAttributes, type AttributeId, type Attributes, type GameMode } from './attributes';
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
 import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks';
 import { DroppedItem } from './DroppedItem';
-import { burn, fallHurt, hurt, lavaHurt } from './combat';
+import { burn, fallHurt, hurt, lavaHurt, type DamageKind } from './combat';
 import { canPlaceCrystal, detonateAnchor, placeCrystal } from './crystals';
 import { Thrown } from './Thrown';
 import type { World } from './World';
@@ -315,6 +316,15 @@ export class Fighter {
 
   health = C.MAX_HEALTH;
   maxHealth = C.MAX_HEALTH;
+  /** Attribute base values (/attribute). Items, armor and effects apply on top in the getters. */
+  readonly attrs: Attributes = defaultAttributes();
+  /** /gamemode. Kept across rounds, like a player's game mode. */
+  gameMode: GameMode = 'survival';
+  /** Abilities.flying: creative (double-tap jump) and spectator (always). */
+  flying = false;
+  private jumpTriggerTime = 0;
+  /** What hurt us last (for death messages). */
+  lastDamage: { kind: DamageKind; attacker: Fighter | null; fire: boolean } | null = null;
   absorption = 0;
   hurtTime = 0;
   hurtDuration = C.HURT_DURATION;
@@ -420,7 +430,12 @@ export class Fighter {
     this.sprintTriggerTime = 0;
     this.hadEnoughImpulse = false;
     this.noJumpDelay = 0;
-    this.health = this.maxHealth = C.MAX_HEALTH;
+    this.effects.clear();
+    this.refreshMaxHealth();
+    this.health = this.maxHealth;
+    this.flying = this.gameMode === 'spectator';
+    this.jumpTriggerTime = 0;
+    this.lastDamage = null;
     this.absorption = 0;
     this.hurtTime = this.invulnerableTime = 0;
     this.lastHurt = 0;
@@ -465,7 +480,76 @@ export class Fighter {
   // ---------------------------------------------------------------- queries
 
   get sneaking() {
-    return this.input.sneak && !this.dead;
+    return this.input.sneak && !this.dead && !this.flying;
+  }
+
+  // ---------------------------------------------------------------- attributes & game mode
+
+  /** Creative: nothing hurts, items are never used up, blocks break at once, and you can fly. */
+  instabuild(): boolean {
+    return this.gameMode === 'creative';
+  }
+  mayFly(): boolean {
+    return this.gameMode === 'creative' || this.gameMode === 'spectator';
+  }
+  invulnerable(): boolean {
+    return this.gameMode === 'creative' || this.gameMode === 'spectator';
+  }
+  /** Spectators fly through blocks and can't touch anything. */
+  noClip(): boolean {
+    return this.gameMode === 'spectator';
+  }
+  /** Adventure mode: no breaking or placing blocks. */
+  mayBuild(): boolean {
+    return this.gameMode === 'survival' || this.gameMode === 'creative';
+  }
+
+  setGameMode(mode: GameMode) {
+    this.gameMode = mode;
+    this.flying = mode === 'spectator' || (mode === 'creative' && this.flying);
+    if (mode === 'spectator' && this.usingItem) this.stopUsingItem();
+  }
+
+  /** entity_interaction_range (creative adds 2, like vanilla's game mode modifier). */
+  entityReach(): number {
+    return this.attrs.entity_interaction_range + (this.gameMode === 'creative' ? 2 : 0);
+  }
+  /** block_interaction_range (creative adds 0.5). */
+  blockReach(): number {
+    return this.attrs.block_interaction_range + (this.gameMode === 'creative' ? 0.5 : 0);
+  }
+  /** gravity attribute (vanilla 0.08). */
+  gravityValue(): number {
+    return this.attrs.gravity;
+  }
+  /** jump_strength plus Jump Boost's 0.1 per level. */
+  jumpPower(): number {
+    const jb = this.effects.get('jump_boost');
+    return this.attrs.jump_strength + (jb ? 0.1 * (jb.amplifier + 1) : 0);
+  }
+  /**
+   * LivingEntity.calculateFallDamage: ceil((distance − safe_fall_distance) × fall_damage_multiplier).
+   * Jump Boost adds a block of safe fall per level.
+   */
+  fallDamageFor(fall: number): number {
+    const jb = this.effects.get('jump_boost');
+    const safe = this.attrs.safe_fall_distance + (jb ? jb.amplifier + 1 : 0);
+    return Math.ceil((fall - safe) * this.attrs.fall_damage_multiplier);
+  }
+
+  /** /attribute … base set: clamped to the attribute's range, then derived stats refresh. */
+  setAttribute(id: AttributeId, value: number) {
+    const def = ATTRIBUTES[id];
+    this.attrs[id] = Math.min(def.max, Math.max(def.min, value));
+    if (id === 'max_health') this.refreshMaxHealth();
+    else this.recomputeArmor();
+  }
+
+  /** max_health plus Health Boost's 4 per level; health never stays above it. */
+  refreshMaxHealth() {
+    const hb = this.effects.get('health_boost');
+    this.maxHealth = this.attrs.max_health + (hb ? 4 * (hb.amplifier + 1) : 0);
+    if (this.health > this.maxHealth) this.health = this.maxHealth;
   }
   eyeHeight() {
     if (this.fallFlying) return C.EYE_HEIGHT_GLIDE;
@@ -516,7 +600,19 @@ export class Fighter {
   }
   /** Ticks for a full attack charge: 20 / attack speed (12.5 for swords, 20 for axes). */
   attackDelay(): number {
-    return 20 / this.attrDef().attackSpeed;
+    return 20 / this.attackSpeedValue();
+  }
+  /**
+   * attack_speed: the base (4) plus the held item's modifier (a sword's −2.4), Haste +10% and
+   * Mining Fatigue −10% per level. `/attribute @s attack_speed base set 1024` removes the cooldown.
+   */
+  attackSpeedValue(): number {
+    let v = this.attrs.attack_speed + (this.attrDef().attackSpeed - C.FIST_ATTACK_SPEED);
+    const haste = this.effects.get('haste');
+    if (haste) v *= 1 + 0.1 * (haste.amplifier + 1);
+    const fatigue = this.effects.get('mining_fatigue');
+    if (fatigue) v *= Math.max(0, 1 - 0.1 * (fatigue.amplifier + 1));
+    return Math.max(0.05, v);
   }
   /** What the item being used does, or 'none'. */
   useKind(): UseKind {
@@ -551,15 +647,19 @@ export class Fighter {
   }
   /** movement_speed: sprinting ×1.3 and Speed ×(1 + 0.2 per level) are separate multipliers. */
   movementSpeed(): number {
-    let v = C.WALK_SPEED * (this.sprinting ? C.SPRINT_SPEED_MULT : 1);
+    let v = this.attrs.movement_speed * (this.sprinting ? C.SPRINT_SPEED_MULT : 1);
     const sp = this.effects.get('speed');
     if (sp) v *= 1 + 0.2 * (sp.amplifier + 1);
+    const sl = this.effects.get('slowness');
+    if (sl) v *= Math.max(0, 1 - 0.15 * (sl.amplifier + 1));
     return v;
   }
   /** attack_damage attribute: the attribute item's damage plus Strength's +3 per level. */
   attackDamage(): number {
     const st = this.effects.get('strength');
-    return this.attrDef().attackDamage + (st ? 3 * (st.amplifier + 1) : 0);
+    const wk = this.effects.get('weakness');
+    const base = this.attrs.attack_damage + (this.attrDef().attackDamage - C.FIST_DAMAGE);
+    return Math.max(0, base + (st ? 3 * (st.amplifier + 1) : 0) - (wk ? 4 * (wk.amplifier + 1) : 0));
   }
   get onFire(): boolean {
     return this.fireTicks > 0;
@@ -605,7 +705,12 @@ export class Fighter {
   }
 
   recomputeArmor() {
-    this.armor = armorStatsOf(this.armorSlots);
+    const a = armorStatsOf(this.armorSlots);
+    a.points = Math.min(30, a.points + this.attrs.armor);
+    a.toughness = Math.min(20, a.toughness + this.attrs.armor_toughness);
+    a.knockbackResistance = Math.min(1, a.knockbackResistance + this.attrs.knockback_resistance);
+    a.explosionKnockbackResistance = Math.min(1, a.explosionKnockbackResistance + this.attrs.explosion_knockback_resistance);
+    this.armor = a;
   }
 
   /** Swaps two slots (a number key over a slot in the inventory screen). */
@@ -701,6 +806,7 @@ export class Fighter {
       this.setSlot(this.handSlot(hand), null);
       this.health = 1;
       this.effects.clear();
+      this.refreshMaxHealth();
       this.absorption = 0;
       this.addEffect('regeneration', 1, C.TOTEM_REGEN_TICKS);
       this.addEffect('absorption', 1, C.TOTEM_ABSORPTION_TICKS);
@@ -755,8 +861,10 @@ export class Fighter {
     if (i < 0) return null;
     const s = this.getSlot(i)!;
     const potion = s.potion;
-    s.count--;
-    if (s.count <= 0) this.setSlot(i, null);
+    if (!this.instabuild()) {
+      s.count--;
+      if (s.count <= 0) this.setSlot(i, null);
+    }
     return { potion };
   }
   /** CrossbowItem.getChargeDuration: 25 ticks, 5 fewer per level of Quick Charge. */
@@ -811,14 +919,14 @@ export class Fighter {
    * rightClickDelay that throttles a held button.
    */
   startUsingItem(click = false): boolean {
-    if (this.usingItem || this.dead) return false;
+    if (this.usingItem || this.dead || this.gameMode === 'spectator') return false;
     if (!click && this.rightClickDelay > 0) return false;
     // A block under the crosshair (not hidden behind a player) is what blocks get placed against.
     let hit: RayHit | null | undefined;
     // Block interactions come before items (unless sneaking): a respawn anchor is charged with
     // glowstone and blows up when used with anything else.
     if (!this.sneaking) {
-      hit = this.crosshairBlock(C.BLOCK_REACH, true);
+      hit = this.crosshairBlock(this.blockReach(), true);
       if (hit && hit.id === B.RESPAWN_ANCHOR && this.useAnchor(hit.x, hit.y, hit.z)) {
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
@@ -830,7 +938,8 @@ export class Fighter {
       const def = ITEMS[s.id];
       let ok = false;
       if (def.use === 'place') {
-        if (hit === undefined) hit = this.crosshairBlock(C.BLOCK_REACH, true);
+        if (!this.mayBuild()) continue;
+        if (hit === undefined) hit = this.crosshairBlock(this.blockReach(), true);
         // Aiming at a block: the placement either works or FAILs, and a failure ends the click
         // (it does not fall through to the other hand). Aiming at nothing passes.
         if (hit) {
@@ -838,17 +947,16 @@ export class Fighter {
           ok = true;
         }
       } else if (def.use === 'crystal') {
-        if (hit === undefined) hit = this.crosshairBlock(C.BLOCK_REACH, true);
+        if (hit === undefined) hit = this.crosshairBlock(this.blockReach(), true);
         // EndCrystalItem.useOn: the clicked block itself must be obsidian with room above.
         if (hit) {
           if (!canPlaceCrystal(this.world, hit.x, hit.y, hit.z)) return false;
           placeCrystal(this.world, this, hit.x, hit.y, hit.z);
-          s.count--;
-          if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+          this.consume(s, hand);
           if (hand === 'main') this.swing();
           ok = true;
         }
-      } else if (def.use === 'bucket') ok = this.useBucket(s, hand);
+      } else if (def.use === 'bucket') ok = this.mayBuild() && this.useBucket(s, hand);
       else if (def.use === 'equip') ok = this.equipFromHand(s, hand);
       else ok = this.tryUse(s, hand);
       if (ok) {
@@ -857,6 +965,13 @@ export class Fighter {
       }
     }
     return false;
+  }
+
+  /** One item out of the stack in `hand` (creative keeps it). */
+  private consume(s: ItemStack, hand: Hand) {
+    if (this.instabuild()) return;
+    s.count--;
+    if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
   }
 
   /** ArmorItem.swapWithEquipmentSlot: the piece in hand and the one worn trade places. */
@@ -884,8 +999,7 @@ export class Fighter {
     const fuel = (s: ItemStack | null) => s?.id === 'glowstone';
     const chargeWith = (s: ItemStack, hand: Hand) => {
       blocks.setAnchorCharge(x, y, z, charge + 1);
-      s.count--;
-      if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+      this.consume(s, hand);
       if (hand === 'main') this.swing();
       this.world.emit({ type: 'anchorCharge', x, y, z, charge: charge + 1 });
       return true;
@@ -932,7 +1046,7 @@ export class Fighter {
    * The block under the crosshair within `reach`, or null. With `entities`, a player whose
    * hitbox is closer (and within attack reach) hides it — that is what the crosshair targets.
    */
-  crosshairBlock(reach = C.BLOCK_REACH, entities = true, mode: 'outline' | 'source' = 'outline'): RayHit | null {
+  crosshairBlock(reach = this.blockReach(), entities = true, mode: 'outline' | 'source' = 'outline'): RayHit | null {
     const eye = this.eyePos(tmpEye);
     const d = this.look(tmpLook);
     const hit = this.world.blocks.raycast(eye.x, eye.y, eye.z, d.x, d.y, d.z, reach, mode, this.rayHit);
@@ -941,7 +1055,7 @@ export class Fighter {
       for (const f of this.world.fighters) {
         if (f === this || f.dead) continue;
         const t = rayAABB(eye, d, f.aabbInto(tmpBox));
-        if (t >= 0 && t <= C.ATTACK_REACH && t < hit.t) return null;
+        if (t >= 0 && t <= this.entityReach() && t < hit.t) return null;
       }
     }
     return hit;
@@ -970,8 +1084,7 @@ export class Fighter {
       }
     }
     blocks.set(x, y, z, id);
-    s.count--;
-    if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+    this.consume(s, hand);
     if (hand === 'main') this.swing();
     this.world.emit({ type: 'blockPlace', x, y, z, block: id });
     return true;
@@ -987,11 +1100,13 @@ export class Fighter {
     const fluid = ITEMS[s.id].bucket!;
     const slot = this.handSlot(hand);
     if (fluid === 0) {
-      const hit = this.crosshairBlock(C.BLOCK_REACH, false, 'source');
+      const hit = this.crosshairBlock(this.blockReach(), false, 'source');
       if (!hit || !isFluid(hit.id)) return false;
       blocks.set(hit.x, hit.y, hit.z, B.AIR);
       const full: ItemStack = { id: hit.id === B.WATER ? 'water_bucket' : 'lava_bucket', count: 1 };
-      if (s.count <= 1) this.setSlot(slot, full);
+      if (this.instabuild()) {
+        if (!this.countItem(full.id)) this.addItem(full);
+      } else if (s.count <= 1) this.setSlot(slot, full);
       else {
         s.count--;
         // A full inventory drops it at our feet, as vanilla does.
@@ -1001,7 +1116,7 @@ export class Fighter {
       this.events.push({ type: 'bucket', fluid: hit.id, fill: true });
       return true;
     }
-    const hit = this.crosshairBlock(C.BLOCK_REACH, false);
+    const hit = this.crosshairBlock(this.blockReach(), false);
     if (!hit) return false;
     // A web is replaceable by fluids: pouring onto one fills its own cell (and washes it away).
     const intoWeb = hit.id === B.COBWEB;
@@ -1013,7 +1128,7 @@ export class Fighter {
     if (cur !== B.AIR && cur !== B.COBWEB && !isFluid(cur)) return false;
     if (cur === B.COBWEB) this.world.emit({ type: 'blockConvert', x, y, z, from: B.COBWEB, to: fluid });
     blocks.placeSource(x, y, z, fluid as typeof B.WATER | typeof B.LAVA);
-    this.setSlot(slot, { id: 'bucket', count: 1 });
+    if (!this.instabuild()) this.setSlot(slot, { id: 'bucket', count: 1 });
     if (hand === 'main') this.swing();
     this.events.push({ type: 'bucket', fluid, fill: false });
     return true;
@@ -1027,13 +1142,19 @@ export class Fighter {
   destroyProgress(block: number): number {
     const props = BLOCK_PROPS[block];
     if (!props) return 0;
+    if (this.instabuild()) return 1;
     const st = this.heldStack();
     const def = defOf(st);
     const correct = !!def.tool && def.tool === props.tool;
     let speed = correct ? (def.toolSpeed ?? 1) : 1;
     const eff = st?.ench?.efficiency ?? 0;
     if (eff > 0 && speed > 1) speed += eff * eff + 1;
-    if (!this.onGround) speed /= 5;
+    const haste = this.effects.get('haste');
+    if (haste) speed *= 1 + 0.2 * (haste.amplifier + 1);
+    const fatigue = this.effects.get('mining_fatigue');
+    if (fatigue) speed *= [0.3, 0.09, 0.0027, 8.1e-4][Math.min(3, fatigue.amplifier)];
+    speed *= this.attrs.block_break_speed;
+    if (!this.onGround && !this.flying) speed /= 5;
     if (this.inWater && this.fluidDepth > this.eyeHeight()) speed /= 5;
     const harvest = !props.needsTool || correct;
     return speed / props.hardness / (harvest ? 30 : 100);
@@ -1045,12 +1166,12 @@ export class Fighter {
    * Returns true if the crosshair was on a block (so the click was not an attack).
    */
   tickMining(held: boolean, click: boolean): boolean {
-    if ((!held && !click) || this.dead || this.usingItem) {
+    if ((!held && !click) || this.dead || this.usingItem || !this.mayBuild()) {
       this.mining = null;
       this.mineProgress = 0;
       return false;
     }
-    const hit = this.crosshairBlock(C.BLOCK_REACH, true);
+    const hit = this.crosshairBlock(this.blockReach(), true);
     if (!hit) {
       this.mining = null;
       this.mineProgress = 0;
@@ -1161,8 +1282,7 @@ export class Fighter {
       const t = new Thrown(this, 'wind', null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
       t.throwFrom(this, C.WIND_CHARGE_SPEED, this.world.rng, 0);
       this.world.spawnThrown(t);
-      s.count--;
-      if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+      this.consume(s, hand);
       if (hand === 'main') this.swing();
       this.cooldowns.set('wind_charge', { ticks: 10, total: 10 });
       this.stats.windCharges++;
@@ -1173,8 +1293,7 @@ export class Fighter {
       const t = new Thrown(this, 'pearl', null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
       t.throwFrom(this, C.PEARL_THROW_SPEED, this.world.rng, 0);
       this.world.spawnThrown(t);
-      s.count--;
-      if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+      this.consume(s, hand);
       if (hand === 'main') this.swing();
       this.cooldowns.set('ender_pearl', { ticks: 20, total: 20 });
       this.stats.pearlsThrown++;
@@ -1185,8 +1304,7 @@ export class Fighter {
     const t = new Thrown(this, xp ? 'xp' : 'potion', s.potion ?? null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
     t.throwFrom(this, xp ? C.XP_BOTTLE_THROW_SPEED : C.POTION_THROW_SPEED, this.world.rng);
     this.world.spawnThrown(t);
-    s.count--;
-    if (s.count <= 0) this.setSlot(this.handSlot(hand), null);
+    this.consume(s, hand);
     if (hand === 'main') this.swing();
     if (xp) this.stats.xpBottles++;
     else this.stats.potsThrown++;
@@ -1276,14 +1394,36 @@ export class Fighter {
   }
 
   causeExhaustion(v: number) {
+    if (this.invulnerable()) return;
     this.food.addExhaustion(v);
   }
 
   addEffect(id: EffectId, amplifier: number, duration: number) {
+    if (INSTANT_EFFECTS.has(id)) {
+      this.applyInstant(id, amplifier, 1);
+      return;
+    }
     const cur = this.effects.get(id);
     if (!cur) this.effects.set(id, { amplifier, duration });
     else if (!mergeEffect(cur, amplifier, duration)) return;
     if (id === 'absorption') this.absorption = Math.max(this.absorption, 4 * (amplifier + 1));
+    if (id === 'health_boost') this.refreshMaxHealth();
+  }
+
+  /** InstantenousMobEffect.applyInstantenousEffect: Instant Health heals 4 << level, Instant Damage deals 6 << level. */
+  applyInstant(id: EffectId, amplifier: number, scale: number) {
+    if (id === 'instant_health') this.heal(Math.floor(scale * (4 << amplifier) + 0.5));
+    else if (id === 'instant_damage') hurt(this, Math.floor(scale * (6 << amplifier) + 0.5), null, false, false, true, 'magic');
+  }
+
+  /** Removes one effect (or all of them), as /effect clear and milk do. */
+  removeEffect(id?: EffectId) {
+    if (id) this.effects.delete(id);
+    else this.effects.clear();
+    if (!id || id === 'absorption') {
+      if (!this.effects.has('absorption')) this.absorption = 0;
+    }
+    this.refreshMaxHealth();
   }
 
   die() {
@@ -1350,7 +1490,7 @@ export class Fighter {
       this.resetAttackStrength();
       this.attrId = held;
     }
-    if (!this.dead && !this.replica) this.food.tick(this, this.naturalRegen);
+    if (!this.dead && !this.replica) this.food.tick(this, this.naturalRegen && this.world.rules.naturalRegeneration);
 
     // Client -> server sprint packets are only sent when the client's sprint state changes.
     // For a networked fighter `sprinting` IS the reported client state, so the same edge
@@ -1361,7 +1501,9 @@ export class Fighter {
     }
     this.tickServerMotion();
 
-    const target = (this.movementSpeed() / C.WALK_SPEED + 1) / 2;
+    let target = (this.movementSpeed() / this.attrs.movement_speed + 1) / 2;
+    if (!Number.isFinite(target)) target = 1;
+    if (this.flying) target *= 1.1;
     this.fovModifier += (target - this.fovModifier) * 0.5;
   }
 
@@ -1370,7 +1512,19 @@ export class Fighter {
       if (id === 'regeneration') {
         const k = 50 >> e.amplifier;
         if ((k <= 0 || e.duration % k === 0) && this.health < this.maxHealth) this.heal(1);
+      } else if (id === 'poison') {
+        // PoisonMobEffect: 1 magic damage every 25 >> level ticks, never below half a heart.
+        const k = 25 >> e.amplifier;
+        if ((k <= 0 || e.duration % k === 0) && this.health > 1) hurt(this, 1, null, false, false, true, 'magic');
+      } else if (id === 'wither') {
+        const k = 40 >> e.amplifier;
+        if (k <= 0 || e.duration % k === 0) hurt(this, 1, null, false, false, true, 'wither');
+      } else if (id === 'saturation') {
+        this.food.eat(e.amplifier + 1, 1);
+      } else if (id === 'hunger') {
+        this.causeExhaustion(0.005 * (e.amplifier + 1));
       }
+      if (this.dead) return;
       e.duration--;
       for (let h = e.hidden; h; h = h.hidden) h.duration--;
       if (e.duration <= 0) {
@@ -1386,6 +1540,7 @@ export class Fighter {
         }
         this.effects.delete(id);
         if (id === 'absorption') this.absorption = 0;
+        if (id === 'health_boost') this.refreshMaxHealth();
       }
     }
   }
@@ -1412,10 +1567,12 @@ export class Fighter {
     if (--this.useItemRemaining <= 0) {
       this.food.eat(food.nutrition, food.saturationModifier);
       for (const e of food.effects) this.addEffect(e.id, e.amplifier, e.duration);
-      stack.count--;
-      if (stack.count <= 0) {
-        if (this.useHand === 'main') this.inventory[this.selected] = null;
-        else this.offhand = null;
+      if (!this.instabuild()) {
+        stack.count--;
+        if (stack.count <= 0) {
+          if (this.useHand === 'main') this.inventory[this.selected] = null;
+          else this.offhand = null;
+        }
       }
       this.stopUsingItem();
       if (def.cooldown) this.cooldowns.set(def.id, { ticks: def.cooldown, total: def.cooldown });
@@ -1438,7 +1595,7 @@ export class Fighter {
     if (sneak) {
       // Swift Sneak (leggings): 30% + 15% per level of walking speed.
       const ss = this.armorSlots[2]?.ench?.swiftSneak ?? 0;
-      const mult = Math.min(1, C.SNEAK_INPUT_MULT + 0.15 * ss);
+      const mult = Math.min(1, this.attrs.sneaking_speed + 0.15 * ss);
       fwd *= mult;
       str *= mult;
     }
@@ -1465,14 +1622,28 @@ export class Fighter {
     // --- LocalPlayer.aiStep: a fresh jump press in mid-air with an elytra on starts gliding.
     const jumpPressed = this.input.jump && !this.prevJumpInput;
     this.prevJumpInput = this.input.jump;
-    if (jumpPressed && !this.onGround && !this.fallFlying && !this.inWater && !this.inLava && !this.dead && this.canGlide()) {
+    // Abilities: creative toggles flight with a double-tapped jump, spectators always fly.
+    if (this.jumpTriggerTime > 0) this.jumpTriggerTime--;
+    if (this.gameMode === 'spectator') this.flying = true;
+    else if (this.mayFly() && jumpPressed && !this.dead) {
+      if (this.jumpTriggerTime === 0) this.jumpTriggerTime = 7;
+      else {
+        this.flying = !this.flying;
+        this.jumpTriggerTime = 0;
+      }
+    } else if (!this.mayFly()) this.flying = false;
+    if (this.flying && !this.dead) {
+      const dir = (this.input.sneak ? -1 : 0) + (this.input.jump ? 1 : 0);
+      if (dir !== 0) this.vel.y += dir * 0.05 * 3;
+    }
+    if (jumpPressed && !this.flying && !this.onGround && !this.fallFlying && !this.inWater && !this.inLava && !this.dead && this.canGlide()) {
       this.fallFlying = true;
       this.fallFlyTicks = 0;
       this.events.push({ type: 'glide', on: true });
     }
 
     // --- jumping (LivingEntity.aiStep): in a fluid, jump swims up instead
-    if (this.input.jump && !this.dead) {
+    if (this.input.jump && !this.dead && !this.flying) {
       const inFluid = this.inWater || this.inLava;
       const threshold = 0.4;
       if (inFluid && (!this.onGround || this.fluidDepth > threshold)) {
@@ -1538,7 +1709,7 @@ export class Fighter {
       if (!wasOnGround) {
         let fall = this.fallDistance + Math.max(0, lastY - y);
         if (this.impulseY !== null) fall = Math.min(fall, Math.max(0, this.impulseY - y));
-        const dmg = Math.ceil(fall - 3);
+        const dmg = this.fallDamageFor(fall);
         if (dmg > 0 && this.fallDistance > 0 && !this.touchesWater()) fallHurt(this, dmg);
         this.impulseY = null;
       }
@@ -1550,7 +1721,7 @@ export class Fighter {
   }
 
   private jumpFromGround() {
-    this.vel.y = C.JUMP_POWER;
+    this.vel.y = this.jumpPower();
     if (this.sprinting) {
       this.vel.x += forwardX(this.yaw) * C.SPRINT_JUMP_BOOST;
       this.vel.z += forwardZ(this.yaw) * C.SPRINT_JUMP_BOOST;
@@ -1560,6 +1731,10 @@ export class Fighter {
   }
 
   private travel(strafe: number, forward: number) {
+    if (this.flying) {
+      this.travelFlying(strafe, forward);
+      return;
+    }
     this.updateFallFlying();
     if (this.fallFlying) {
       this.travelFallFlying();
@@ -1596,18 +1771,43 @@ export class Fighter {
     const oz = this.pos.z;
     this.move(this.vel.x, this.vel.y, this.vel.z);
     // Slow Falling: gravity 0.01 while falling, and no fall distance (so no fall damage, no crits).
-    let g = C.GRAVITY;
+    let g = this.gravityValue();
     if (this.vel.y <= 0 && this.effects.has('slow_falling')) {
-      g = 0.01;
+      g = Math.min(g, 0.01);
       this.fallDistance = 0;
     }
-    this.vel.y = (this.vel.y - g) * C.VERTICAL_DRAG;
+    const lev = this.effects.get('levitation');
+    if (lev) {
+      // Levitation replaces gravity: vertical speed eases toward 0.05 per level.
+      this.vel.y += (0.05 * (lev.amplifier + 1) - this.vel.y) * 0.2;
+      this.fallDistance = 0;
+      this.vel.y *= C.VERTICAL_DRAG;
+    } else this.vel.y = (this.vel.y - g) * C.VERTICAL_DRAG;
     this.vel.x *= friction;
     this.vel.z *= friction;
     if (this.onGround && this.sprinting) {
       const cm = Math.round(Math.hypot(this.pos.x - ox, this.pos.z - oz) * 100);
       if (cm > 0) this.causeExhaustion(C.EXHAUSTION_SPRINT_PER_BLOCK * cm * 0.01);
     }
+  }
+
+  /**
+   * Player.travel while flying: air movement at the flying speed (0.05, doubled sprinting), then
+   * the vertical speed is reset to 0.6 × what it was — no gravity. Landing ends creative flight.
+   */
+  private travelFlying(strafe: number, forward: number) {
+    if (this.fallFlying) {
+      this.fallFlying = false;
+      this.events.push({ type: 'glide', on: false });
+    }
+    const vy = this.vel.y;
+    this.moveRelative(strafe, forward, this.sprinting ? 0.1 : 0.05);
+    this.move(this.vel.x, this.vel.y, this.vel.z);
+    this.vel.x *= C.AIR_FRICTION;
+    this.vel.z *= C.AIR_FRICTION;
+    this.vel.y = vy * 0.6;
+    this.fallDistance = 0;
+    if (this.onGround && this.gameMode !== 'spectator') this.flying = false;
   }
 
   /** LivingEntity.updateFallFlying: gliding ends on the ground, in water, or without an elytra. */
@@ -1637,8 +1837,8 @@ export class Fighter {
     const f = -this.pitch; // vanilla xRot: positive looking down
     const d0 = Math.hypot(look.x, look.z);
     const d1 = before;
-    let g = C.GRAVITY;
-    if (v.y <= 0 && this.effects.has('slow_falling')) g = 0.01;
+    let g = this.gravityValue();
+    if (v.y <= 0 && this.effects.has('slow_falling')) g = Math.min(g, 0.01);
     const d4 = Math.cos(f) ** 2;
     v.y += g * (-1 + d4 * 0.75);
     if (v.y < 0 && d0 > 0) {
@@ -1680,7 +1880,7 @@ export class Fighter {
     this.vel.x *= h;
     this.vel.z *= h;
     this.vel.y *= water ? 0.8 : 0.5;
-    this.vel.y -= water ? C.GRAVITY / 16 : C.GRAVITY / 4;
+    this.vel.y -= water ? this.gravityValue() / 16 : this.gravityValue() / 4;
     // Climbing out at the edge of a pool: a little hop when we bump a block (vanilla does the same check).
     if (this.horizontalCollision && this.canStepOutOfFluid()) this.vel.y = 0.3;
   }
@@ -1774,6 +1974,14 @@ export class Fighter {
   }
 
   private move(dx: number, dy: number, dz: number) {
+    if (this.noClip()) {
+      // Spectator: no collision at all (still inside the world's vertical range).
+      this.pos.set(this.pos.x + dx, Math.max(-64, this.pos.y + dy), this.pos.z + dz);
+      this.onGround = false;
+      this.horizontalCollision = false;
+      this.fallDistance = 0;
+      return;
+    }
     if (this.inWeb) {
       // Entity.move with a stuckSpeedMultiplier: the movement shrinks and velocity is wiped.
       dx *= C.WEB_SLOW_H;
@@ -1797,7 +2005,7 @@ export class Fighter {
         // After a wind launch only the part of the fall below the launch point counts.
         let fall = this.fallDistance;
         if (this.impulseY !== null) fall = Math.min(fall, Math.max(0, this.impulseY - this.pos.y));
-        const dmg = Math.ceil(fall - 3);
+        const dmg = this.fallDamageFor(fall);
         if (dmg > 0 && !this.dead && !this.replica && !this.touchesWater()) fallHurt(this, dmg);
       }
       this.fallDistance = 0;
@@ -1827,12 +2035,13 @@ export class Fighter {
       const k = this.inWater ? 0.8 : 0.5;
       sv.x *= k;
       sv.z *= k;
-      sv.y = sv.y * k - (this.inWater ? C.GRAVITY / 16 : C.GRAVITY / 4);
+      sv.y = sv.y * k - (this.inWater ? this.gravityValue() / 16 : this.gravityValue() / 4);
       return;
     }
     const friction = this.onGround ? C.GROUND_FRICTION : C.AIR_FRICTION;
     if (this.onGround && sv.y < 0) sv.y = 0;
-    sv.y = (sv.y - C.GRAVITY) * C.VERTICAL_DRAG;
+    if (this.flying) sv.y *= 0.6;
+    else sv.y = (sv.y - this.gravityValue()) * C.VERTICAL_DRAG;
     sv.x *= friction;
     sv.z *= friction;
   }

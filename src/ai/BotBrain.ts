@@ -309,6 +309,14 @@ export class BotBrain {
       if (b.usingItem) b.stopUsingItem();
       return;
     }
+    // Like mobs, the bot leaves creative and spectator players alone: it just watches them.
+    if (T.invulnerable() || b.gameMode === 'spectator') {
+      if (b.usingItem) b.stopUsingItem();
+      this.potLabel = 'Idle';
+      this.aimAt(T.pos.x, T.pos.y + T.eyeHeight(), T.pos.z, 0.3);
+      b.input = input;
+      return;
+    }
     const per = this.perceive();
     const dist = Math.hypot(per.x - b.pos.x, per.z - b.pos.z);
     const trueDist = Math.hypot(T.pos.x - b.pos.x, T.pos.z - b.pos.z);
@@ -523,8 +531,8 @@ export class BotBrain {
     input.strafe = dist < 5 ? strafe : 0;
 
     // Spacing: while the sword recharges, stay just outside the opponent's reach.
-    if (p < 0.7 && dist < P.spacing - 0.5 && !targetEating && rng.chance(P.spacingDiscipline)) {
-      input.forward = dist < P.spacing - 1.2 ? -1 : 0;
+    if (p < 0.7 && dist < P.spacing + this.reachBonus - 0.5 && !targetEating && rng.chance(P.spacingDiscipline)) {
+      input.forward = dist < P.spacing + this.reachBonus - 1.2 ? -1 : 0;
     }
 
     // W-tap / S-tap after a sprint hit so the next hit gets sprint knockback again.
@@ -582,7 +590,7 @@ export class BotBrain {
 
     // ---- left click
     const reach = rayDistanceToTarget(b, T);
-    const canHit = reach >= 0 && reach <= P.maxReach;
+    const canHit = reach >= 0 && reach <= this.maxReach;
     const falling = !b.onGround && b.fallDistance > 0;
     let threshold = this.swingThreshold;
     if (P.halfSwing && (falling || b.serverSprinting)) threshold = Math.min(threshold, 0.92);
@@ -615,6 +623,14 @@ export class BotBrain {
   // ------------------------------------------------------------ Axe kit
 
   /** What the target looked like `ago` ticks ago (a raised shield is easy to spot). */
+  /** /attribute can change the bot's reach: its spacing and swing range move with it. */
+  private get reachBonus(): number {
+    return this.bot.entityReach() - C.ATTACK_REACH;
+  }
+  private get maxReach(): number {
+    return this.profile.maxReach + this.reachBonus;
+  }
+
   private seenLate(ago: number): Seen {
     const n = this.seen.length;
     return this.seen[Math.max(0, n - 1 - ago)];
@@ -644,7 +660,7 @@ export class BotBrain {
     const targetDown = this.targetShieldDownUntil > this.ticks;
     const facingUs = shieldFaces(T, b.pos.x, b.pos.z);
     const reach = rayDistanceToTarget(b, T);
-    const inReach = reach >= 0 && reach <= P.maxReach;
+    const inReach = reach >= 0 && reach <= this.maxReach;
 
     // ---- 1. Their shield is up and facing us: the axe disables it for 5 seconds.
     const wantsBreak = !P.passive && seen.shield && facingUs && !targetDown && b.slotOf(this.axe) >= 0;
@@ -662,10 +678,10 @@ export class BotBrain {
       input.sprint = dist > 3.5;
       // No strafing on the way to an axe hit: circling them outruns a slow aim, and the swing
       // never connects while they hold the shield up.
-      if (dist < P.maxReach + 2) input.strafe = 0;
+      if (dist < this.maxReach + 2) input.strafe = 0;
       if (released) return;
       // Get the axe out on the way in, so its switch delay is spent walking, not standing.
-      const closing = inReach || dist < P.maxReach + 1.5;
+      const closing = inReach || dist < this.maxReach + 1.5;
       if (!closing) return;
       if (A.swap && wantsBreak) {
         if (!inReach) return;
@@ -1615,7 +1631,7 @@ export class BotBrain {
     if (hd > 0.6) b.yaw = wrapAngle(yawKeep + clamp(wrapAngle(b.yaw - yawKeep), -0.25, 0.25));
     if (b.vel.y >= 0) return true;
     const reach = rayDistanceToTarget(b, T);
-    const inReach = reach >= 0 && reach <= this.profile.maxReach;
+    const inReach = reach >= 0 && reach <= this.maxReach;
     if (!inReach) return true;
     // Wait for a bit more fall (more damage) unless it is about to get away.
     const nextAbove = above + b.vel.y;
@@ -2781,7 +2797,7 @@ export class BotBrain {
       input.forward = 1;
       input.sprint = true;
       const reach = rayDistanceToTarget(b, this.target);
-      if (reach >= 0 && reach <= P.maxReach && p > C.STRONG_ATTACK_SCALE) {
+      if (reach >= 0 && reach <= this.maxReach && p > C.STRONG_ATTACK_SCALE) {
         // The knockback sword swapped in on the same tick: the charged sword's cooldown, its
         // Knockback I — a big push to open the gap.
         const kb = P.axe.swap ? this.kbSwordSlot() : -1;
