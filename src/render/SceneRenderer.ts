@@ -3,7 +3,7 @@ import { lerp } from '../core/math';
 import { rayDistanceToTarget } from '../game/combat';
 import { Fighter } from '../game/Fighter';
 import type { World } from '../game/World';
-import { Arena, SKY_HORIZON } from './Arena';
+import { Arena, SKY_HORIZON, type SkyState } from './Arena';
 import { ArrowView } from './Arrows';
 import { BlocksView } from './BlocksView';
 import { CrystalView, ExplosionView } from './CrystalView';
@@ -11,11 +11,13 @@ import { FireView } from './FireView';
 import { ThrownView } from './ThrownView';
 import type { Assets } from './assets';
 import { FirstPersonView } from './FirstPerson';
-import { Hitboxes } from './Hitboxes';
+import { GlowOutline, Hitboxes } from './Hitboxes';
 import { Nametag } from './Nametag';
 import { Particles } from './Particles';
 import { PlayerModel } from './PlayerModel';
+import { setWorldLight } from './light';
 import { glintTexture } from './textures';
+import { RainView } from './Weather';
 
 const DEG = Math.PI / 180;
 
@@ -34,6 +36,31 @@ export interface ViewSettings {
   viewBobbing: boolean;
   damageTilt: number;
   showHitboxes: boolean;
+  thirdPersonDistance: number;
+  handFov: number;
+  handX: number;
+  handY: number;
+  handZ: number;
+  handScale: number;
+  showHand: boolean;
+  /** 0 = automatic, else a fixed % of full resolution. */
+  renderScale: number;
+  brightness: number;
+  fog: boolean;
+  clouds: boolean;
+  entityShadows: boolean;
+  showNametag: boolean;
+}
+
+/** Per-frame view state from mods and commands (set by the game before render). */
+export interface ViewExtras {
+  /** Zoom mod magnification (1 = off). */
+  zoom: number;
+  /** Freelook mod: the orbit camera's own angles, or null. */
+  freelook: { yaw: number; pitch: number } | null;
+  /** BetterHurtCam: tilt strength and classic (one-way) tilt; null = vanilla Damage Tilt. */
+  hurtcam: { strength: number; classic: boolean } | null;
+  sky: SkyState;
 }
 
 export type CameraMode = 'first' | 'third' | 'orbit';
@@ -73,23 +100,44 @@ export class SceneRenderer {
   private readonly maxPixelRatio: number;
   private smoothedFrameMs = 16;
   private adaptCooldown = 0;
+  /** Seconds of smooth frames needed before the resolution goes back up (grows if it keeps bouncing). */
+  private raiseAfter = 3;
+  private calm = 0;
+  private fixedScale = 0;
+  private readonly ambient: THREE.AmbientLight;
+  private readonly lights: THREE.DirectionalLight[];
+  private readonly fog: THREE.Fog;
+  private readonly background = SKY_HORIZON.clone();
+  private readonly rain = new RainView();
+  private readonly glowPlayer = new GlowOutline();
+  private readonly glowBot = new GlowOutline();
+  readonly extras: ViewExtras = {
+    zoom: 1,
+    freelook: null,
+    hurtcam: null,
+    sky: { dayTime: 6000, rain: 0, thunder: 0, flash: 0 },
+  };
 
-  constructor(canvas: HTMLCanvasElement, world: World, assets: Assets) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  constructor(canvas: HTMLCanvasElement, world: World, assets: Assets, opts: { antialias: boolean } = { antialias: true }) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: opts.antialias, powerPreference: 'high-performance' });
     this.maxPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     this.pixelRatio = this.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.autoClear = false;
-    this.scene.background = SKY_HORIZON.clone();
-    this.scene.fog = new THREE.Fog(SKY_HORIZON.clone(), 55, 150);
+    this.scene.background = this.background;
+    this.fog = new THREE.Fog(SKY_HORIZON.clone(), 55, 150);
+    this.scene.fog = this.fog;
 
     // Entity lighting close to Minecraft's two fixed light directions + ambient
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.5 * Math.PI));
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.5 * Math.PI);
+    this.scene.add(this.ambient);
     const l0 = new THREE.DirectionalLight(0xffffff, 0.45 * Math.PI);
     l0.position.set(0.2, 1, -0.7);
     const l1 = new THREE.DirectionalLight(0xffffff, 0.45 * Math.PI);
     l1.position.set(-0.2, 1, 0.7);
     this.scene.add(l0, l1);
+    this.lights = [l0, l1];
+    this.scene.add(this.rain.lines, this.glowPlayer.box, this.glowBot.box);
 
     this.arena = new Arena(world);
     this.scene.add(this.arena.group);
@@ -133,24 +181,44 @@ export class SceneRenderer {
    * pixels it needs to; dropping the ratio is invisible next to the stutter it removes. Rises
    * back on its own once frames are comfortable again.
    */
-  private adaptResolution(dt: number) {
+  private adaptResolution(dt: number, renderScale: number) {
+    if (renderScale !== this.fixedScale) {
+      this.fixedScale = renderScale;
+      // A fixed setting wins; switching back to Auto starts from full resolution.
+      this.setPixelRatio(renderScale > 0 ? Math.max(0.25, (this.maxPixelRatio * renderScale) / 100) : this.maxPixelRatio);
+      this.raiseAfter = 3;
+    }
+    if (renderScale > 0) return;
     const ms = Math.min(dt * 1000, 100);
     this.smoothedFrameMs += (ms - this.smoothedFrameMs) * 0.1;
     if (this.adaptCooldown > 0) {
       this.adaptCooldown -= dt;
       return;
     }
-    const min = 0.7;
-    let next = this.pixelRatio;
-    if (this.smoothedFrameMs > 22 && this.pixelRatio > min) next = Math.max(min, this.pixelRatio - 0.25);
-    else if (this.smoothedFrameMs < 13 && this.pixelRatio < this.maxPixelRatio) next = Math.min(this.maxPixelRatio, this.pixelRatio + 0.25);
-    if (next !== this.pixelRatio) {
-      this.pixelRatio = next;
-      this.renderer.setPixelRatio(next);
-      this.resize();
-      // Settle before reacting again, so it cannot oscillate every frame.
-      this.adaptCooldown = 1.5;
+    const min = 0.6;
+    // Below ~42 fps: drop a step. Rise again only after a few seconds at ~55 fps or better —
+    // measured against a 60 Hz display, where frames never get much faster than 16.7 ms.
+    if (this.smoothedFrameMs > 24 && this.pixelRatio > min) {
+      this.setPixelRatio(Math.max(min, this.pixelRatio - 0.25));
+      this.adaptCooldown = 1;
+      this.calm = 0;
+      return;
     }
+    this.calm = this.smoothedFrameMs < 18.5 ? this.calm + dt : 0;
+    if (this.calm > this.raiseAfter && this.pixelRatio < this.maxPixelRatio) {
+      this.setPixelRatio(Math.min(this.maxPixelRatio, this.pixelRatio + 0.25));
+      this.calm = 0;
+      this.adaptCooldown = 1;
+      // If this step brings the stutter back, wait longer before trying again.
+      this.raiseAfter = Math.min(30, this.raiseAfter * 2);
+    }
+  }
+
+  private setPixelRatio(v: number) {
+    if (v === this.pixelRatio) return;
+    this.pixelRatio = v;
+    this.renderer.setPixelRatio(v);
+    this.resize();
   }
 
   /**
@@ -209,6 +277,31 @@ export class SceneRenderer {
     canvas.getContext('2d')!.putImageData(img, 0, 0);
   }
 
+  /**
+   * Compiles every shader the scene can need up front. three.js otherwise builds a material's
+   * program the first time it is drawn, so the first crit, splash or explosion of a fight would
+   * stall a frame — worst on Windows, where ANGLE translates each shader to Direct3D.
+   */
+  prewarm() {
+    const shown: THREE.Object3D[] = [];
+    const reveal = (root: THREE.Object3D) =>
+      root.traverse((o) => {
+        if (!o.visible) {
+          o.visible = true;
+          shown.push(o);
+        }
+      });
+    reveal(this.scene);
+    reveal(this.firstPerson.scene);
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      this.renderer.compile(this.firstPerson.scene, this.firstPerson.camera);
+    } catch {
+      /* best effort */
+    }
+    for (const o of shown) o.visible = false;
+  }
+
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -228,15 +321,27 @@ export class SceneRenderer {
     const m = this.viewShake.identity();
     const tmp = tmpMat;
     const hurtT = p.hurtTime - a;
+    const hc = this.extras.hurtcam;
+    const tilt = hc ? hc.strength : view.damageTilt;
     if (p.dead) {
       const f = Math.min(p.deathTime + a, 20);
       m.multiply(tmp.makeRotationZ((40 - 8000 / (f + 200)) * DEG));
-    } else if (hurtT >= 0 && view.damageTilt > 0) {
+    } else if (hurtT >= 0 && tilt > 0) {
       let f = hurtT / p.hurtDuration;
       f = Math.sin(f * f * f * f * Math.PI);
-      m.multiply(tmp.makeRotationY(-p.hurtDir * DEG));
-      m.multiply(tmp.makeRotationZ(-f * 14 * view.damageTilt * DEG));
-      m.multiply(tmp.makeRotationY(p.hurtDir * DEG));
+      // Classic (pre-1.19.4) hurt cam always tips the same way.
+      const dir = hc?.classic ? 0 : p.hurtDir;
+      m.multiply(tmp.makeRotationY(-dir * DEG));
+      m.multiply(tmp.makeRotationZ(-f * 14 * tilt * DEG));
+      m.multiply(tmp.makeRotationY(dir * DEG));
+    }
+    // Nausea: the view slowly rolls and sways (GameRenderer's portal/nausea warp, simplified).
+    const nausea = p.effects.get('nausea');
+    if (nausea && !p.dead) {
+      const t = (performance.now() / 1000) * 2.2;
+      const k = Math.min(1, nausea.duration / 60);
+      m.multiply(tmp.makeRotationZ(Math.sin(t) * 7 * k * DEG));
+      m.multiply(tmp.makeRotationX(Math.sin(t * 0.7) * 3 * k * DEG));
     }
     if (view.viewBobbing) {
       const walk = -lerp(p.walkDistO, p.walkDist, a);
@@ -246,15 +351,17 @@ export class SceneRenderer {
       m.multiply(tmp.makeRotationX(Math.abs(Math.cos(walk * Math.PI - 0.2) * bob) * 5 * DEG));
     }
 
-    tmpEuler.set(p.pitch, p.yaw, 0, 'YXZ');
+    const free = this.extras.freelook;
+    tmpEuler.set(free ? free.pitch : p.pitch, free ? free.yaw : p.yaw, 0, 'YXZ');
     const orient = orientMat.makeRotationFromEuler(tmpEuler);
     const camWorld = camMat;
-    if (this.cameraMode === 'third') {
+    if (this.cameraMode === 'third' || free) {
       // Behind the player, pulled in if it would leave the arena
       const back = backVec.set(0, 0, 1).applyMatrix4(orient);
-      let dist = 4;
+      const maxDist = view.thirdPersonDistance;
+      let dist = maxDist;
       const limit = p.world.half - 0.3;
-      for (let d = 0.5; d <= 4; d += 0.25) {
+      for (let d = 0.5; d <= maxDist; d += 0.25) {
         const cx = ex + back.x * d;
         const cy = ey + back.y * d;
         const cz = ez + back.z * d;
@@ -272,7 +379,18 @@ export class SceneRenderer {
 
     const fovMod = lerp(p.oFovModifier, p.fovModifier, a);
     const eff = 1 + (fovMod - 1) * view.fovEffects;
-    this.camera.fov = view.fov * eff;
+    let fov = view.fov * eff;
+    if (nausea && !p.dead) fov *= 1 + Math.sin((performance.now() / 1000) * 3.1) * 0.06 * Math.min(1, nausea.duration / 60);
+    // Zoom: narrow the view by the magnification (tan-correct, so 4× really is 4×).
+    const z = this.extras.zoom;
+    if (z > 1.001) fov = (2 * Math.atan(Math.tan((fov * DEG) / 2) / z)) / DEG;
+    this.setFov(fov);
+  }
+
+  /** Only rebuilds the projection when the FOV actually changed. */
+  private setFov(fov: number) {
+    if (Math.abs(this.camera.fov - fov) < 1e-4) return;
+    this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
   }
 
@@ -283,8 +401,52 @@ export class SceneRenderer {
     const r = 11;
     this.camera.position.set(cx * 0.5 + Math.cos(ang) * r, 5.5, cz * 0.5 + Math.sin(ang) * r);
     this.camera.lookAt(cx, 1.2, cz);
-    this.camera.fov = 60;
-    this.camera.updateProjectionMatrix();
+    this.setFov(60);
+  }
+
+  /**
+   * Time of day, weather and the player's effects decide the light: world brightness, entity
+   * lights, fog and the far background (blindness and darkness pull the fog in close).
+   */
+  private applyEnvironment(p: Fighter | null, view: ViewSettings, clouds: boolean) {
+    const sky = this.extras.sky;
+    this.arena.setSky(sky);
+    const nightVision = !!p?.effects.has('night_vision');
+    // Blocks never go fully dark (vanilla's minimum light plus the gamma slider).
+    let light = 0.22 + 0.78 * this.arena.daylight;
+    light += (1 - light) * view.brightness * 0.55;
+    if (nightVision) light = 1;
+    setWorldLight(light);
+    this.ambient.intensity = 0.5 * Math.PI * light;
+    for (const l of this.lights) l.intensity = 0.45 * Math.PI * light;
+    this.firstPerson.setLight(light);
+
+    const blind = p?.effects.get('blindness');
+    const dark = p?.effects.get('darkness');
+    if (blind || dark) {
+      // FogRenderer: blindness squeezes the fog to 5 blocks (fading in over the first second);
+      // darkness pulses between near and far.
+      let far = 150;
+      if (blind) far = Math.min(far, 5 + Math.max(0, 1 - Math.min(20, blind.duration) / 20) * 145);
+      if (dark) {
+        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 700);
+        far = Math.min(far, 8 + pulse * 18);
+      }
+      this.fog.color.setRGB(0, 0, 0);
+      this.fog.near = far * 0.25;
+      this.fog.far = far;
+      this.background.setRGB(0, 0, 0);
+      this.scene.fog = this.fog;
+      this.arena.clouds.visible = false;
+      return;
+    }
+    this.fog.color.copy(this.arena.horizon);
+    this.background.copy(this.arena.horizon);
+    // Rain brings the fog in a little, like vanilla's weather fog.
+    this.fog.near = 55 - sky.rain * 25;
+    this.fog.far = 150 - sky.rain * 50;
+    this.scene.fog = view.fog ? this.fog : null;
+    this.arena.clouds.visible = clouds;
   }
 
   render(
@@ -296,14 +458,18 @@ export class SceneRenderer {
     view: ViewSettings,
     tag: { name: string; color: string; status: string } | null,
   ) {
-    this.adaptResolution(dt);
-    if (this.cameraMode === 'orbit') this.placeOrbitCamera(time, player, bot, alpha);
+    this.adaptResolution(dt, view.renderScale);
+    const orbit = this.cameraMode === 'orbit';
+    if (orbit) this.placeOrbitCamera(time, player, bot, alpha);
     else this.placePlayerCamera(player, alpha, view);
 
+    this.applyEnvironment(orbit ? null : player, view, view.clouds);
     this.arena.update(time, this.camera);
+    this.rain.update(this.camera, this.extras.sky.rain, dt);
     this.glint.offset.set((time * 0.12) % 1, (time * 0.05) % 1);
 
-    const firstPerson = this.cameraMode === 'first';
+    const firstPerson = this.cameraMode === 'first' && !this.extras.freelook;
+    this.playerModel.shadowsOn = this.botModel.shadowsOn = view.entityShadows;
     this.playerModel.setVisible(!firstPerson);
     this.playerModel.update(player, alpha, time);
     this.botModel.setVisible(true);
@@ -317,8 +483,10 @@ export class SceneRenderer {
         lerp(bot.prevPos.z, bot.pos.z, alpha),
       );
     }
-    // Hidden when dead or when the camera is practically inside it (it would fill the screen)
-    this.nametag.sprite.visible = !!tag && !bot.dead && this.nametag.sprite.position.distanceTo(this.camera.position) > 1.6;
+    // Hidden when dead, invisible, switched off, or when the camera is practically inside it
+    // (it would fill the screen).
+    this.nametag.sprite.visible =
+      !!tag && view.showNametag && !bot.dead && !bot.effects.has('invisibility') && this.nametag.sprite.position.distanceTo(this.camera.position) > 1.6;
 
     this.hitboxes.update(
       player,
@@ -331,6 +499,8 @@ export class SceneRenderer {
       view.showHitboxes && rayDistanceToTarget(bot, player) >= 0,
     );
 
+    this.glowPlayer.update(player, alpha, !firstPerson);
+    this.glowBot.update(bot, alpha, true);
     this.arrows.update(player.world.arrows, alpha);
     this.thrown.update(player.world.thrown, player.world.orbs, alpha, time, player.world.items);
     this.blocks.update(player.world.blocks, player.world.fighters, player, this.cameraMode !== 'orbit', time);
@@ -345,7 +515,13 @@ export class SceneRenderer {
 
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
-    if (firstPerson && !player.dead) {
+    if (firstPerson && !player.dead && view.showHand && this.extras.zoom < 1.5) {
+      const o = this.firstPerson.opts;
+      o.fov = view.handFov;
+      o.x = view.handX;
+      o.y = view.handY;
+      o.z = view.handZ;
+      o.scale = view.handScale;
       this.firstPerson.update(player, alpha, this.viewShake, this.camera.aspect);
       this.renderer.clearDepth();
       this.renderer.render(this.firstPerson.scene, this.firstPerson.camera);

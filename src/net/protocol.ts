@@ -10,7 +10,7 @@
 
 import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -164,6 +164,12 @@ export interface NetFighter {
   ping: number;
 }
 
+/** Plain chat, /say ([name] text) or /me (* name text). */
+export type ChatKind = 'chat' | 'say' | 'me';
+
+/** Longest chat line (vanilla: 256 characters). */
+export const CHAT_MAX = 256;
+
 export type NetPhase = 'lobby' | 'countdown' | 'fight' | 'ended';
 
 export type ClientMsg =
@@ -200,7 +206,9 @@ export type ClientMsg =
   /** The inventory screen rearranged items; the server checks nothing was created. */
   | { t: 'inv'; slots: Slot[] }
   | { t: 'rematch' }
-  | { t: 'pong'; id: number };
+  | { t: 'pong'; id: number }
+  /** A chat line (T), /say or /me; the server adds the sender's name. */
+  | { t: 'chat'; kind: ChatKind; text: string };
 
 /**
  * Server entities, re-sent every tick for the client to draw: arrows [id, x, y, z, yaw, pitch,
@@ -246,7 +254,8 @@ export type ServerMsg =
   /** A pearl moved YOU; moves sent before you applied it are ignored. */
   | { t: 'teleport'; id: number; x: number; y: number; z: number }
   | { t: 'end'; winner: number | null }
-  | { t: 'ping'; id: number };
+  | { t: 'ping'; id: number }
+  | { t: 'chat'; kind: ChatKind; from: string; text: string };
 
 export function roomCode(rng: () => number = Math.random): string {
   // No vowels (avoids accidental words) and no look-alike characters.

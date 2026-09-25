@@ -4,7 +4,7 @@ import { B, BLOCK_NAMES, isSolid } from '../game/Blocks';
 import { hurt, type DamageKind } from '../game/combat';
 import { DroppedItem } from '../game/DroppedItem';
 import { SLOT_COUNT, type Fighter } from '../game/Fighter';
-import { EFFECT_NAMES, INSTANT_EFFECTS, ITEMS, cloneStack, stackName, type EffectId, type ItemStack } from '../game/items';
+import { EFFECT_NAMES, INFINITE_DURATION, INSTANT_EFFECTS, ITEMS, cloneStack, stackName, type EffectId, type ItemStack } from '../game/items';
 import { KITS, kitById, type KitId } from '../game/kits';
 import { BUILD_HEIGHT, type GameRules } from '../game/World';
 import {
@@ -36,7 +36,7 @@ import { COLOR, type CmdCtx, type ChatLine } from './host';
 type Ctx = CmdCtx;
 
 /** Effects given by /effect with `infinite` (the HUD shows ∞). */
-export const INFINITE_TICKS = 1_000_000_000;
+export const INFINITE_TICKS = INFINITE_DURATION;
 
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 1e6) / 1e6));
 
@@ -748,7 +748,7 @@ export function registerBuiltins(d: Dispatcher<Ctx>) {
     lit<Ctx>(
       'say',
       arg<Ctx, string>('message', greedy()).runs((ctx, a) => {
-        ctx.host.print([{ t: `[${ctx.host.playerName}] ${a.message}` }]);
+        ctx.host.broadcast('say', a.message as string);
       }),
     ),
     'Broadcast a message',
@@ -757,15 +757,14 @@ export function registerBuiltins(d: Dispatcher<Ctx>) {
     lit<Ctx>(
       'me',
       arg<Ctx, string>('action', greedy()).runs((ctx, a) => {
-        ctx.host.print([{ t: `* ${ctx.host.playerName} ${a.action}` }]);
+        ctx.host.broadcast('me', a.action as string);
       }),
     ),
     'Describe an action',
   );
   d.register(
     lit<Ctx>('list').runs((ctx) => {
-      const m = ctx.host.match;
-      const names = m ? [ctx.host.playerName, m.bot.name] : [ctx.host.playerName];
+      const names = ctx.host.players();
       say(ctx, `There are ${names.length} of a max of 2 players online: ${names.join(', ')}`);
     }),
     'Who is here',

@@ -460,7 +460,11 @@ export function durabilityFraction(s: ItemStack | null | undefined): number | nu
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
 const roman = (n: number) => ROMAN[n] ?? String(n);
 
+/** Effects given with /effect … infinite last this long (shown as ∞, like vanilla). */
+export const INFINITE_DURATION = 1_000_000_000;
+
 export function formatTicks(t: number): string {
+  if (t >= INFINITE_DURATION / 2) return '∞';
   const sec = Math.max(0, Math.ceil(t / 20));
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }

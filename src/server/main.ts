@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Duel } from '../net/Duel';
 import { KITS, type KitId } from '../game/kits';
-import { NET_TPS, PROTOCOL_VERSION, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
+import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
 import { attachWebSocket, type WsConnection } from './ws';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -34,6 +34,8 @@ const GAME_CANDIDATES = [
 ];
 
 const rooms = new Map<string, Room>();
+const CHAT_BURST = 5;
+const CHAT_REFILL_MS = 1500;
 
 class Client {
   room: Room | null = null;
@@ -42,6 +44,9 @@ class Client {
   ping = 0;
   pingId = 0;
   private pingSentAt = 0;
+  /** Chat flood guard: up to CHAT_BURST lines, refilled at one per CHAT_REFILL_MS. */
+  private chatTokens = CHAT_BURST;
+  private chatAt = Date.now();
 
   constructor(readonly ws: WsConnection) {}
 
@@ -57,6 +62,16 @@ class Client {
     this.pingId++;
     this.pingSentAt = Date.now();
     this.send({ t: 'ping', id: this.pingId });
+  }
+
+  /** True if this client may send another chat line now. */
+  takeChatToken(): boolean {
+    const now = Date.now();
+    this.chatTokens = Math.min(CHAT_BURST, this.chatTokens + (now - this.chatAt) / CHAT_REFILL_MS);
+    this.chatAt = now;
+    if (this.chatTokens < 1) return false;
+    this.chatTokens--;
+    return true;
   }
 
   gotPong(id: number) {
@@ -223,6 +238,23 @@ function handle(client: Client, msg: ClientMsg) {
     case 'pong':
       client.gotPong(msg.id);
       return;
+    case 'chat': {
+      const room = client.room;
+      if (!room) return;
+      // Printable text only, trimmed to vanilla's limit.
+      const text = String(msg.text ?? '')
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .trim()
+        .slice(0, CHAT_MAX);
+      const kind = msg.kind === 'say' || msg.kind === 'me' ? msg.kind : 'chat';
+      if (!text) return;
+      if (!client.takeChatToken()) {
+        client.send({ t: 'chat', kind: 'chat', from: '', text: 'You are sending messages too quickly — wait a moment.' });
+        return;
+      }
+      room.broadcast({ t: 'chat', kind, from: client.name, text });
+      return;
+    }
     default:
       return;
   }

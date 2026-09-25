@@ -11,6 +11,8 @@ export interface ChatPart {
   c?: string;
   b?: boolean;
   i?: boolean;
+  /** Underlined (the bad part of a command in an error). */
+  u?: boolean;
 }
 export type ChatLine = ChatPart[];
 
@@ -96,6 +98,10 @@ export interface CommandHost {
   title(kind: 'title' | 'subtitle' | 'actionbar' | 'clear', text: string): void;
   /** The player's display name in chat. */
   readonly playerName: string;
+  /** Chat everyone in the game sees: plain chat, /say or /me (online it goes through the server). */
+  broadcast(kind: 'chat' | 'say' | 'me', text: string): void;
+  /** Names of everyone in the game (/list). */
+  players(): string[];
 }
 
 /** Context passed to every command. */

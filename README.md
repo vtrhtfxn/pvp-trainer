@@ -42,7 +42,7 @@ close the game. For multiplayer, type the host's address (e.g. `192.168.1.23`) i
 Browsers never let a page cancel Ctrl+W, so during a match the game goes fullscreen, where
 Chrome and Edge hand those keys to the page (Keyboard Lock API, on `localhost`, files and
 https). Everywhere else, closing the tab mid-match asks "Leave site?" first. Turn off
-**Settings → Fullscreen** if you prefer a window.
+**Options → Video → Fullscreen** if you prefer a window.
 
 **Dev server:**
 
@@ -64,9 +64,15 @@ Then open http://localhost:5173.
 | F | Swap main hand and off hand |
 | E | Inventory |
 | F5 or V | Third person |
+| T | Chat (online it goes to your opponent) |
+| / | Chat with a `/` typed — for commands |
+| C / Left Alt | Zoom / Freelook (once the mods are installed) |
 | ⌘M (or F3 + B) | Toggle combat hitboxes |
 | Esc | Pause |
 | R | Rematch |
+
+Every key can be changed in **Options → Key Binds** (mouse buttons 4 and 5 work too; keys
+used twice turn red).
 
 In a browser ⌘M may be swallowed by the browser's own Window menu — F3 + B (the vanilla
 binding) always works, and there is a **Hitboxes** switch in Settings. The macOS app rebinds
@@ -82,6 +88,80 @@ Same overlay Minecraft draws for F3 + B, drawn over the models rather than behin
 
 A box turns **yellow** while that fighter is inside the other one's reach, so you can see the
 moment a swing would actually connect. Your own box is hidden in first person.
+
+## Commands
+
+Press **T** (or **/**) to open chat, type a command, Enter. **Tab** completes and cycles
+suggestions, ↑/↓ recall what you typed, and a wrong argument is underlined with vanilla's
+`<--[HERE]` marker. They work like Java Edition's and change the duel against the bot; a duel
+changed by a command isn't counted in your record. Online, only chat, `/say`, `/me`, `/list`,
+`/random` and `/help` are available — the host's server runs that game.
+
+| Command | What it does |
+| --- | --- |
+| `/tick rate <1–10000>` | Game speed in ticks per second (20 = normal): 10 is slow motion for studying combos, 40 doubles everything |
+| `/tick freeze` · `unfreeze` · `step [time]` · `sprint <time>` · `query` | Freeze the world (you can still move and hit), step it a tick at a time, or fast-forward (reports ticks per second like vanilla) |
+| `/reach <blocks>` · `/reach reset` | Your hit range (3 by default; creative adds 2, like vanilla) |
+| `/attribute <target> <attribute> get` · `base get` · `base set <value>` · `base reset` | Any of 19 attributes: `entity_interaction_range`, `block_interaction_range`, `attack_damage`, `attack_speed`, `attack_knockback`, `movement_speed`, `jump_strength`, `gravity`, `max_health`, `armor`, `knockback_resistance`, `safe_fall_distance`, `block_break_speed`, … |
+| `/effect give <target> <effect> [seconds\|infinite] [amplifier] [hideParticles]` · `/effect clear` | 26 effects, including instant health/damage, poison, wither, levitation, blindness, darkness, nausea, glowing, invisibility, night vision |
+| `/give <target> <item>[components] [count]` | e.g. `/give @s diamond_sword[enchantments={sharpness:5,fire_aspect:2}]`, `/give @s splash_potion[potion_contents={potion:"strong_healing"}] 8` |
+| `/enchant <target> <enchantment> [level]` · `/clear` | Enchant the held item; empty inventories |
+| `/gamemode survival\|creative\|adventure\|spectator [target]` | Creative: can't be hurt, flies (double-tap Space), items never run out |
+| `/gamerule <rule> [true\|false]` | `naturalRegeneration`, `fallDamage`, `fireDamage`, `doImmediateRespawn` (skip the results screen), `showDeathMessages`, `sendCommandFeedback`, `doDaylightCycle` |
+| `/time set day\|noon\|night\|midnight\|<ticks>` · `add` · `query` | Changes the sky, the light and the stars |
+| `/weather clear\|rain\|thunder` | Rain (puts out burning players under the open sky) and thunderstorms with lightning |
+| `/kill` · `/damage <target> <amount> [type]` · `/heal` | End the duel, hurt anyone by any damage type, or fully heal |
+| `/tp <x y z \| target> [yaw pitch]` | `~` is relative and `^` goes along your view |
+| `/setblock` · `/fill` | Build or clear blocks (kits with blocks: UHC, Crystal) |
+| `/title <target> title\|subtitle\|actionbar <text>` · `/say` · `/me` · `/list` · `/random roll 1..6` | Chat and on-screen text |
+| `/kit <kit>` · `/bot tier <LT5 … HT1>` · `/restart` | PvP Trainer extras: start another duel straight from chat |
+
+Targets are `@s` (you), `@p`, `@a`, `@e`, `@r` or a name (`bot`). Commands you set up — game
+rules, attributes, game modes, tick rate, time, weather — stay for the following duels until
+you change them back (like a singleplayer world); items, effects and health start fresh.
+
+## Marketplace (mods)
+
+**Marketplace** (title screen or pause menu) holds PvP-client-style mods. They are all built
+into the game — installing one just switches it on and gives it a settings page; nothing is
+downloaded. Each is PvP Trainer's own take on the mod it is named after.
+
+| Mod | |
+| --- | --- |
+| AppleSkin | Saturation and exhaustion on the hunger bar; hunger and health you'll get back while holding food; food values in tooltips |
+| FPS Display | FPS, frame time and (online) your ping |
+| uku's Armor HUD | Your armor beside the hotbar with durability bars, percent or points left |
+| BetterHurtCam | Hurt-camera strength 0–200% and the classic one-way tilt |
+| Pot Counter · Totem Counter · Item Counter | Healing pots, totems, gapples, pearls, arrows, crystals, obsidian, wind charges… |
+| Damage Indicator | Damage numbers (hearts or points, gold for crits) floating off whoever got hit |
+| Keystrokes | W A S D, mouse buttons with CPS, space bar |
+| ToggleSprint Display · Coordinates | Sprint/sneak/fly state; XYZ and facing |
+| Zoom | Hold C to zoom (scroll for more), with slower mouse while zoomed |
+| Custom Crosshair | Cross, plus, dot, circle or T; size, gap, thickness, colour, outline |
+| Low Fire · Low Shield | The burning overlay and a raised shield drawn lower |
+| Hit Color | The hurt flash in any colour and strength |
+| Particles+ | More crit and sharpness sparks |
+| Freelook | Hold Left Alt to swing the camera around yourself while you keep running the same way |
+
+**Edit HUD Layout** lets you drag the HUD widgets anywhere (they snap to edges and the
+centre). The **Resource Packs** tab shows the active pack; more are planned.
+
+## Options
+
+**Options** has six tabs:
+
+- **Video** — FOV, FOV effects, a separate **hand FOV**, third-person distance, brightness,
+  GUI scale, damage tilt, view bobbing; **Max Framerate**, **Render Scale** (Auto lowers the
+  resolution only while frames are slow), particles (All / Decreased / Minimal), smooth edges
+  (MSAA; Auto skips it on high-density screens), entity shadows, clouds, fog, the title-screen
+  background; hand position (X/Y/Z) and size.
+- **Controls** — sensitivity, separate vertical sensitivity, invert mouse, raw input, toggle
+  sprint, toggle sneak, double-tap-W sprint, invert hotbar scroll.
+- **Key Binds** — every action, including mouse buttons 4/5.
+- **Sound** — master, players, footsteps, blocks & world, menus.
+- **HUD** — the practice panel and each of its lines, opponent bar and nametag, effect list,
+  hitboxes.
+- **Chat** — shown / commands only / hidden, text and background opacity, size, width.
 
 ## Multiplayer
 
@@ -104,6 +184,11 @@ host only needs Node installed. Zip that folder and send it to whoever is hostin
 Players in the Windows or macOS app, or with `game.html` opened as a file, type the host's
 address in **Multiplayer → Server** — `192.168.1.23`, `192.168.1.23:4180` and the printed
 `http://…` all work.
+
+Everyone needs the same version: a client from an older build is turned away with "Version
+mismatch", so after updating, rebuild the Windows zip (`npm run app:win`) for friends too.
+Online you can chat (**T**); the server relays chat, `/say` and `/me` and slows down anyone who
+floods it.
 
 The server prints every address a friend could actually reach — deliberately skipping carrier-NAT (`100.64.0.0/10`,
 what a phone hotspot hands out) and link-local addresses, which nobody can route to. Friends
@@ -472,7 +557,11 @@ src/game      Fighter (movement/inventory/items/effects/durability/mining), comb
 src/ai        BotBrain + difficulty profiles
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
               first-person hands, item meshes from the resource pack, arrows, particles
-src/ui        HUD, inventory screen, menus, settings, pixel-art sprites
+src/ui        HUD, chat, Marketplace, inventory screen, menus, settings, pixel-art sprites
+src/commands  Brigadier-style dispatcher, argument types (selectors, coordinates, items with components),
+              the built-in commands
+src/mods      the Marketplace's mods: registry + settings, HUD widgets, damage indicator, AppleSkin maths
+src/input     keyboard/mouse input and the rebindable key map
 src/assets/pack  the resource-pack textures the game uses (items, armor, shield, arrows, blocks, HUD)
 src/render/Hitboxes.ts   F3+B-style debug boxes
 src/net       protocol, authoritative Duel, client NetMatch/NetClient

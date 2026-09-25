@@ -12,6 +12,19 @@ const tmp = new THREE.Matrix4();
 
 const stackKey = (s: ItemStack | null) => (s ? `${s.id}:${s.count}:${s.charged ? 1 : 0}` : null);
 
+/** Options → Video → Hand, plus the Low Shield mod. */
+export interface HandOptions {
+  /** Vertical FOV of the hand pass (vanilla: 70). */
+  fov: number;
+  /** Offsets in blocks: x moves the hands apart, y up, z toward the screen. */
+  x: number;
+  y: number;
+  z: number;
+  scale: number;
+  /** How far down (0..1) the Low Shield mod draws a shield. */
+  lowShield: number;
+}
+
 /**
  * First-person hands, rendered in their own scene with a fixed 70° FOV like vanilla.
  * Implements ItemInHandRenderer: the 1.9 "weapon dips while recharging" main-hand height, re-equip
@@ -36,12 +49,18 @@ export class FirstPersonView {
   private xBobO = 0;
   private yBobO = 0;
   private armMaterial: THREE.MeshLambertMaterial;
+  readonly opts: HandOptions = { fov: 70, x: 0, y: 0, z: 0, scale: 1, lowShield: 0 };
+
+  private readonly ambient: THREE.AmbientLight;
+  private readonly key: THREE.DirectionalLight;
 
   constructor(assets: Assets, glint: THREE.Material) {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.62 * Math.PI));
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.62 * Math.PI);
+    this.scene.add(this.ambient);
     const key = new THREE.DirectionalLight(0xffffff, 0.55 * Math.PI);
     key.position.set(-0.4, 1, 0.6);
     this.scene.add(key);
+    this.key = key;
     this.root.matrixAutoUpdate = false;
     this.scene.add(this.root);
 
@@ -51,6 +70,12 @@ export class FirstPersonView {
     this.arm.add(new THREE.Mesh(assets.rig.parts.rightArm, this.armMaterial));
     this.arm.matrixAutoUpdate = false;
     this.root.add(this.main.group, this.off.group, this.arm);
+  }
+
+  /** Dims the hands with the world at night. */
+  setLight(v: number) {
+    this.ambient.intensity = 0.62 * Math.PI * v;
+    this.key.intensity = 0.55 * Math.PI * v;
   }
 
   reset() {
@@ -80,10 +105,14 @@ export class FirstPersonView {
   update(p: Fighter, a: number, viewShake: THREE.Matrix4, aspect: number) {
     // Vanilla uses a fixed 70° vertical FOV; on narrow (portrait) windows widen it so the
     // hand keeps at least the horizontal view of a 3:2 screen instead of sliding off-screen.
-    const halfTan = Math.max(Math.tan(35 * DEG), (Math.tan(35 * DEG) * 1.5) / aspect);
-    this.camera.fov = (2 * Math.atan(halfTan)) / DEG;
-    this.camera.aspect = aspect;
-    this.camera.updateProjectionMatrix();
+    const half = (this.opts.fov / 2) * DEG;
+    const halfTan = Math.max(Math.tan(half), (Math.tan(half) * 1.5) / aspect);
+    const fov = (2 * Math.atan(halfTan)) / DEG;
+    if (this.camera.fov !== fov || this.camera.aspect !== aspect) {
+      this.camera.fov = fov;
+      this.camera.aspect = aspect;
+      this.camera.updateProjectionMatrix();
+    }
     const m = this.root.matrix.copy(viewShake);
     // Hand lags slightly behind camera rotation
     const pitchLag = p.pitch / DEG - lerp(this.xBobO, this.xBob, a);
@@ -108,7 +137,11 @@ export class FirstPersonView {
     const offStack = this.shownOff !== null ? p.offhand : null;
     this.renderHand('off', showOff ? offStack : null, p, a, 1 - lerp(this.oOffHandHeight, this.offHandHeight, a));
     this.arm.visible = showMain && !mainStack && !p.dead;
-    if (this.arm.visible) this.armMatrix(this.arm.matrix.identity(), 1 - lerp(this.oMainHandHeight, this.mainHandHeight, a), p.getAttackAnim(a));
+    if (this.arm.visible) {
+      const am = this.arm.matrix.identity();
+      this.offset(am, 1);
+      this.armMatrix(am, 1 - lerp(this.oMainHandHeight, this.mainHandHeight, a), p.getAttackAnim(a));
+    }
   }
 
   private renderHand(hand: Hand, stack: ItemStack | null, p: Fighter, a: number, equip: number) {
@@ -118,8 +151,10 @@ export class FirstPersonView {
     if (!v || !stack) return;
     const using = p.usingItem && p.useHand === hand;
     const kind = using ? p.useKind() : 'none';
-    slot.group.matrix.identity();
-    firstPersonItemMatrix(slot.group.matrix, {
+    const m = slot.group.matrix.identity();
+    this.offset(m, hand === 'main' ? 1 : -1);
+    if (this.opts.lowShield > 0 && (v.kind === 'shield' || v.kind === 'shield_blocking')) m.multiply(tmp.makeTranslation(0, -this.opts.lowShield * 0.4, 0));
+    firstPersonItemMatrix(m, {
       kind: v.kind,
       hand: hand === 'main' ? 'right' : 'left',
       equipProgress: using ? 0 : equip,
@@ -130,6 +165,13 @@ export class FirstPersonView {
       chargeTicks: C.CROSSBOW_CHARGE_TICKS,
       crossbowCharged: stack.id === 'crossbow' && !!stack.charged,
     });
+    if (this.opts.scale !== 1) m.multiply(tmp.makeScale(this.opts.scale, this.opts.scale, this.opts.scale));
+  }
+
+  /** The hand offset options, in view space (x mirrored for the left hand). */
+  private offset(m: THREE.Matrix4, side: number) {
+    const o = this.opts;
+    if (o.x || o.y || o.z) m.multiply(tmp.makeTranslation(o.x * side, o.y, o.z));
   }
 
   /** ItemInHandRenderer.renderPlayerArm for the right arm. */

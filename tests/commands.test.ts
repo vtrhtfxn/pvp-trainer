@@ -37,6 +37,10 @@ function setup(kit = 'sword') {
     msPerTick: () => 1,
     title() {},
     playerName: 'Steve',
+    broadcast(kind, text) {
+      out.push(kind === 'say' ? `[Steve] ${text}` : kind === 'me' ? `* Steve ${text}` : `<Steve> ${text}`);
+    },
+    players: () => ['Steve', match.bot.name],
   };
   const ctx = (): CmdCtx => ({ host, self: match.player });
   const run = (line: string) => d.execute(line.replace(/^\//, ''), ctx());
