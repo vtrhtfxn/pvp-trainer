@@ -142,6 +142,8 @@ export class BotBrain {
   private ranged: RangedPlan = 'none';
   private rangedTimer = 0;
   private rangedCooldown = 0;
+  /** Ticks in a row the ranged plan has been looking at a raised shield. */
+  private rangedBlocked = 0;
 
   // ---- NethPot
   /** Spawned with splash potions: runs the pot/totem/mending game. */
@@ -257,6 +259,7 @@ export class BotBrain {
     this.ranged = 'none';
     this.rangedTimer = 0;
     this.rangedCooldown = 0;
+    this.rangedBlocked = 0;
     const b = this.bot;
     this.potKit = b.countItem('splash_potion') > 0;
     this.weapon = b.countItem('netherite_sword') > 0 ? 'netherite_sword' : 'diamond_sword';
@@ -657,8 +660,15 @@ export class BotBrain {
       this.engage(per, dist, false, input, false);
       input.forward = dist > 2.4 ? 1 : 0;
       input.sprint = dist > 3.5;
-      if (released || !inReach) return;
+      // No strafing on the way to an axe hit: circling them outruns a slow aim, and the swing
+      // never connects while they hold the shield up.
+      if (dist < P.maxReach + 2) input.strafe = 0;
+      if (released) return;
+      // Get the axe out on the way in, so its switch delay is spent walking, not standing.
+      const closing = inReach || dist < P.maxReach + 1.5;
+      if (!closing) return;
       if (A.swap && wantsBreak) {
+        if (!inReach) return;
         // Attribute swap: the axe goes in the hand and swings on the same tick, before the
         // equipment tick refreshes attributes — sword damage and cooldown, axe disable.
         this.equip(this.axe);
@@ -678,6 +688,7 @@ export class BotBrain {
         this.axeWait--;
         return;
       }
+      if (!inReach) return;
       // Still blocking: any axe hit disables. Shield dropped: wait for a strong axe hit instead of
       // throwing away the cooldown by switching straight back.
       if (wantsBreak || b.attackStrengthScale(0.5) >= 0.95) {
@@ -754,6 +765,8 @@ export class BotBrain {
     const b = this.bot;
     const A = this.profile.axe;
     if (A.ranged === 0 || this.profile.passive || this.rangedCooldown > 0 || b.shieldCooldown > 0) return false;
+    // Arrows can't get through a raised shield that faces us: walk in and axe it instead.
+    if (this.seenLate(A.shieldReact).shield && shieldFaces(this.target, b.pos.x, b.pos.z)) return false;
     const xb = b.slotOf('crossbow');
     const charged = xb >= 0 && !!b.inventory[xb]?.charged;
     if (charged && dist > 6) return true;
@@ -775,10 +788,17 @@ export class BotBrain {
       else if (b.slotOf('bow') >= 0 && b.hasAmmo()) this.ranged = 'drawBow';
       else return false;
       this.rangedTimer = 0;
+      this.rangedBlocked = 0;
     }
     this.rangedTimer++;
+    const T = this.target;
+    const blockedByShield = this.seenLate(A.shieldReact).shield && shieldFaces(T, b.pos.x, b.pos.z);
+    this.rangedBlocked = blockedByShield ? this.rangedBlocked + 1 : 0;
+    // Holding a shield up must not freeze us: after a short look (longer at low tiers), drop the
+    // plan and go break the shield with the axe. A loaded crossbow stays loaded for later.
+    const shieldPatience = 3 + A.shieldReact * 2;
     const abortAt = this.uhcKit && this.targetUp() ? 0 : this.ranged === 'fireCrossbow' ? 4 : 6.5;
-    if (dist < abortAt || this.rangedTimer > 90) {
+    if (dist < abortAt || this.rangedTimer > 90 || this.rangedBlocked > shieldPatience) {
       if (b.usingItem) b.stopUsingItem();
       this.ranged = 'none';
       this.rangedCooldown = 40;
@@ -788,8 +808,6 @@ export class BotBrain {
     input.strafe = this.strafeDir || 1;
     input.forward = dist < 12 ? -1 : 0;
 
-    const T = this.target;
-    const blockedByShield = this.seenLate(A.shieldReact).shield && shieldFaces(T, b.pos.x, b.pos.z);
     switch (this.ranged) {
       case 'loadCrossbow':
         this.equip('crossbow');
