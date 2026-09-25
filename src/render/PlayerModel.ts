@@ -113,6 +113,11 @@ export class PlayerModel {
   /** ElytraModel: two wings on the back, shown while an elytra is worn. */
   private readonly wings: THREE.Group[] = [];
   private readonly wingGlint: THREE.Mesh[] = [];
+  /** The red flash when hurt (the Hit Color mod changes it): colour and strength 0..1. */
+  readonly hurtColor = new THREE.Color(1, 0, 0);
+  hurtStrength = 0.45;
+  /** Blob shadow under the feet (Options → Entity Shadows). */
+  shadowsOn = true;
 
   constructor(assets: Assets, glint: THREE.Material) {
     this.skin = new THREE.MeshLambertMaterial({ map: assets.rig.texture, alphaTest: 0.1, side: THREE.DoubleSide });
@@ -197,7 +202,7 @@ export class PlayerModel {
 
   setVisible(v: boolean) {
     this.root.visible = v;
-    this.shadow.visible = v;
+    this.shadow.visible = v && this.shadowsOn;
   }
 
   /** PlayerRenderer.getArmPose for one hand. */
@@ -247,8 +252,15 @@ export class PlayerModel {
     } else this.tilt.rotation.x = 0;
 
     const hurt = f.hurtTime > 0 || f.dead;
-    this.skin.color.setRGB(1, hurt ? 0.55 : 1, hurt ? 0.55 : 1);
-    this.skin.emissive.setRGB(hurt ? 0.3 : 0, 0, 0);
+    // Vanilla's overlay: white lerped toward red by 0.45, plus a little red glow.
+    const tint = hurt ? this.hurtStrength : 0;
+    const hc = this.hurtColor;
+    this.skin.color.setRGB(1 + (hc.r - 1) * tint, 1 + (hc.g - 1) * tint, 1 + (hc.b - 1) * tint);
+    this.skin.emissive.setRGB(hc.r * tint * 0.67, hc.g * tint * 0.67, hc.b * tint * 0.67);
+    // Invisibility hides the body; armor and held items still show, like vanilla.
+    const invisible = f.effects.has('invisibility') && !f.dead;
+    this.skin.visible = !invisible;
+    if (this.root.visible) this.shadow.visible = this.shadowsOn && !invisible;
     for (const m of this.armorMats.values()) {
       m.color.copy(this.skin.color);
       m.emissive.copy(this.skin.emissive);

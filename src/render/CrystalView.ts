@@ -183,8 +183,14 @@ export class ExplosionView {
       }
       const n = p.frames.length;
       const f = Math.min(n - 1, Math.floor(((p.age + this.acc) / p.life) * n));
-      (p.sprite.material as THREE.SpriteMaterial).map = p.frames[f] ?? null;
-      (p.sprite.material as THREE.SpriteMaterial).needsUpdate = true;
+      // Swapping one texture for another needs no program rebuild; flagging needsUpdate every
+      // frame for every puff made three.js re-derive each program (costly in crystal fights).
+      const mat = p.sprite.material as THREE.SpriteMaterial;
+      const next = p.frames[f] ?? null;
+      if (mat.map !== next) {
+        if (!mat.map !== !next) mat.needsUpdate = true;
+        mat.map = next;
+      }
     }
   }
 }

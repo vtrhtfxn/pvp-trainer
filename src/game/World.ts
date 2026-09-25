@@ -1,7 +1,7 @@
 import { PLAYER_WIDTH } from '../core/constants';
 import { Rng } from '../core/rng';
 import { Arrow } from './Arrow';
-import { Blocks, type CollideResult } from './Blocks';
+import { Blocks, isSolid, type CollideResult } from './Blocks';
 import type { DroppedItem } from './DroppedItem';
 import type { EndCrystal } from './EndCrystal';
 import type { Fighter } from './Fighter';
@@ -85,6 +85,19 @@ export class World {
   rules: GameRules = defaultGameRules();
   /** Level.dayTime in ticks: 0 sunrise, 6000 noon, 13000 dusk, 18000 midnight (24000 a day). */
   dayTime = 6000;
+  /** /weather rain or thunder: rain puts out burning players under the open sky. */
+  raining = false;
+  /** Level.isRainingAt: raining, and nothing solid above this spot. */
+  rainAt(x: number, y: number, z: number): boolean {
+    if (!this.raining) return false;
+    const b = this.blocks;
+    if (!b.count) return true;
+    const bx = Math.floor(x);
+    const bz = Math.floor(z);
+    for (let yy = Math.max(Math.floor(y), -b.depth); yy < b.height; yy++) if (isSolid(b.get(bx, yy, bz))) return false;
+    return true;
+  }
+
   constructor(
     readonly half = ARENA_HALF,
     /** Layers of breakable ground (Crystal); 0 = the usual unbreakable floor. */

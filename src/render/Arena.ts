@@ -6,15 +6,45 @@ import { meshVoxels, Voxels, type BlockId } from './blockMesher';
 export const SKY_TOP = new THREE.Color('#79a6ff');
 export const SKY_HORIZON = new THREE.Color('#c4dcff');
 
+/** Time of day and weather, as /time and /weather set them. */
+export interface SkyState {
+  /** 0..24000; 6000 is noon, 18000 midnight. */
+  dayTime: number;
+  /** 0..1 rain and thunder strength (they fade in and out). */
+  rain: number;
+  thunder: number;
+  /** 0..1 lightning flash. */
+  flash: number;
+}
+
+/** DimensionType.timeOfDay: 0 at noon, 0.5 at midnight, eased around sunrise and sunset. */
+export function celestialAngle(dayTime: number): number {
+  const t = dayTime / 24000 - 0.25;
+  const d = t - Math.floor(t);
+  const e = 0.5 - Math.cos(d * Math.PI) / 2;
+  return (d * 2 + e) / 3;
+}
+
+const tmpColor = new THREE.Color();
+const GLOW = new THREE.Color('#ff8a3d');
+
 /** Builds the arena: grass floor, stone-brick walls with glowstone pillars, trees, sky and clouds. */
 export class Arena {
   readonly group = new THREE.Group();
   /** The grass inside the walls; hidden when the kit brings its own diggable ground. */
   readonly floor: THREE.Group;
   private sky: THREE.Mesh;
+  private skyMat: THREE.ShaderMaterial;
   private sun: THREE.Mesh;
-  private clouds: THREE.Mesh;
+  private moon: THREE.Mesh;
+  private stars: THREE.Points;
+  readonly clouds: THREE.Mesh;
   private cloudSpan: number;
+  private readonly sunDir = new THREE.Vector3(0.35, 0.72, -0.6).normalize();
+  /** 0 (midnight) … 1 (day): how lit the world is, for lights and fog. */
+  daylight = 1;
+  /** The colour the fog and the far background should use (the horizon). */
+  readonly horizon = SKY_HORIZON.clone();
 
   constructor(world: World) {
     const v = new Voxels();
@@ -92,11 +122,20 @@ export class Arena {
 
     // Sky dome
     const skyMat = new THREE.ShaderMaterial({
-      uniforms: { top: { value: SKY_TOP }, horizon: { value: SKY_HORIZON } },
+      uniforms: {
+        top: { value: SKY_TOP.clone() },
+        horizon: { value: SKY_HORIZON.clone() },
+        sunDir: { value: this.sunDir.clone() },
+        glow: { value: GLOW.clone() },
+        glowAmt: { value: 0 },
+      },
       vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
-      fragmentShader: `uniform vec3 top; uniform vec3 horizon; varying vec3 vDir;
-        void main(){ float h = vDir.y; vec3 c = mix(horizon, top, smoothstep(0.0, 0.5, h));
+      // Sunrise/sunset: an orange glow on the horizon toward the sun (DimensionSpecialEffects.getSunriseColor).
+      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 glow; uniform float glowAmt; varying vec3 vDir;
+        void main(){ vec3 dir = normalize(vDir); float h = dir.y; vec3 c = mix(horizon, top, smoothstep(0.0, 0.5, h));
         if (h < 0.0) c = mix(horizon, horizon * 0.85, smoothstep(0.0, -0.4, h));
+        float s = max(dot(dir, normalize(vec3(sunDir.x, 0.0, sunDir.z))), 0.0);
+        c = mix(c, glow, glowAmt * pow(s, 5.0) * (1.0 - smoothstep(-0.1, 0.4, h)));
         gl_FragColor = vec4(c, 1.0);
         #include <colorspace_fragment>
         }`,
@@ -104,6 +143,7 @@ export class Arena {
       depthWrite: false,
       fog: false,
     });
+    this.skyMat = skyMat;
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(500, 24, 12), skyMat);
     this.sky.renderOrder = -10;
     this.sky.frustumCulled = false;
@@ -135,6 +175,51 @@ export class Arena {
     this.sun.renderOrder = -9;
     this.sun.frustumCulled = false;
     this.group.add(this.sun);
+
+    // Square moon with a few darker craters, opposite the sun.
+    const mc = document.createElement('canvas');
+    mc.width = mc.height = 16;
+    const mctx = mc.getContext('2d')!;
+    mctx.fillStyle = '#e8e8f0';
+    mctx.fillRect(3, 3, 10, 10);
+    mctx.fillStyle = '#b9bccb';
+    for (const [x, y, w] of [
+      [5, 5, 2],
+      [9, 7, 3],
+      [6, 10, 2],
+      [10, 4, 1],
+    ])
+      mctx.fillRect(x, y, w, w);
+    const moonTex = new THREE.CanvasTexture(mc);
+    moonTex.magFilter = THREE.NearestFilter;
+    this.moon = new THREE.Mesh(
+      new THREE.PlaneGeometry(42, 42),
+      new THREE.MeshBasicMaterial({ map: moonTex, transparent: true, depthWrite: false, fog: false }),
+    );
+    this.moon.renderOrder = -9;
+    this.moon.frustumCulled = false;
+    this.group.add(this.moon);
+
+    // Stars (LevelRenderer.drawStars): fixed points on a big sphere, visible at night.
+    const srng = new Rng(10842);
+    const starPos: number[] = [];
+    for (let i = 0; i < 900; i++) {
+      const u = srng.next() * 2 - 1;
+      const a = srng.next() * Math.PI * 2;
+      const r = Math.sqrt(1 - u * u);
+      if (u < -0.1) continue;
+      starPos.push(Math.cos(a) * r * 400, u * 400, Math.sin(a) * r * 400);
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+    this.stars = new THREE.Points(
+      sg,
+      new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false }),
+    );
+    this.stars.renderOrder = -9;
+    this.stars.frustumCulled = false;
+    this.stars.visible = false;
+    this.group.add(this.stars);
 
     // Blocky cloud layer
     const cells = 40;
@@ -186,11 +271,59 @@ export class Arena {
     this.group.add(this.clouds);
   }
 
+  /** Sky colours, sun, moon, stars and cloud tint for the time of day and the weather. */
+  setSky(sky: SkyState) {
+    const angle = celestialAngle(sky.dayTime);
+    const c = Math.cos(angle * Math.PI * 2);
+    // The sun's orbit runs east–west, tilted a little so it never sits straight overhead.
+    const th = angle * Math.PI * 2;
+    this.sunDir.set(-Math.sin(th), Math.cos(th) * 0.85, -Math.cos(th) * 0.5).normalize();
+    // Level.getSkyDarken-style brightness, with rain and thunder dimming it.
+    let day = Math.max(0, Math.min(1, c * 2 + 0.5));
+    day *= 1 - sky.rain * 0.3;
+    day *= 1 - sky.thunder * 0.3;
+    day = Math.min(1, day + sky.flash * 0.8);
+    this.daylight = day;
+    const u = this.skyMat.uniforms;
+    const top = u.top.value as THREE.Color;
+    const hor = u.horizon.value as THREE.Color;
+    const shade = (base: THREE.Color, out: THREE.Color, floor: number) => {
+      out.copy(base).multiplyScalar(Math.max(floor, day));
+      if (sky.rain > 0) {
+        const g = (out.r * 0.3 + out.g * 0.59 + out.b * 0.11) * 0.6;
+        out.lerp(tmpColor.setRGB(g, g, g), sky.rain * 0.75);
+      }
+    };
+    shade(SKY_TOP, top, 0.03);
+    shade(SKY_HORIZON, hor, 0.06);
+    this.horizon.copy(hor);
+    (u.sunDir.value as THREE.Vector3).copy(this.sunDir);
+    // Sunrise/sunset glow while the sun is near the horizon.
+    const glow = Math.abs(c) <= 0.4 ? Math.max(0, 1 - Math.abs(c) / 0.4) * (1 - sky.rain) : 0;
+    u.glowAmt.value = glow * 0.85;
+    const sunUp = this.sunDir.y > -0.12;
+    const dim = 1 - sky.rain;
+    (this.sun.material as THREE.MeshBasicMaterial).opacity = dim;
+    this.sun.visible = sunUp && dim > 0.02;
+    (this.moon.material as THREE.MeshBasicMaterial).opacity = dim;
+    this.moon.visible = this.sunDir.y < 0.12 && dim > 0.02;
+    const starA = Math.max(0, Math.min(1, 1 - (c * 2 + 0.25))) * 0.75 * dim;
+    (this.stars.material as THREE.PointsMaterial).opacity = starA;
+    this.stars.visible = starA > 0.01;
+    const cloud = this.clouds.material as THREE.MeshBasicMaterial;
+    const cl = Math.max(0.12, day) * (1 - sky.rain * 0.35);
+    cloud.color.setRGB(cl, cl, cl * (1 - 0.04 * (1 - day)));
+  }
+
   update(time: number, camera: THREE.Camera) {
     this.sky.position.copy(camera.position);
-    const sunDir = new THREE.Vector3(0.35, 0.72, -0.6).normalize();
-    this.sun.position.copy(camera.position).addScaledVector(sunDir, 420);
+    this.sun.position.copy(camera.position).addScaledVector(this.sunDir, 420);
     this.sun.lookAt(camera.position);
+    this.moon.position.copy(camera.position).addScaledVector(this.sunDir, -420);
+    this.moon.lookAt(camera.position);
+    this.stars.position.copy(camera.position);
+    // The stars turn with the sky.
+    this.stars.rotation.z = Math.atan2(this.sunDir.x, this.sunDir.y);
     // Slow ping-pong drift (the layer is finite, so it never wraps or pops).
     this.clouds.position.x = Math.sin(time * 0.004) * this.cloudSpan * 0.16;
   }

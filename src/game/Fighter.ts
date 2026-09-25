@@ -1931,6 +1931,10 @@ export class Fighter {
 
   private updateFluids() {
     const b = this.world.blocks;
+    // Entity.isInRain: rain on your head (or feet) puts the fire out, like water.
+    if (this.fireTicks > 0 && this.world.raining && (this.world.rainAt(this.pos.x, this.pos.y + this.height(), this.pos.z) || this.world.rainAt(this.pos.x, this.pos.y, this.pos.z))) {
+      this.fireTicks = 0;
+    }
     if (!b.count) {
       this.inWater = this.inLava = this.inWeb = false;
       this.fluidDepth = 0;

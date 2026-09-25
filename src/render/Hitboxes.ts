@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ATTACK_REACH, PLAYER_WIDTH } from '../core/constants';
+import { PLAYER_WIDTH } from '../core/constants';
 import { lerp } from '../core/math';
 import type { Fighter } from '../game/Fighter';
 
@@ -69,7 +69,7 @@ class FighterHitbox {
 
     this.ray.position.set(x, y + eyeY, z);
     this.ray.rotation.set(f.pitch, f.yaw, 0, 'YXZ');
-    this.ray.scale.setScalar(ATTACK_REACH);
+    this.ray.scale.setScalar(f.entityReach());
   }
 
   setVisible(v: boolean) {
@@ -108,3 +108,27 @@ export class Hitboxes {
     if (!bot.dead) this.bot.update(bot, alpha, playerCanHitBot);
   }
 }
+
+/**
+ * The Glowing effect: a white outline around the fighter that shows through walls. (Vanilla
+ * outlines the model's silhouette; a box reads the same at a glance and costs nothing.)
+ */
+export class GlowOutline {
+  readonly box: THREE.LineSegments;
+
+  constructor() {
+    this.box = new THREE.LineSegments(BOX_EDGES, lineMaterial(WHITE, 0.95));
+    this.box.renderOrder = 11;
+    this.box.visible = false;
+  }
+
+  update(f: Fighter, alpha: number, show: boolean) {
+    const on = show && !f.dead && f.effects.has('glowing');
+    this.box.visible = on;
+    if (!on) return;
+    const h = f.height();
+    this.box.position.set(lerp(f.prevPos.x, f.pos.x, alpha), lerp(f.prevPos.y, f.pos.y, alpha) + h / 2, lerp(f.prevPos.z, f.pos.z, alpha));
+    this.box.scale.set(PLAYER_WIDTH + 0.08, h + 0.08, PLAYER_WIDTH + 0.08);
+  }
+}
+

@@ -1769,7 +1769,7 @@ export class BotBrain {
       let bestD = Infinity;
       for (const [x, y, z] of this.sides(tx, ty, tz)) {
         const d = Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z);
-        if (d < bestD && d < C.BLOCK_REACH && this.anyFacePoint(x, y, z)) {
+        if (d < bestD && d < this.bot.blockReach() && this.anyFacePoint(x, y, z)) {
           bestD = d;
           best = [x, y, z];
         }
@@ -1874,7 +1874,7 @@ export class BotBrain {
       const p = this.facePoint(sx, sy, sz, nx, ny, nz)!;
       this.aimPoint(p[0], p[1], p[2]);
       if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === sx && hit.y === sy && hit.z === sz && hit.nx === nx && hit.ny === ny && hit.nz === nz && b.startUsingItem(true)) {
         plan.wait = K.clickGap;
         this.settle = 0;
@@ -1963,11 +1963,11 @@ export class BotBrain {
       const dy = py - eye.y;
       const dz = pz - eye.z;
       const len = Math.hypot(dx, dy, dz);
-      if (len > C.BLOCK_REACH - 0.05) continue;
+      if (len > this.bot.blockReach() - 0.05) continue;
       const hit = this.world.blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, len + 0.05, 'outline', uhcRay);
       if (!hit || hit.x !== sx || hit.y !== sy || hit.z !== sz || hit.nx !== nx || hit.ny !== ny || hit.nz !== nz) continue;
       const t = rayAABB(eye, new V3(dx / len, dy / len, dz / len), box);
-      if (t >= 0 && t <= C.ATTACK_REACH && t < hit.t) continue;
+      if (t >= 0 && t <= this.bot.entityReach() && t < hit.t) continue;
       return [px, py, pz];
     }
     return null;
@@ -2037,7 +2037,7 @@ export class BotBrain {
     for (const c of world.crystals) {
       if (c.removed || (c.owner !== b && !K.breakTheirs)) continue;
       const d = Math.hypot(c.x - eye.x, c.y + 1 - eye.y, c.z - eye.z);
-      if (d > C.ATTACK_REACH + 1) continue;
+      if (d > this.bot.entityReach() + 1) continue;
       const s = this.blastScore(c.x, c.y, c.z, CRYSTAL_POWER, per);
       consider(s, 1, 0, () => ({ kind: 'hit', crystal: c, timer: 0, wait: 0 }));
     }
@@ -2058,7 +2058,7 @@ export class BotBrain {
           const y = ty + dy;
           const z = tz + dz;
           if (!blocks.inside(x, y, z)) continue;
-          if (Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z) > C.BLOCK_REACH + 0.5) continue;
+          if (Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z) > this.bot.blockReach() + 0.5) continue;
           const id = blocks.get(x, y, z);
           const above = blocks.get(x, y + 1, z);
           // 2. A crystal on obsidian that is already there.
@@ -2199,7 +2199,7 @@ export class BotBrain {
       input.forward = input.strafe = 0;
       input.sprint = false;
       if (!started && this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === x && hit.y === y && hit.z === z) {
         b.tickMining(true, !started);
         return true;
@@ -2252,7 +2252,7 @@ export class BotBrain {
       if (!p) return plan.timer > 6 ? end(false) : true;
       this.aimPoint(p[0], p[1], p[2]);
       if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === plan.sx && hit.y === plan.sy && hit.z === plan.sz && hit.nx === plan.nx && hit.ny === plan.ny && hit.nz === plan.nz) {
         if (b.startUsingItem(true) && blocks.get(plan.x, plan.y, plan.z) !== B.AIR) {
           plan.phase = plan.kind === 'anchor' ? 'charge' : 'crystal';
@@ -2273,7 +2273,7 @@ export class BotBrain {
       if (!p) return plan.timer > 6 ? end(false) : true;
       this.aimPoint(p[0], p[1], p[2]);
       if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
         const n = this.world.crystals.length;
         if (b.startUsingItem(true) && this.world.crystals.length > n) {
@@ -2315,7 +2315,7 @@ export class BotBrain {
     if (!p) return plan.timer > 6 ? end(false) : true;
     this.aimPoint(p[0], p[1], p[2]);
     if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-    const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+    const hit = b.crosshairBlock(this.bot.blockReach(), true);
     if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z && b.startUsingItem(true)) {
       if (plan.phase === 'blow') {
         end(true);
@@ -2432,7 +2432,7 @@ export class BotBrain {
       const dy = T.pos.y + 1.2 - eye.y;
       const dz = T.pos.z - eye.z;
       const len = Math.hypot(dx, dy, dz);
-      const hit = blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, Math.min(len, C.BLOCK_REACH), 'outline', uhcRay);
+      const hit = blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, Math.min(len, this.bot.blockReach()), 'outline', uhcRay);
       if (hit && MINEABLE.has(hit.id)) {
         this.plan = { kind: 'mine', x: hit.x, y: hit.y, z: hit.z, timer: 0, started: false };
         return this.runPlan(per, trueDist, input) === 'own';
@@ -2542,7 +2542,7 @@ export class BotBrain {
           if (b.usingItem) b.stopUsingItem();
           // The floor (or block top) under the cell: a bucket ray ignores players.
           this.aimPoint(plan.x + 0.5, plan.y + 0.001, plan.z + 0.5);
-          const hit = b.crosshairBlock(C.BLOCK_REACH, false);
+          const hit = b.crosshairBlock(this.bot.blockReach(), false);
           const on =
             !!hit &&
             ((hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z) ||
@@ -2566,14 +2566,14 @@ export class BotBrain {
         if (plan.kind === 'lava' && !U.lavaPickup) return finish(60);
         const cx = plan.x + 0.5;
         const cz = plan.z + 0.5;
-        const reachable = Math.hypot(cx - b.pos.x, plan.y + 0.5 - (b.pos.y + b.eyeHeight()), cz - b.pos.z) < C.BLOCK_REACH - 0.3;
+        const reachable = Math.hypot(cx - b.pos.x, plan.y + 0.5 - (b.pos.y + b.eyeHeight()), cz - b.pos.z) < this.bot.blockReach() - 0.3;
         if (plan.timer > 25 || !blocks.isSource(plan.x, plan.y, plan.z) || blocks.get(plan.x, plan.y, plan.z) !== fluid || !reachable) {
           return finish(plan.kind === 'lava' ? 80 : 10);
         }
         if (!this.equip('bucket')) return finish(40);
         if (b.usingItem) b.stopUsingItem();
         this.aimPoint(cx, plan.y + 0.4, cz);
-        const hit = b.crosshairBlock(C.BLOCK_REACH, false, 'source');
+        const hit = b.crosshairBlock(this.bot.blockReach(), false, 'source');
         if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z && this.settle >= U.aimSettle && b.startUsingItem(true)) {
           return finish(plan.kind === 'lava' ? 80 : 10);
         }
@@ -2584,7 +2584,7 @@ export class BotBrain {
         if (plan.timer > 12 || blocks.get(plan.x, plan.y, plan.z) !== B.AIR || !this.equip('cobweb')) return finish(50);
         if (b.usingItem) b.stopUsingItem();
         this.aimPoint(plan.ax, plan.ay + 0.001, plan.az);
-        const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+        const hit = b.crosshairBlock(this.bot.blockReach(), true);
         const on = !!hit && hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z;
         if (on && this.settle >= U.aimSettle && b.startUsingItem(true)) return finish(50);
         return 'own';
@@ -2601,7 +2601,7 @@ export class BotBrain {
         this.aimPoint(plan.x + 0.5, plan.y + 0.5, plan.z + 0.5);
         const dist = Math.hypot(plan.x + 0.5 - b.pos.x, plan.z + 0.5 - b.pos.z);
         if (dist > 3.4) input.forward = 1;
-        const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+        const hit = b.crosshairBlock(this.bot.blockReach(), true);
         if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
           b.tickMining(true, !plan.started);
           plan.started = true;
@@ -2691,7 +2691,7 @@ export class BotBrain {
       const dy = y - eye.y;
       const dz = pz - eye.z;
       const len = Math.hypot(dx, dy, dz);
-      if (len > C.BLOCK_REACH) continue;
+      if (len > this.bot.blockReach()) continue;
       const d = new V3(dx / len, dy / len, dz / len);
       const t = rayAABB(eye, d, box);
       if (t >= 0 && t < len) continue;
