@@ -1,8 +1,9 @@
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../ai/difficulty';
 import type { FighterStats } from '../game/Fighter';
 import { KITS, kitById, type KitId } from '../game/kits';
+import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Action } from '../input/keybinds';
 import type { Sprite } from './sprites';
-import { saveSettings, type Records, type Settings } from './settings';
+import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
 
 export interface MenuCallbacks {
   onStart(): void;
@@ -13,7 +14,21 @@ export interface MenuCallbacks {
   onUiSound(): void;
   onConnect(url: string, room: string, name: string): void;
   onLeaveOnline(): void;
+  /** Opens the Marketplace (mods and resource packs). */
+  onMarketplace(): void;
+  /** How many mods are installed (for the Marketplace button). */
+  installedMods(): number;
 }
+
+type SettingsTab = 'video' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
+const TAB_LABELS: Record<SettingsTab, string> = {
+  video: 'Video',
+  controls: 'Controls',
+  keys: 'Key Binds',
+  sound: 'Sound',
+  hud: 'HUD',
+  chat: 'Chat',
+};
 
 type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer';
 
@@ -26,6 +41,8 @@ export interface ResultData {
   newBestCombo: boolean;
   /** Online duels are not recorded against a bot difficulty. */
   online?: boolean;
+  /** Commands changed the duel, so it was not recorded. */
+  unrecorded?: boolean;
 }
 
 function h<K extends keyof HTMLElementTagNameMap>(
@@ -55,6 +72,13 @@ export class Menus {
   private serverInput!: HTMLInputElement;
   private diffDesc!: HTMLDivElement;
   private kitInfo!: HTMLDivElement;
+  private marketBtns: HTMLButtonElement[] = [];
+  private settingsTab: SettingsTab = 'video';
+  private settingsBody!: HTMLDivElement;
+  private tabButtons = {} as Record<SettingsTab, HTMLButtonElement>;
+  /** The key-bind button waiting for a key, if any. */
+  private binding: { action: Action; btn: HTMLButtonElement } | null = null;
+  private controlsTable!: HTMLDivElement;
 
   constructor(
     parent: HTMLElement,
@@ -94,6 +118,19 @@ export class Menus {
     this.hideAll();
     this.screens[name].style.display = '';
     if (name === 'main') this.refreshMain();
+    if (name === 'controls') this.refreshControls();
+    if (name === 'settings') this.renderSettings();
+    for (const b of this.marketBtns) b.textContent = this.marketLabel();
+  }
+
+  private marketLabel(): string {
+    const n = this.cb.installedMods();
+    return n ? `Marketplace (${n} mod${n === 1 ? '' : 's'})` : 'Marketplace';
+  }
+
+  /** Where "Done" in the Marketplace goes back to. */
+  get settingsFrom(): 'main' | 'pause' {
+    return this.settingsReturn;
   }
 
   get visible(): boolean {
@@ -164,12 +201,18 @@ export class Menus {
 
     panel.append(this.button('Start Duel', () => this.cb.onStart(), 'big'));
     panel.append(this.button('Multiplayer — fight a friend', () => this.show('multiplayer'), 'big online'));
+    const market = this.button('Marketplace', () => {
+      this.settingsReturn = 'main';
+      this.cb.onMarketplace();
+    }, 'market-btn');
+    this.marketBtns.push(market);
     panel.append(
       h(
         'div',
-        { class: 'btn-row' },
+        { class: 'btn-row three' },
         this.button('Settings', () => this.openSettings('main')),
         this.button('Controls', () => this.show('controls')),
+        market,
       ),
     );
     this.recordEl = h('div', { class: 'record' });
@@ -224,6 +267,12 @@ export class Menus {
     this.restartBtn = this.button('Restart Duel', () => this.cb.onRestart());
     panel.append(this.restartBtn);
     panel.append(this.button('Settings', () => this.openSettings('pause')));
+    const market = this.button('Marketplace', () => {
+      this.settingsReturn = 'pause';
+      this.cb.onMarketplace();
+    }, 'market-btn');
+    this.marketBtns.push(market);
+    panel.append(market);
     panel.append(this.button('Quit to Title', () => this.cb.onQuit()));
     root.append(panel);
     return root;
@@ -237,22 +286,88 @@ export class Menus {
   }
 
   private buildSettings(): HTMLDivElement {
-    const s = this.settings;
     const root = h('div', { class: 'screen settings' });
     const panel = h('div', { class: 'menu-panel wide' });
-    panel.append(h('div', { class: 'screen-title' }, 'Settings'));
-    const grid = h('div', { class: 'settings-grid' });
-    const changed = () => {
-      saveSettings(s);
-      this.cb.onSettingsChanged();
+    panel.append(h('div', { class: 'screen-title' }, 'Options'));
+    const tabs = h('div', { class: 'settings-tabs' });
+    for (const t of Object.keys(TAB_LABELS) as SettingsTab[]) {
+      const b = h('button', { class: 'settings-tab' }, TAB_LABELS[t]);
+      b.addEventListener('click', () => {
+        this.cb.onUiSound();
+        this.settingsTab = t;
+        this.renderSettings();
+      });
+      this.tabButtons[t] = b;
+      tabs.append(b);
+    }
+    panel.append(tabs);
+    this.settingsBody = h('div', { class: 'settings-body' });
+    panel.append(this.settingsBody);
+    panel.append(this.button('Done', () => this.show(this.settingsReturn), 'big'));
+    root.append(panel);
+    // Key binding: the next key or mouse button pressed is the new bind (Esc unbinds).
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (!this.binding) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.finishBinding(e.code === 'Escape' ? '' : e.code);
+      },
+      true,
+    );
+    window.addEventListener(
+      'mousedown',
+      (e) => {
+        if (!this.binding || e.target === this.binding.btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.finishBinding(`Mouse${e.button}`);
+      },
+      true,
+    );
+    return root;
+  }
+
+  private finishBinding(code: string) {
+    const b = this.binding;
+    if (!b) return;
+    this.binding = null;
+    this.settings.keys[b.action] = code;
+    this.saveAndApply();
+    this.renderSettings();
+  }
+
+  private saveAndApply() {
+    saveSettings(this.settings);
+    this.cb.onSettingsChanged();
+  }
+
+  /** Builds the open tab of the options screen. */
+  private renderSettings() {
+    const s = this.settings;
+    this.binding = null;
+    this.settingsRepaint.length = 0;
+    for (const [t, b] of Object.entries(this.tabButtons)) b.classList.toggle('on', t === this.settingsTab);
+    const body = this.settingsBody;
+    body.replaceChildren();
+    let grid = h('div', { class: 'settings-grid' });
+    body.append(grid);
+    const section = (title: string) => {
+      body.append(h('div', { class: 'settings-section' }, title));
+      grid = h('div', { class: 'settings-grid' });
+      body.append(grid);
     };
-    const slider = (label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, fmt: (v: number) => string) => {
+    const changed = () => this.saveAndApply();
+    const slider = (label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, fmt: (v: number) => string, hint = '') => {
       const out = h('span', { class: 'slider-value' });
       const input = h('input', { type: 'range', min: String(min), max: String(max), step: String(step) });
       const wrap = h('label', { class: 'mc-slider' }, input, out);
+      if (hint) wrap.title = hint;
       const paint = () => {
-        out.textContent = `${label}: ${fmt(get())}`;
-        wrap.style.setProperty('--p', String((get() - min) / (max - min)));
+        const v = Number(input.value);
+        out.textContent = `${label}: ${fmt(v)}`;
+        wrap.style.setProperty('--p', String((v - min) / (max - min)));
       };
       input.value = String(get());
       paint();
@@ -263,8 +378,9 @@ export class Menus {
       });
       grid.append(wrap);
     };
-    const toggle = (label: string, get: () => boolean, set: (v: boolean) => void) => {
+    const toggle = (label: string, get: () => boolean, set: (v: boolean) => void, hint = '') => {
       const b = h('button', { class: 'mc-btn' });
+      if (hint) b.title = hint;
       const paint = () => (b.textContent = `${label}: ${get() ? 'ON' : 'OFF'}`);
       paint();
       this.settingsRepaint.push(paint);
@@ -276,29 +392,196 @@ export class Menus {
       });
       grid.append(b);
     };
+    const cycle = <T extends string>(label: string, options: [T, string][], get: () => T, set: (v: T) => void, hint = '') => {
+      const b = h('button', { class: 'mc-btn' });
+      if (hint) b.title = hint;
+      const paint = () => {
+        const cur = options.find(([v]) => v === get()) ?? options[0];
+        b.textContent = `${label}: ${cur[1]}`;
+      };
+      paint();
+      b.addEventListener('click', () => {
+        this.cb.onUiSound();
+        const i = options.findIndex(([v]) => v === get());
+        set(options[(i + 1) % options.length][0]);
+        paint();
+        changed();
+      });
+      grid.append(b);
+    };
     const pct = (v: number) => `${Math.round(v * 100)}%`;
-    slider('Sensitivity', 0, 1, 0.005, () => s.sensitivity, (v) => (s.sensitivity = v), (v) => `${Math.round(v * 200)}%`);
-    slider('FOV', 30, 110, 1, () => s.fov, (v) => (s.fov = v), (v) => (v === 70 ? 'Normal' : v === 110 ? 'Quake Pro' : String(v)));
-    slider('FOV Effects', 0, 1, 0.05, () => s.fovEffects, (v) => (s.fovEffects = v), pct);
-    slider('Damage Tilt', 0, 1, 0.05, () => s.damageTilt, (v) => (s.damageTilt = v), pct);
-    slider('Volume', 0, 1, 0.05, () => s.volume, (v) => (s.volume = v), pct);
-    slider('GUI Scale', 0, 4, 1, () => s.guiScale, (v) => (s.guiScale = v), (v) => (v === 0 ? 'Auto' : String(v)));
-    toggle('Toggle Sprint (Ctrl)', () => s.toggleSprint, (v) => (s.toggleSprint = v));
-    toggle('Double-tap W Sprint', () => s.doubleTapSprint, (v) => (s.doubleTapSprint = v));
-    toggle('View Bobbing', () => s.viewBobbing, (v) => (s.viewBobbing = v));
-    toggle('Raw Mouse Input', () => s.rawInput, (v) => (s.rawInput = v));
-    if (!window.pvpNative) toggle('Fullscreen (blocks Ctrl+W)', () => s.fullscreenLock, (v) => (s.fullscreenLock = v));
-    toggle('Reach Display', () => s.showReach, (v) => (s.showReach = v));
-    toggle('Combo Counter', () => s.showCombo, (v) => (s.showCombo = v));
-    toggle('CPS Counter', () => s.showCps, (v) => (s.showCps = v));
-    toggle('Next-hit Coach', () => s.showNextHit, (v) => (s.showNextHit = v));
-    toggle('Hit Feedback', () => s.hitFeedback, (v) => (s.hitFeedback = v));
-    toggle('Opponent Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v));
-    toggle(/Mac|iP(hone|ad)/.test(navigator.platform) ? 'Hitboxes (⌘M)' : 'Hitboxes (Ctrl+M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
-    panel.append(grid);
-    panel.append(this.button('Done', () => this.show(this.settingsReturn), 'big'));
-    root.append(panel);
-    return root;
+    const vol = (v: number) => (v === 0 ? 'OFF' : pct(v));
+
+    switch (this.settingsTab) {
+      case 'video': {
+        slider('FOV', 30, 110, 1, () => s.fov, (v) => (s.fov = v), (v) => (v === 70 ? 'Normal' : v === 110 ? 'Quake Pro' : String(v)));
+        slider('FOV Effects', 0, 1, 0.05, () => s.fovEffects, (v) => (s.fovEffects = v), pct, 'How much sprinting, speed and bows widen or narrow the view');
+        slider('Hand FOV', 30, 110, 1, () => s.handFov, (v) => (s.handFov = v), (v) => (v === 70 ? 'Normal' : String(v)), 'Field of view of your hand and held item only');
+        slider('Third Person Distance', 1, 12, 0.5, () => s.thirdPersonDistance, (v) => (s.thirdPersonDistance = v), (v) => `${v} blocks`);
+        slider('Brightness', 0, 1, 0.01, () => s.brightness, (v) => (s.brightness = v), (v) => (v === 0 ? 'Moody' : v === 1 ? 'Bright' : v === 0.5 ? 'Default' : `+${Math.round(v * 100)}%`), 'How bright nights and storms are');
+        slider('GUI Scale', 0, 4, 1, () => s.guiScale, (v) => (s.guiScale = v), (v) => (v === 0 ? 'Auto' : String(v)));
+        slider('Damage Tilt', 0, 1, 0.05, () => s.damageTilt, (v) => (s.damageTilt = v), pct);
+        toggle('View Bobbing', () => s.viewBobbing, (v) => (s.viewBobbing = v));
+        section('Performance');
+        slider(
+          'Max Framerate',
+          30,
+          260,
+          10,
+          () => (s.maxFps === 0 ? 260 : s.maxFps),
+          (v) => (s.maxFps = v >= 260 ? 0 : v),
+          (v) => (v >= 260 ? 'Unlimited' : `${v} fps`),
+          'Caps the frame rate to save power (Unlimited = your screen’s refresh rate)',
+        );
+        slider(
+          'Render Scale',
+          20,
+          100,
+          5,
+          () => (s.renderScale === 0 ? 20 : s.renderScale),
+          (v) => (s.renderScale = v < 25 ? 0 : v),
+          (v) => (v < 25 ? 'Auto' : `${v}%`),
+          'Auto lowers the resolution only when frames get slow. Lower = smoother on weak computers',
+        );
+        cycle<'all' | 'decreased' | 'minimal'>(
+          'Particles',
+          [
+            ['all', 'All'],
+            ['decreased', 'Decreased'],
+            ['minimal', 'Minimal'],
+          ],
+          () => s.particles,
+          (v) => (s.particles = v),
+        );
+        cycle<'auto' | 'on' | 'off'>(
+          'Smooth Edges',
+          [
+            ['auto', 'Auto'],
+            ['on', 'ON'],
+            ['off', 'OFF'],
+          ],
+          () => s.antialias,
+          (v) => (s.antialias = v),
+          'Anti-aliasing (MSAA). Auto turns it off on high-density screens, where it costs a lot. Applies after a restart',
+        );
+        toggle('Entity Shadows', () => s.entityShadows, (v) => (s.entityShadows = v));
+        toggle('Clouds', () => s.clouds, (v) => (s.clouds = v));
+        toggle('Fog', () => s.fog, (v) => (s.fog = v));
+        toggle('Menu Background', () => s.menuBackground, (v) => (s.menuBackground = v), 'The duel playing behind the title screen (off saves power)');
+        if (!window.pvpNative) toggle('Fullscreen (blocks Ctrl+W)', () => s.fullscreenLock, (v) => (s.fullscreenLock = v));
+        section('Hand');
+        toggle('Show Hand', () => s.showHand, (v) => (s.showHand = v));
+        slider('Hand Size', 0.5, 1.5, 0.05, () => s.handScale, (v) => (s.handScale = v), pct);
+        slider('Hand X', -0.5, 0.5, 0.01, () => s.handX, (v) => (s.handX = v), (v) => v.toFixed(2), 'Moves both hands apart (+) or together (−)');
+        slider('Hand Y', -0.5, 0.5, 0.01, () => s.handY, (v) => (s.handY = v), (v) => v.toFixed(2));
+        slider('Hand Z', -0.5, 0.5, 0.01, () => s.handZ, (v) => (s.handZ = v), (v) => v.toFixed(2), 'Toward the screen (+) or away (−)');
+        const reset = this.button('Reset Hand', () => {
+          s.handX = s.handY = s.handZ = 0;
+          s.handScale = 1;
+          s.handFov = DEFAULT_SETTINGS.handFov;
+          changed();
+          this.renderSettings();
+        });
+        grid.append(reset);
+        break;
+      }
+      case 'controls': {
+        slider('Sensitivity', 0, 1, 0.005, () => s.sensitivity, (v) => (s.sensitivity = v), (v) => (v === 0 ? '*yawn*' : v === 1 ? 'HYPERSPEED!!!' : `${Math.round(v * 200)}%`));
+        slider(
+          'Vertical Sensitivity',
+          -0.005,
+          1,
+          0.005,
+          () => s.sensitivityY,
+          (v) => (s.sensitivityY = v < 0 ? -1 : v),
+          (v) => (v < 0 ? 'Same' : `${Math.round(v * 200)}%`),
+          'Up/down mouse speed on its own (slide left for "Same")',
+        );
+        toggle('Invert Mouse', () => s.invertY, (v) => (s.invertY = v));
+        toggle('Raw Mouse Input', () => s.rawInput, (v) => (s.rawInput = v));
+        toggle('Toggle Sprint', () => s.toggleSprint, (v) => (s.toggleSprint = v));
+        toggle('Toggle Sneak', () => s.toggleSneak, (v) => (s.toggleSneak = v));
+        toggle('Double-tap W Sprint', () => s.doubleTapSprint, (v) => (s.doubleTapSprint = v));
+        toggle('Invert Hotbar Scroll', () => s.invertScroll, (v) => (s.invertScroll = v));
+        break;
+      }
+      case 'keys': {
+        body.replaceChildren();
+        const bad = conflicts(s.keys);
+        const list = h('div', { class: 'keybinds' });
+        for (const g of ACTION_GROUPS) {
+          list.append(h('div', { class: 'settings-section' }, g.title));
+          for (const a of g.actions) {
+            const btn = h('button', { class: `mc-btn key-btn${bad.has(a) ? ' conflict' : ''}` }, keyName(s.keys[a]));
+            btn.addEventListener('click', () => {
+              this.cb.onUiSound();
+              this.renderSettings();
+              const again = this.settingsBody.querySelector<HTMLButtonElement>(`[data-action="${a}"]`);
+              if (!again) return;
+              again.textContent = `> ${keyName(s.keys[a])} <`;
+              again.classList.add('listening');
+              this.binding = { action: a, btn: again };
+            });
+            btn.dataset.action = a;
+            const reset = h('button', { class: 'mc-btn key-reset' }, 'Reset');
+            (reset as HTMLButtonElement).disabled = s.keys[a] === DEFAULT_KEYS[a];
+            reset.addEventListener('click', () => {
+              this.cb.onUiSound();
+              s.keys[a] = DEFAULT_KEYS[a];
+              changed();
+              this.renderSettings();
+            });
+            list.append(h('div', { class: 'key-row' }, h('span', { class: 'key-label' }, ACTION_LABELS[a]), btn, reset));
+          }
+        }
+        body.append(list);
+        const all = this.button('Reset Keys', () => {
+          s.keys = { ...DEFAULT_KEYS };
+          changed();
+          this.renderSettings();
+        });
+        body.append(h('div', { class: 'keybind-foot' }, all, h('span', { class: 'mk-note' }, 'Click a key, then press the new key or mouse button. Esc = not bound. Red = used twice.')));
+        break;
+      }
+      case 'sound': {
+        slider('Master Volume', 0, 1, 0.05, () => s.volume, (v) => (s.volume = v), vol);
+        slider('Players', 0, 1, 0.05, () => s.volumePlayers, (v) => (s.volumePlayers = v), vol, 'Hits, hurt, shields, bows, explosions');
+        slider('Footsteps', 0, 1, 0.05, () => s.volumeSteps, (v) => (s.volumeSteps = v), vol);
+        slider('Blocks & World', 0, 1, 0.05, () => s.volumeBlocks, (v) => (s.volumeBlocks = v), vol, 'Blocks, buckets, eating, potions, pickups, rain and thunder');
+        slider('Menus & Countdown', 0, 1, 0.05, () => s.volumeUi, (v) => (s.volumeUi = v), vol);
+        break;
+      }
+      case 'hud': {
+        toggle('Practice Panel', () => s.showPracticePanel, (v) => (s.showPracticePanel = v), 'The box with reach, combo, CPS and the next-hit coach');
+        toggle('Reach Display', () => s.showReach, (v) => (s.showReach = v));
+        toggle('Combo Counter', () => s.showCombo, (v) => (s.showCombo = v));
+        toggle('CPS Counter', () => s.showCps, (v) => (s.showCps = v));
+        toggle('Next-hit Coach', () => s.showNextHit, (v) => (s.showNextHit = v));
+        toggle('Hit Feedback', () => s.hitFeedback, (v) => (s.hitFeedback = v));
+        toggle('Opponent Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v));
+        toggle('Opponent Nametag', () => s.showNametag, (v) => (s.showNametag = v));
+        toggle('Effect List', () => s.showEffects, (v) => (s.showEffects = v));
+        toggle(/Mac|iP(hone|ad)/.test(navigator.platform) ? 'Hitboxes (⌘M)' : 'Hitboxes (Ctrl+M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
+        break;
+      }
+      case 'chat': {
+        cycle<'shown' | 'commands' | 'hidden'>(
+          'Chat',
+          [
+            ['shown', 'Shown'],
+            ['commands', 'Commands Only'],
+            ['hidden', 'Hidden'],
+          ],
+          () => s.chatVisibility,
+          (v) => (s.chatVisibility = v),
+        );
+        slider('Text Opacity', 0.1, 1, 0.01, () => s.chatOpacity, (v) => (s.chatOpacity = v), pct);
+        slider('Background Opacity', 0, 1, 0.01, () => s.chatBackground, (v) => (s.chatBackground = v), pct);
+        slider('Chat Text Size', 0.5, 1.5, 0.05, () => s.chatScale, (v) => (s.chatScale = v), pct);
+        slider('Chat Width', 40, 320, 1, () => s.chatWidth, (v) => (s.chatWidth = v), (v) => `${v}px`);
+        break;
+      }
+    }
   }
 
   /** Repaints the settings toggles after a setting changed from outside the menu (⌘M). */
@@ -312,24 +595,8 @@ export class Menus {
     const root = h('div', { class: 'screen controls' });
     const panel = h('div', { class: 'menu-panel wide' });
     panel.append(h('div', { class: 'screen-title' }, 'Controls & Mechanics'));
-    const rows: [string, string][] = [
-      ['W A S D', 'Move'],
-      ['Space', 'Jump (hold to bunny-hop)'],
-      ['Ctrl', 'Sprint (toggle by default) · or double-tap W'],
-      ['Shift', 'Sneak'],
-      ['Left Click', 'Attack — full damage every 0.6 s, clicking early resets the cooldown. Hold on a block to mine it'],
-      ['Right Click (hold)', 'Use: eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion or XP bottle, place a block, pour or fill a bucket. Main hand first, then off hand'],
-      ['1 – 9 / Scroll', 'Hotbar (switching items resets the attack cooldown on the next tick)'],
-      ['F', 'Swap main hand and off hand'],
-      ['E', 'Inventory — drag or click items, shift-click to quick-move, 1–9 / F over a slot to swap'],
-      ['F5 or V', 'Toggle third person'],
-      ['⌘M (or F3 + B)', 'Toggle combat hitboxes — white box, red eye line, blue 3-block reach ray'],
-      ['Esc', 'Pause'],
-      ['R', 'Rematch after a duel'],
-    ];
-    const table = h('div', { class: 'controls-table' });
-    for (const [k, v] of rows) table.append(h('kbd', {}, k), h('span', {}, v));
-    panel.append(table);
+    this.controlsTable = h('div', { class: 'controls-table' });
+    panel.append(this.controlsTable);
     const tips = h(
       'ul',
       { class: 'tips' },
@@ -371,6 +638,31 @@ export class Menus {
     return root;
   }
 
+
+  /** The controls table, spelled with the current key binds. */
+  private refreshControls() {
+    const k = this.settings.keys;
+    const n = (a: Action) => keyName(k[a]);
+    const rows: [string, string][] = [
+      [`${n('forward')} ${n('left')} ${n('back')} ${n('right')}`, 'Move'],
+      [n('jump'), 'Jump (hold to bunny-hop) · double-tap to fly in creative'],
+      [n('sprint'), `Sprint (${this.settings.toggleSprint ? 'toggle' : 'hold'}) · or double-tap ${n('forward')}`],
+      [n('sneak'), `Sneak${this.settings.toggleSneak ? ' (toggle)' : ''}`],
+      [n('attack'), 'Attack — full damage every 0.6 s, clicking early resets the cooldown. Hold on a block to mine it'],
+      [`${n('use')} (hold)`, 'Use: eat, raise the shield, draw the bow, load / fire the crossbow, throw a splash potion or XP bottle, place a block, pour or fill a bucket. Main hand first, then off hand'],
+      [`${n('hotbar1')} – ${n('hotbar9')} / Scroll`, 'Hotbar (switching items resets the attack cooldown on the next tick)'],
+      [n('swapHands'), 'Swap main hand and off hand'],
+      [n('inventory'), `Inventory — drag or click items, shift-click to quick-move, hotbar keys / ${n('swapHands')} over a slot to swap`],
+      [n('chat'), 'Chat — and commands like /tick rate 10, /reach 4, /effect give @s speed, /gamemode creative, /time set night. /help lists them all'],
+      [n('command'), 'Open chat with a / already typed'],
+      [`${n('perspective')} or V`, 'Toggle third person'],
+      ['⌘M (or F3 + B)', 'Toggle combat hitboxes — white box, red eye line, blue reach ray'],
+      ['Esc', 'Pause'],
+      [n('rematch'), 'Rematch after a duel'],
+    ];
+    this.controlsTable.replaceChildren();
+    for (const [key, v] of rows) this.controlsTable.append(h('kbd', {}, key), h('span', {}, v));
+  }
 
   // ------------------------------------------------------------------ multiplayer
 
@@ -506,6 +798,7 @@ export class Menus {
         : []),
       ['Avg reach', reach(r.player), reach(r.bot)],
     ];
+    if (r.unrecorded) panel.append(h('div', { class: 'result-note' }, 'Commands changed this duel, so it wasn’t recorded.'));
     const table = h('div', { class: 'stats-table' });
     table.append(h('span', {}, ''), h('b', {}, 'You'), h('b', {}, 'Bot'));
     for (const [a, b, c] of rows) table.append(h('span', {}, a), h('span', {}, b), h('span', {}, c));

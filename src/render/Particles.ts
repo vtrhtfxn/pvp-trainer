@@ -116,12 +116,20 @@ class ParticleLayer {
 
 export class Particles {
   readonly group = new THREE.Group();
+  /** Options → Particles: All 1, Decreased 0.5, Minimal 0.2. */
+  density = 1;
+  /** The Particles+ mod: extra crit and sharpness sparks. */
+  critBoost = 1;
   private stars = new ParticleLayer(600, 'star');
   private squares = new ParticleLayer(400, 'square');
   private smoke = new ParticleLayer(200, 'smoke');
 
   constructor() {
     this.group.add(this.stars.points, this.squares.points, this.smoke.points);
+  }
+
+  private amount(n: number): number {
+    return Math.max(1, Math.round(n * this.density));
   }
 
   setViewport(heightPx: number, fovDeg: number) {
@@ -133,7 +141,7 @@ export class Particles {
 
   /** Minecraft's tracking emitter: particles burst out of the target's hitbox. */
   crit(x: number, y: number, z: number, magic: boolean, count = 26) {
-    for (let i = 0; i < count; i++) {
+    for (let i = 0, n = Math.round(count * this.density * this.critBoost); i < n; i++) {
       let dx = 0;
       let dy = 0;
       let dz = 0;
@@ -171,7 +179,7 @@ export class Particles {
       [1, 0.95, 0.55],
       [0.8, 0.55, 0.1],
     ];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0, n = this.amount(5); i < n; i++) {
       const c = colors[(Math.random() * colors.length) | 0];
       const life = 0.45 + Math.random() * 0.4;
       const side = (Math.random() - 0.5) * 0.3;
@@ -196,7 +204,7 @@ export class Particles {
   }
 
   poof(x: number, y: number, z: number) {
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0, n = this.amount(22); i < n; i++) {
       const life = 0.6 + Math.random() * 0.5;
       const s = 0.6 + Math.random() * 0.35;
       this.smoke.spawn({
@@ -224,7 +232,7 @@ export class Particles {
     const r = ((color >> 16) & 255) / 255;
     const g = ((color >> 8) & 255) / 255;
     const b = (color & 255) / 255;
-    for (let i = 0; i < 70; i++) {
+    for (let i = 0, n = this.amount(70); i < n; i++) {
       const ang = Math.random() * Math.PI * 2;
       const sp = 0.05 + Math.random() * 0.15;
       const shade = 0.75 + Math.random() * 0.25;
@@ -254,7 +262,7 @@ export class Particles {
     const r = ((color >> 16) & 255) / 255;
     const g = ((color >> 8) & 255) / 255;
     const b = (color & 255) / 255;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0, n = this.amount(30); i < n; i++) {
       const life = 0.4 + Math.random() * 0.5;
       const shade = 0.7 + Math.random() * 0.3;
       const px = x + 0.1 + Math.random() * 0.8;
@@ -282,7 +290,7 @@ export class Particles {
 
   /** Ender pearl landing / teleport: a burst of purple portal specks. */
   portal(x: number, y: number, z: number) {
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0, n = this.amount(32); i < n; i++) {
       const life = 0.4 + Math.random() * 0.6;
       const shade = 0.6 + Math.random() * 0.4;
       this.squares.spawn({
@@ -307,7 +315,7 @@ export class Particles {
 
   /** Totem of Undying: a fountain of green and yellow sparks around the player. */
   totem(x: number, y: number, z: number) {
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0, n = this.amount(90); i < n; i++) {
       const ang = Math.random() * Math.PI * 2;
       const sp = 0.08 + Math.random() * 0.2;
       const yellow = Math.random() < 0.4;

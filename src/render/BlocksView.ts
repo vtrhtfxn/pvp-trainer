@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { litMaterial } from './light';
 import { B, CHUNK, isFluid, isSolid, type Blocks } from '../game/Blocks';
 import type { Fighter } from '../game/Fighter';
 import { mcBox, packTexture, toGeometry, type Vec3 } from './itemMesh';
@@ -145,8 +146,8 @@ export class BlocksView {
   readonly outline: THREE.LineSegments;
 
   constructor() {
-    this.webMat = new THREE.MeshBasicMaterial({ map: packTexture('block/cobweb'), alphaTest: 0.1, side: THREE.DoubleSide, vertexColors: true });
-    this.waterMat = new THREE.MeshBasicMaterial({ map: waterTexture(), transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, vertexColors: true });
+    this.webMat = litMaterial(new THREE.MeshBasicMaterial({ map: packTexture('block/cobweb'), alphaTest: 0.1, side: THREE.DoubleSide, vertexColors: true }));
+    this.waterMat = litMaterial(new THREE.MeshBasicMaterial({ map: waterTexture(), transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, vertexColors: true }));
     this.lavaTex = stripTexture('block/lava_still', LAVA_FRAMES);
     this.lavaMat = new THREE.MeshBasicMaterial({ map: this.lavaTex, side: THREE.DoubleSide });
     this.fireTex = stripTexture('block/fire_0', FIRE_FRAMES);
@@ -167,6 +168,7 @@ export class BlocksView {
     let m = this.solidMats.get(name);
     if (!m) {
       m = new THREE.MeshBasicMaterial({ map: blockTexture(name), vertexColors: true });
+      if (name !== 'glowstone') litMaterial(m);
       this.solidMats.set(name, m);
     }
     return m;

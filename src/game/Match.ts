@@ -37,6 +37,11 @@ export class Match {
   attackHeld = false;
   /** Last outcome of a player click (for HUD feedback). */
   lastPlayerAttack: AttackOutcome | null = null;
+  /**
+   * /tick freeze: everything but you stands still (vanilla keeps players moving while the game
+   * is frozen). Your hits still land and their knockback waits until the world runs again.
+   */
+  frozen = false;
 
   constructor(
     readonly kit: KitDef,
@@ -112,15 +117,20 @@ export class Match {
     const b = this.bot;
     p.snapshot();
     b.snapshot();
+    if (this.frozen) {
+      b.prevPos.copy(b.pos);
+      if (this.phase === 'fight') this.handlePlayerActions();
+      else this.clearQueues();
+      p.tick();
+      return;
+    }
 
     if (this.phase === 'fight') {
       this.fightTicks++;
       this.handlePlayerActions();
       this.brain.tick();
     } else {
-      this.queuedClicks = 0;
-      this.queuedUse = 0;
-      this.queuedSwap = 0;
+      this.clearQueues();
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
       if (this.phase === 'countdown') {
         b.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
@@ -144,6 +154,12 @@ export class Match {
     }
   }
 
+  private clearQueues() {
+    this.queuedClicks = 0;
+    this.queuedUse = 0;
+    this.queuedSwap = 0;
+  }
+
   /**
    * Mirrors Minecraft.handleKeybinds for the local player: hotbar keys, then swap-hands, then
    * either the item in use or attacks and use clicks. The fixed order is what makes attribute
@@ -151,6 +167,13 @@ export class Match {
    */
   private handlePlayerActions() {
     const p = this.player;
+    if (p.gameMode === 'spectator') {
+      // Spectators can look and fly but not touch anything (hotbar keys still switch).
+      if (this.queuedSlot !== null) p.selectSlot(this.queuedSlot);
+      this.queuedSlot = null;
+      this.clearQueues();
+      return;
+    }
     if (this.queuedSlot !== null) {
       p.selectSlot(this.queuedSlot);
       this.queuedSlot = null;

@@ -10,11 +10,17 @@ export interface Listener {
 
 export type HitKind = 'weak' | 'strong' | 'crit' | 'knockback';
 
+/** Options → Sound sliders: players (hits, hurt, bows, blasts), footsteps, blocks & items, UI. */
+export type SoundCategory = 'players' | 'steps' | 'blocks' | 'ui';
+
 export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   volume = 0.8;
+  /** Silences new sounds (during /tick sprint, when thousands of ticks run per second). */
+  muted = false;
+  readonly categories: Record<SoundCategory, number> = { players: 1, steps: 1, blocks: 1, ui: 1 };
   listener: Listener = { x: 0, y: 0, z: 0, yaw: 0 };
 
   /** Must be called from a user gesture. */
@@ -32,11 +38,12 @@ export class Sound {
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
-  private out(pos?: { x: number; y: number; z: number }, gain = 1): AudioNode | null {
-    if (!this.ctx || !this.master) return null;
+  private out(pos?: { x: number; y: number; z: number }, gain = 1, cat: SoundCategory = 'players'): AudioNode | null {
+    if (!this.ctx || !this.master || this.muted) return null;
     this.master.gain.value = this.volume;
+    let vol = gain * this.categories[cat];
+    if (vol <= 0.001) return null;
     const g = this.ctx.createGain();
-    let vol = gain;
     let pan = 0;
     if (pos) {
       const dx = pos.x - this.listener.x;
@@ -141,7 +148,7 @@ export class Sound {
   }
 
   eat(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.7);
+    const d = this.out(pos, 0.7, 'blocks');
     if (!d) return;
     const t = this.ctx!.currentTime;
     for (let i = 0; i < 3; i++) {
@@ -151,7 +158,7 @@ export class Sound {
   }
 
   burp(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.7);
+    const d = this.out(pos, 0.7, 'blocks');
     if (!d) return;
     const ctx = this.ctx!;
     const t = ctx.currentTime;
@@ -179,12 +186,12 @@ export class Sound {
   }
 
   step(pos: { x: number; y: number; z: number }, self: boolean) {
-    const d = this.out(self ? undefined : pos, self ? 0.18 : 0.25);
+    const d = this.out(self ? undefined : pos, self ? 0.18 : 0.25, 'steps');
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.07, 'lowpass', 700, 250, 0.7, 0.5);
   }
 
   land(pos: { x: number; y: number; z: number }, self: boolean) {
-    const d = this.out(self ? undefined : pos, self ? 0.25 : 0.3);
+    const d = this.out(self ? undefined : pos, self ? 0.25 : 0.3, 'steps');
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.09, 'lowpass', 500, 150, 0.7, 0.6);
   }
 
@@ -240,24 +247,24 @@ export class Sound {
 
   /** The little "ding" when you hit someone with an arrow (vanilla's arrow hit-player sound). */
   arrowDing() {
-    const d = this.out(undefined, 0.45);
+    const d = this.out(undefined, 0.45, 'ui');
     if (d) this.tone(d, this.ctx!.currentTime, 0.16, 'sine', 1250, 1240, 0.3);
   }
 
   pickup(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.4);
+    const d = this.out(pos, 0.4, 'blocks');
     if (d) this.tone(d, this.ctx!.currentTime, 0.07, 'sine', 1400 + Math.random() * 400, 1800, 0.2);
   }
 
   /** Throwing a splash potion or XP bottle (entity.splash_potion.throw). */
   throwItem(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.5);
+    const d = this.out(pos, 0.5, 'blocks');
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.14, 'bandpass', 900, 2400, 1.2, 0.35);
   }
 
   /** Glass breaking (entity.splash_potion.break). */
   glassBreak(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.8);
+    const d = this.out(pos, 0.8, 'blocks');
     if (!d) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.18, 'highpass', 5000, 2500, 0.8, 0.7);
@@ -276,7 +283,7 @@ export class Sound {
 
   /** entity.experience_orb.pickup: a high random chime. */
   xp(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.25);
+    const d = this.out(pos, 0.25, 'blocks');
     if (d) this.tone(d, this.ctx!.currentTime, 0.09, 'sine', 1600 + Math.random() * 1200, 2400, 0.18);
   }
 
@@ -297,7 +304,7 @@ export class Sound {
 
   /** Placing or breaking a block: wood thunks, stone clacks, webs rustle. */
   block(pos: { x: number; y: number; z: number }, kind: 'wood' | 'stone' | 'web', broke: boolean) {
-    const d = this.out(pos, broke ? 0.8 : 0.6);
+    const d = this.out(pos, broke ? 0.8 : 0.6, 'blocks');
     if (!d) return;
     const t = this.ctx!.currentTime;
     if (kind === 'web') this.noiseBurst(d, t, 0.12, 'highpass', 4000, 2500, 0.7, 0.35);
@@ -311,12 +318,12 @@ export class Sound {
 
   /** A mining tick (the quiet hit sound while digging). */
   dig(pos: { x: number; y: number; z: number }, kind: 'wood' | 'stone' | 'web') {
-    const d = this.out(pos, 0.25);
+    const d = this.out(pos, 0.25, 'blocks');
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.05, kind === 'wood' ? 'lowpass' : 'bandpass', kind === 'wood' ? 700 : 1600, 400, 1, 0.5);
   }
 
   bucket(pos: { x: number; y: number; z: number }, lava: boolean, fill: boolean) {
-    const d = this.out(pos, 0.6);
+    const d = this.out(pos, 0.6, 'blocks');
     if (!d) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, lava ? 0.4 : 0.3, 'lowpass', fill ? 600 : 1500, fill ? 1500 : 400, 1, lava ? 0.5 : 0.7);
@@ -325,7 +332,7 @@ export class Sound {
 
   /** Lava meeting water (block.lava.extinguish). */
   fizz(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.7);
+    const d = this.out(pos, 0.7, 'blocks');
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.45, 'highpass', 5000, 2000, 0.6, 0.6);
   }
 
@@ -350,7 +357,7 @@ export class Sound {
 
   /** item.armor.equip_netherite / equip_elytra. */
   equipArmor(pos: { x: number; y: number; z: number }, elytra: boolean) {
-    const d = this.out(pos, 0.5);
+    const d = this.out(pos, 0.5, 'blocks');
     if (!d) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, elytra ? 0.2 : 0.12, 'bandpass', elytra ? 900 : 500, elytra ? 2400 : 300, 1, 0.4);
@@ -367,7 +374,7 @@ export class Sound {
 
   /** Placing an end crystal: a glassy chime. */
   crystalPlace(pos: { x: number; y: number; z: number }) {
-    const d = this.out(pos, 0.5);
+    const d = this.out(pos, 0.5, 'blocks');
     if (!d) return;
     const t = this.ctx!.currentTime;
     this.tone(d, t, 0.25, 'sine', 1500, 1900, 0.18);
@@ -376,7 +383,7 @@ export class Sound {
 
   /** block.respawn_anchor.charge: a rising hum. */
   anchorCharge(pos: { x: number; y: number; z: number }, charge: number) {
-    const d = this.out(pos, 0.6);
+    const d = this.out(pos, 0.6, 'blocks');
     if (!d) return;
     const t = this.ctx!.currentTime;
     this.tone(d, t, 0.35, 'sawtooth', 110 + charge * 40, 220 + charge * 60, 0.15);
@@ -392,18 +399,52 @@ export class Sound {
     if (land) this.tone(d, t, 0.4, 'sine', 180, 520, 0.2);
   }
 
+  /** entity.lightning_bolt.thunder: a long, low rumble. */
+  thunder() {
+    const d = this.out(undefined, 0.9, 'blocks');
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.25, 'highpass', 2500, 900, 0.7, 0.5);
+    this.noiseBurst(d, t + 0.05, 2.6, 'lowpass', 260, 60, 0.8, 1);
+    this.tone(d, t, 1.8, 'sine', 55, 30, 0.5);
+  }
+
+  private rainGain: GainNode | null = null;
+
+  /** A looping hiss while it rains (0 = off). */
+  setRain(strength: number) {
+    if (!this.ctx || !this.master) return;
+    const v = strength * 0.12 * this.categories.blocks;
+    if (!this.rainGain) {
+      if (v <= 0.001) return;
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = 'bandpass';
+      filt.frequency.value = 2200;
+      filt.Q.value = 0.4;
+      this.rainGain = this.ctx.createGain();
+      this.rainGain.gain.value = 0;
+      src.connect(filt).connect(this.rainGain).connect(this.master);
+      src.start();
+    }
+    const g = this.rainGain.gain;
+    if (Math.abs(g.value - v) > 0.002) g.setTargetAtTime(v, this.ctx.currentTime, 0.3);
+  }
+
   equip() {
-    const d = this.out(undefined, 0.3);
+    const d = this.out(undefined, 0.3, 'blocks');
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.08, 'bandpass', 1200, 700, 1, 0.3);
   }
 
   ui() {
-    const d = this.out(undefined, 0.35);
+    const d = this.out(undefined, 0.35, 'ui');
     if (d) this.tone(d, this.ctx!.currentTime, 0.05, 'square', 1250, 900, 0.15);
   }
 
   countdown(final: boolean) {
-    const d = this.out(undefined, 0.45);
+    const d = this.out(undefined, 0.45, 'ui');
     if (!d) return;
     const t = this.ctx!.currentTime;
     if (final) {
@@ -413,7 +454,7 @@ export class Sound {
   }
 
   jingle(win: boolean) {
-    const d = this.out(undefined, 0.45);
+    const d = this.out(undefined, 0.45, 'ui');
     if (!d) return;
     const t = this.ctx!.currentTime;
     const notes = win ? [523, 659, 784, 1047] : [440, 392, 330, 262];

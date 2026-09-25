@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { litMaterial } from './light';
 import { Rng } from '../core/rng';
 import { blockTexture } from './textures';
 
@@ -171,6 +172,8 @@ export function meshVoxels(voxels: Voxels, seed = 3): THREE.Group {
       alphaTest: leaves ? 0.5 : 0,
       side: leaves ? THREE.DoubleSide : THREE.FrontSide,
     });
+    // Glowstone keeps glowing at night.
+    if (tex !== 'glowstone') litMaterial(mat);
     const mesh = new THREE.Mesh(g, mat);
     mesh.name = tex;
     mesh.matrixAutoUpdate = false;

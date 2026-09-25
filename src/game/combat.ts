@@ -42,8 +42,8 @@ const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 const rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 
 /** Distance along the attacker's crosshair ray to the target hitbox, or -1 if out of reach. */
-export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = C.ATTACK_REACH): number {
-  if (target.dead) return -1;
+export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = attacker.entityReach()): number {
+  if (target.dead || target.gameMode === 'spectator') return -1;
   attacker.eyePos(tmpEye);
   attacker.look(tmpDir);
   const t = rayAABB(tmpEye, tmpDir, target.aabbInto(tmpBox));
@@ -83,7 +83,11 @@ const NO_DAMAGE: HurtResult = { damaged: false, fullHit: false, dealt: 0 };
  * but Protection still reduces it. Lethal damage pops a totem if one is held.
  */
 /** Damage types with their own enchantment protection (Blast Protection, Feather Falling). */
-export type DamageKind = 'generic' | 'explosion' | 'fall';
+/**
+ * Where damage came from. 'magic' (poison, instant damage) and 'wither' ignore armor; 'kill' is
+ * /kill and /damage … generic_kill, which nothing stops.
+ */
+export type DamageKind = 'generic' | 'explosion' | 'fall' | 'magic' | 'wither' | 'kill';
 
 export function hurt(
   target: Fighter,
@@ -96,7 +100,11 @@ export function hurt(
   breach = 0,
 ): HurtResult {
   if (target.dead || amount <= 0) return NO_DAMAGE;
-  if (fire && target.effects.has('fire_resistance')) return NO_DAMAGE;
+  const rules = target.world.rules;
+  // Creative and spectator players can't be hurt (only /kill gets through).
+  if (target.invulnerable() && kind !== 'kill') return NO_DAMAGE;
+  if (fire && (target.effects.has('fire_resistance') || !rules.fireDamage)) return NO_DAMAGE;
+  if (kind === 'fall' && !rules.fallDamage) return NO_DAMAGE;
   amount *= target.world.damageMultiplier;
   let fullHit: boolean;
   let applied: number;
@@ -118,8 +126,12 @@ export function hurt(
     target.damageArmor(applied);
     dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness, breach);
   }
+  // LivingEntity.getDamageAfterMagicAbsorb: Resistance takes 20% per level (V and up: all of it),
+  // then Protection enchantments.
+  const res = target.effects.get('resistance');
+  if (res && kind !== 'kill') dmg = Math.max(0, dmg * (1 - 0.2 * (res.amplifier + 1)));
   const a = target.armor;
-  dmg = damageAfterProtection(dmg, a.protectionEpf + (kind === 'explosion' ? a.blastEpf : kind === 'fall' ? a.fallEpf : 0));
+  if (kind !== 'kill') dmg = damageAfterProtection(dmg, a.protectionEpf + (kind === 'explosion' ? a.blastEpf : kind === 'fall' ? a.fallEpf : 0));
   const absorbed = Math.min(target.absorption, dmg);
   target.absorption -= absorbed;
   const toHealth = dmg - absorbed;
@@ -137,7 +149,8 @@ export function hurt(
     target.hurtDir = (Math.atan2(dz, dx) * 180) / Math.PI - mcYawDeg;
   }
   target.events.push({ type: 'hurt', attacker, damage: dmg, crit, fire });
-  if (target.health <= 1e-4 && !target.tryTotem()) target.die();
+  target.lastDamage = { kind, attacker, fire };
+  if (target.health <= 1e-4 && (kind === 'kill' || !target.tryTotem())) target.die();
   return { damaged: true, fullHit, dealt: dmg };
 }
 
@@ -162,7 +175,7 @@ export interface AttackOutcome {
  */
 export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome {
   const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0, blocked: false, disabled: false, swap: false };
-  if (attacker.dead || attacker.usingItem) return miss;
+  if (attacker.dead || attacker.usingItem || attacker.gameMode === 'spectator') return miss;
   attacker.stats.swings++;
   const reach = rayDistanceToTarget(attacker, target);
   if (reach < 0) {
@@ -186,8 +199,8 @@ export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome
   }
 
   const strong = scale > C.STRONG_ATTACK_SCALE;
-  // The Knockback enchantment adds a level on top of the sprint's.
-  let kbLevel = weapon?.ench?.knockback ?? 0;
+  // The Knockback enchantment (and the attack_knockback attribute) add levels on top of the sprint's.
+  let kbLevel = (weapon?.ench?.knockback ?? 0) + attacker.attrs.attack_knockback;
   let sprint = false;
   if (attacker.serverSprinting && strong) {
     kbLevel++;
@@ -365,7 +378,7 @@ const boxB: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 
 /** Soft entity push when two hitboxes overlap (Entity.push). */
 export function pushApart(a: Fighter, b: Fighter) {
-  if (a.dead || b.dead) return;
+  if (a.dead || b.dead || a.noClip() || b.noClip()) return;
   const A = a.aabbInto(boxA);
   const B = b.aabbInto(boxB);
   if (A.maxX <= B.minX || A.minX >= B.maxX || A.maxY <= B.minY || A.minY >= B.maxY || A.maxZ <= B.minZ || A.minZ >= B.maxZ) {

@@ -142,6 +142,8 @@ export class BotBrain {
   private ranged: RangedPlan = 'none';
   private rangedTimer = 0;
   private rangedCooldown = 0;
+  /** Ticks in a row the ranged plan has been looking at a raised shield. */
+  private rangedBlocked = 0;
 
   // ---- NethPot
   /** Spawned with splash potions: runs the pot/totem/mending game. */
@@ -257,6 +259,7 @@ export class BotBrain {
     this.ranged = 'none';
     this.rangedTimer = 0;
     this.rangedCooldown = 0;
+    this.rangedBlocked = 0;
     const b = this.bot;
     this.potKit = b.countItem('splash_potion') > 0;
     this.weapon = b.countItem('netherite_sword') > 0 ? 'netherite_sword' : 'diamond_sword';
@@ -304,6 +307,14 @@ export class BotBrain {
     if (b.dead || T.dead) {
       b.input = input;
       if (b.usingItem) b.stopUsingItem();
+      return;
+    }
+    // Like mobs, the bot leaves creative and spectator players alone: it just watches them.
+    if (T.invulnerable() || b.gameMode === 'spectator') {
+      if (b.usingItem) b.stopUsingItem();
+      this.potLabel = 'Idle';
+      this.aimAt(T.pos.x, T.pos.y + T.eyeHeight(), T.pos.z, 0.3);
+      b.input = input;
       return;
     }
     const per = this.perceive();
@@ -520,8 +531,8 @@ export class BotBrain {
     input.strafe = dist < 5 ? strafe : 0;
 
     // Spacing: while the sword recharges, stay just outside the opponent's reach.
-    if (p < 0.7 && dist < P.spacing - 0.5 && !targetEating && rng.chance(P.spacingDiscipline)) {
-      input.forward = dist < P.spacing - 1.2 ? -1 : 0;
+    if (p < 0.7 && dist < P.spacing + this.reachBonus - 0.5 && !targetEating && rng.chance(P.spacingDiscipline)) {
+      input.forward = dist < P.spacing + this.reachBonus - 1.2 ? -1 : 0;
     }
 
     // W-tap / S-tap after a sprint hit so the next hit gets sprint knockback again.
@@ -579,7 +590,7 @@ export class BotBrain {
 
     // ---- left click
     const reach = rayDistanceToTarget(b, T);
-    const canHit = reach >= 0 && reach <= P.maxReach;
+    const canHit = reach >= 0 && reach <= this.maxReach;
     const falling = !b.onGround && b.fallDistance > 0;
     let threshold = this.swingThreshold;
     if (P.halfSwing && (falling || b.serverSprinting)) threshold = Math.min(threshold, 0.92);
@@ -612,6 +623,14 @@ export class BotBrain {
   // ------------------------------------------------------------ Axe kit
 
   /** What the target looked like `ago` ticks ago (a raised shield is easy to spot). */
+  /** /attribute can change the bot's reach: its spacing and swing range move with it. */
+  private get reachBonus(): number {
+    return this.bot.entityReach() - C.ATTACK_REACH;
+  }
+  private get maxReach(): number {
+    return this.profile.maxReach + this.reachBonus;
+  }
+
   private seenLate(ago: number): Seen {
     const n = this.seen.length;
     return this.seen[Math.max(0, n - 1 - ago)];
@@ -641,7 +660,7 @@ export class BotBrain {
     const targetDown = this.targetShieldDownUntil > this.ticks;
     const facingUs = shieldFaces(T, b.pos.x, b.pos.z);
     const reach = rayDistanceToTarget(b, T);
-    const inReach = reach >= 0 && reach <= P.maxReach;
+    const inReach = reach >= 0 && reach <= this.maxReach;
 
     // ---- 1. Their shield is up and facing us: the axe disables it for 5 seconds.
     const wantsBreak = !P.passive && seen.shield && facingUs && !targetDown && b.slotOf(this.axe) >= 0;
@@ -657,8 +676,15 @@ export class BotBrain {
       this.engage(per, dist, false, input, false);
       input.forward = dist > 2.4 ? 1 : 0;
       input.sprint = dist > 3.5;
-      if (released || !inReach) return;
+      // No strafing on the way to an axe hit: circling them outruns a slow aim, and the swing
+      // never connects while they hold the shield up.
+      if (dist < this.maxReach + 2) input.strafe = 0;
+      if (released) return;
+      // Get the axe out on the way in, so its switch delay is spent walking, not standing.
+      const closing = inReach || dist < this.maxReach + 1.5;
+      if (!closing) return;
       if (A.swap && wantsBreak) {
+        if (!inReach) return;
         // Attribute swap: the axe goes in the hand and swings on the same tick, before the
         // equipment tick refreshes attributes — sword damage and cooldown, axe disable.
         this.equip(this.axe);
@@ -678,6 +704,7 @@ export class BotBrain {
         this.axeWait--;
         return;
       }
+      if (!inReach) return;
       // Still blocking: any axe hit disables. Shield dropped: wait for a strong axe hit instead of
       // throwing away the cooldown by switching straight back.
       if (wantsBreak || b.attackStrengthScale(0.5) >= 0.95) {
@@ -754,6 +781,8 @@ export class BotBrain {
     const b = this.bot;
     const A = this.profile.axe;
     if (A.ranged === 0 || this.profile.passive || this.rangedCooldown > 0 || b.shieldCooldown > 0) return false;
+    // Arrows can't get through a raised shield that faces us: walk in and axe it instead.
+    if (this.seenLate(A.shieldReact).shield && shieldFaces(this.target, b.pos.x, b.pos.z)) return false;
     const xb = b.slotOf('crossbow');
     const charged = xb >= 0 && !!b.inventory[xb]?.charged;
     if (charged && dist > 6) return true;
@@ -775,10 +804,17 @@ export class BotBrain {
       else if (b.slotOf('bow') >= 0 && b.hasAmmo()) this.ranged = 'drawBow';
       else return false;
       this.rangedTimer = 0;
+      this.rangedBlocked = 0;
     }
     this.rangedTimer++;
+    const T = this.target;
+    const blockedByShield = this.seenLate(A.shieldReact).shield && shieldFaces(T, b.pos.x, b.pos.z);
+    this.rangedBlocked = blockedByShield ? this.rangedBlocked + 1 : 0;
+    // Holding a shield up must not freeze us: after a short look (longer at low tiers), drop the
+    // plan and go break the shield with the axe. A loaded crossbow stays loaded for later.
+    const shieldPatience = 3 + A.shieldReact * 2;
     const abortAt = this.uhcKit && this.targetUp() ? 0 : this.ranged === 'fireCrossbow' ? 4 : 6.5;
-    if (dist < abortAt || this.rangedTimer > 90) {
+    if (dist < abortAt || this.rangedTimer > 90 || this.rangedBlocked > shieldPatience) {
       if (b.usingItem) b.stopUsingItem();
       this.ranged = 'none';
       this.rangedCooldown = 40;
@@ -788,8 +824,6 @@ export class BotBrain {
     input.strafe = this.strafeDir || 1;
     input.forward = dist < 12 ? -1 : 0;
 
-    const T = this.target;
-    const blockedByShield = this.seenLate(A.shieldReact).shield && shieldFaces(T, b.pos.x, b.pos.z);
     switch (this.ranged) {
       case 'loadCrossbow':
         this.equip('crossbow');
@@ -1597,7 +1631,7 @@ export class BotBrain {
     if (hd > 0.6) b.yaw = wrapAngle(yawKeep + clamp(wrapAngle(b.yaw - yawKeep), -0.25, 0.25));
     if (b.vel.y >= 0) return true;
     const reach = rayDistanceToTarget(b, T);
-    const inReach = reach >= 0 && reach <= this.profile.maxReach;
+    const inReach = reach >= 0 && reach <= this.maxReach;
     if (!inReach) return true;
     // Wait for a bit more fall (more damage) unless it is about to get away.
     const nextAbove = above + b.vel.y;
@@ -1735,7 +1769,7 @@ export class BotBrain {
       let bestD = Infinity;
       for (const [x, y, z] of this.sides(tx, ty, tz)) {
         const d = Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z);
-        if (d < bestD && d < C.BLOCK_REACH && this.anyFacePoint(x, y, z)) {
+        if (d < bestD && d < this.bot.blockReach() && this.anyFacePoint(x, y, z)) {
           bestD = d;
           best = [x, y, z];
         }
@@ -1840,7 +1874,7 @@ export class BotBrain {
       const p = this.facePoint(sx, sy, sz, nx, ny, nz)!;
       this.aimPoint(p[0], p[1], p[2]);
       if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === sx && hit.y === sy && hit.z === sz && hit.nx === nx && hit.ny === ny && hit.nz === nz && b.startUsingItem(true)) {
         plan.wait = K.clickGap;
         this.settle = 0;
@@ -1929,11 +1963,11 @@ export class BotBrain {
       const dy = py - eye.y;
       const dz = pz - eye.z;
       const len = Math.hypot(dx, dy, dz);
-      if (len > C.BLOCK_REACH - 0.05) continue;
+      if (len > this.bot.blockReach() - 0.05) continue;
       const hit = this.world.blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, len + 0.05, 'outline', uhcRay);
       if (!hit || hit.x !== sx || hit.y !== sy || hit.z !== sz || hit.nx !== nx || hit.ny !== ny || hit.nz !== nz) continue;
       const t = rayAABB(eye, new V3(dx / len, dy / len, dz / len), box);
-      if (t >= 0 && t <= C.ATTACK_REACH && t < hit.t) continue;
+      if (t >= 0 && t <= this.bot.entityReach() && t < hit.t) continue;
       return [px, py, pz];
     }
     return null;
@@ -2003,7 +2037,7 @@ export class BotBrain {
     for (const c of world.crystals) {
       if (c.removed || (c.owner !== b && !K.breakTheirs)) continue;
       const d = Math.hypot(c.x - eye.x, c.y + 1 - eye.y, c.z - eye.z);
-      if (d > C.ATTACK_REACH + 1) continue;
+      if (d > this.bot.entityReach() + 1) continue;
       const s = this.blastScore(c.x, c.y, c.z, CRYSTAL_POWER, per);
       consider(s, 1, 0, () => ({ kind: 'hit', crystal: c, timer: 0, wait: 0 }));
     }
@@ -2024,7 +2058,7 @@ export class BotBrain {
           const y = ty + dy;
           const z = tz + dz;
           if (!blocks.inside(x, y, z)) continue;
-          if (Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z) > C.BLOCK_REACH + 0.5) continue;
+          if (Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z) > this.bot.blockReach() + 0.5) continue;
           const id = blocks.get(x, y, z);
           const above = blocks.get(x, y + 1, z);
           // 2. A crystal on obsidian that is already there.
@@ -2165,7 +2199,7 @@ export class BotBrain {
       input.forward = input.strafe = 0;
       input.sprint = false;
       if (!started && this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === x && hit.y === y && hit.z === z) {
         b.tickMining(true, !started);
         return true;
@@ -2218,7 +2252,7 @@ export class BotBrain {
       if (!p) return plan.timer > 6 ? end(false) : true;
       this.aimPoint(p[0], p[1], p[2]);
       if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === plan.sx && hit.y === plan.sy && hit.z === plan.sz && hit.nx === plan.nx && hit.ny === plan.ny && hit.nz === plan.nz) {
         if (b.startUsingItem(true) && blocks.get(plan.x, plan.y, plan.z) !== B.AIR) {
           plan.phase = plan.kind === 'anchor' ? 'charge' : 'crystal';
@@ -2239,7 +2273,7 @@ export class BotBrain {
       if (!p) return plan.timer > 6 ? end(false) : true;
       this.aimPoint(p[0], p[1], p[2]);
       if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-      const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+      const hit = b.crosshairBlock(this.bot.blockReach(), true);
       if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
         const n = this.world.crystals.length;
         if (b.startUsingItem(true) && this.world.crystals.length > n) {
@@ -2281,7 +2315,7 @@ export class BotBrain {
     if (!p) return plan.timer > 6 ? end(false) : true;
     this.aimPoint(p[0], p[1], p[2]);
     if (plan.wait > 0 || this.settle < K.aimSettle) return true;
-    const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+    const hit = b.crosshairBlock(this.bot.blockReach(), true);
     if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z && b.startUsingItem(true)) {
       if (plan.phase === 'blow') {
         end(true);
@@ -2398,7 +2432,7 @@ export class BotBrain {
       const dy = T.pos.y + 1.2 - eye.y;
       const dz = T.pos.z - eye.z;
       const len = Math.hypot(dx, dy, dz);
-      const hit = blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, Math.min(len, C.BLOCK_REACH), 'outline', uhcRay);
+      const hit = blocks.raycast(eye.x, eye.y, eye.z, dx / len, dy / len, dz / len, Math.min(len, this.bot.blockReach()), 'outline', uhcRay);
       if (hit && MINEABLE.has(hit.id)) {
         this.plan = { kind: 'mine', x: hit.x, y: hit.y, z: hit.z, timer: 0, started: false };
         return this.runPlan(per, trueDist, input) === 'own';
@@ -2508,7 +2542,7 @@ export class BotBrain {
           if (b.usingItem) b.stopUsingItem();
           // The floor (or block top) under the cell: a bucket ray ignores players.
           this.aimPoint(plan.x + 0.5, plan.y + 0.001, plan.z + 0.5);
-          const hit = b.crosshairBlock(C.BLOCK_REACH, false);
+          const hit = b.crosshairBlock(this.bot.blockReach(), false);
           const on =
             !!hit &&
             ((hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z) ||
@@ -2532,14 +2566,14 @@ export class BotBrain {
         if (plan.kind === 'lava' && !U.lavaPickup) return finish(60);
         const cx = plan.x + 0.5;
         const cz = plan.z + 0.5;
-        const reachable = Math.hypot(cx - b.pos.x, plan.y + 0.5 - (b.pos.y + b.eyeHeight()), cz - b.pos.z) < C.BLOCK_REACH - 0.3;
+        const reachable = Math.hypot(cx - b.pos.x, plan.y + 0.5 - (b.pos.y + b.eyeHeight()), cz - b.pos.z) < this.bot.blockReach() - 0.3;
         if (plan.timer > 25 || !blocks.isSource(plan.x, plan.y, plan.z) || blocks.get(plan.x, plan.y, plan.z) !== fluid || !reachable) {
           return finish(plan.kind === 'lava' ? 80 : 10);
         }
         if (!this.equip('bucket')) return finish(40);
         if (b.usingItem) b.stopUsingItem();
         this.aimPoint(cx, plan.y + 0.4, cz);
-        const hit = b.crosshairBlock(C.BLOCK_REACH, false, 'source');
+        const hit = b.crosshairBlock(this.bot.blockReach(), false, 'source');
         if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z && this.settle >= U.aimSettle && b.startUsingItem(true)) {
           return finish(plan.kind === 'lava' ? 80 : 10);
         }
@@ -2550,7 +2584,7 @@ export class BotBrain {
         if (plan.timer > 12 || blocks.get(plan.x, plan.y, plan.z) !== B.AIR || !this.equip('cobweb')) return finish(50);
         if (b.usingItem) b.stopUsingItem();
         this.aimPoint(plan.ax, plan.ay + 0.001, plan.az);
-        const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+        const hit = b.crosshairBlock(this.bot.blockReach(), true);
         const on = !!hit && hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z;
         if (on && this.settle >= U.aimSettle && b.startUsingItem(true)) return finish(50);
         return 'own';
@@ -2567,7 +2601,7 @@ export class BotBrain {
         this.aimPoint(plan.x + 0.5, plan.y + 0.5, plan.z + 0.5);
         const dist = Math.hypot(plan.x + 0.5 - b.pos.x, plan.z + 0.5 - b.pos.z);
         if (dist > 3.4) input.forward = 1;
-        const hit = b.crosshairBlock(C.BLOCK_REACH, true);
+        const hit = b.crosshairBlock(this.bot.blockReach(), true);
         if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
           b.tickMining(true, !plan.started);
           plan.started = true;
@@ -2657,7 +2691,7 @@ export class BotBrain {
       const dy = y - eye.y;
       const dz = pz - eye.z;
       const len = Math.hypot(dx, dy, dz);
-      if (len > C.BLOCK_REACH) continue;
+      if (len > this.bot.blockReach()) continue;
       const d = new V3(dx / len, dy / len, dz / len);
       const t = rayAABB(eye, d, box);
       if (t >= 0 && t < len) continue;
@@ -2763,7 +2797,7 @@ export class BotBrain {
       input.forward = 1;
       input.sprint = true;
       const reach = rayDistanceToTarget(b, this.target);
-      if (reach >= 0 && reach <= P.maxReach && p > C.STRONG_ATTACK_SCALE) {
+      if (reach >= 0 && reach <= this.maxReach && p > C.STRONG_ATTACK_SCALE) {
         // The knockback sword swapped in on the same tick: the charged sword's cooldown, its
         // Knockback I — a big push to open the gap.
         const kb = P.axe.swap ? this.kbSwordSlot() : -1;

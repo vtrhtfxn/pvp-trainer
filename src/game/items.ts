@@ -41,7 +41,50 @@ export type ItemId =
   | 'wind_charge'
   | 'elytra'
   | 'tipped_arrow';
-export type EffectId = 'regeneration' | 'absorption' | 'strength' | 'speed' | 'fire_resistance' | 'slow_falling';
+export type EffectId =
+  | 'regeneration'
+  | 'absorption'
+  | 'strength'
+  | 'speed'
+  | 'fire_resistance'
+  | 'slow_falling'
+  // Reachable through /effect (the kits never hand these out).
+  | 'resistance'
+  | 'jump_boost'
+  | 'slowness'
+  | 'weakness'
+  | 'haste'
+  | 'mining_fatigue'
+  | 'poison'
+  | 'wither'
+  | 'instant_health'
+  | 'instant_damage'
+  | 'saturation'
+  | 'levitation'
+  | 'health_boost'
+  | 'invisibility'
+  | 'glowing'
+  | 'blindness'
+  | 'darkness'
+  | 'nausea'
+  | 'hunger'
+  | 'night_vision';
+
+/** Instant effects apply once when given and are never stored. */
+export const INSTANT_EFFECTS: ReadonlySet<EffectId> = new Set(['instant_health', 'instant_damage']);
+/** Harmful effects (vanilla MobEffectCategory.HARMFUL): listed after the beneficial ones. */
+export const HARMFUL_EFFECTS: ReadonlySet<EffectId> = new Set([
+  'slowness',
+  'weakness',
+  'mining_fatigue',
+  'poison',
+  'wither',
+  'instant_damage',
+  'blindness',
+  'darkness',
+  'nausea',
+  'hunger',
+]);
 
 /** How an item behaves on right click. */
 export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip';
@@ -58,7 +101,7 @@ export interface PotionDef {
   /** Liquid colour (MobEffect colour), tints item/potion_overlay. */
   color: number;
   /** A timed effect, or instant health (heals 4 << amplifier at full strength). */
-  effect: EffectId | 'instant_health';
+  effect: EffectId;
   amplifier: number;
   duration: number;
 }
@@ -86,6 +129,26 @@ export const EFFECT_COLORS: Record<EffectId, number> = {
   speed: 0x33ebff,
   fire_resistance: 0xff9900,
   slow_falling: 0xf3cfb9,
+  resistance: 0x9146f0,
+  jump_boost: 0xfdff84,
+  slowness: 0x8bafe0,
+  weakness: 0x484d48,
+  haste: 0xd9c043,
+  mining_fatigue: 0x4a4217,
+  poison: 0x87a363,
+  wither: 0x736156,
+  instant_health: 0xf82423,
+  instant_damage: 0xa9656a,
+  saturation: 0xf82423,
+  levitation: 0xceffff,
+  health_boost: 0xf87d23,
+  invisibility: 0xf6f6f6,
+  glowing: 0x94a061,
+  blindness: 0x1f1f23,
+  darkness: 0x292721,
+  nausea: 0x551d4a,
+  hunger: 0x587653,
+  night_vision: 0xc2ff66,
 };
 
 export const EFFECT_NAMES: Record<EffectId, string> = {
@@ -95,6 +158,26 @@ export const EFFECT_NAMES: Record<EffectId, string> = {
   speed: 'Speed',
   fire_resistance: 'Fire Resistance',
   slow_falling: 'Slow Falling',
+  resistance: 'Resistance',
+  jump_boost: 'Jump Boost',
+  slowness: 'Slowness',
+  weakness: 'Weakness',
+  haste: 'Haste',
+  mining_fatigue: 'Mining Fatigue',
+  poison: 'Poison',
+  wither: 'Wither',
+  instant_health: 'Instant Health',
+  instant_damage: 'Instant Damage',
+  saturation: 'Saturation',
+  levitation: 'Levitation',
+  health_boost: 'Health Boost',
+  invisibility: 'Invisibility',
+  glowing: 'Glowing',
+  blindness: 'Blindness',
+  darkness: 'Darkness',
+  nausea: 'Nausea',
+  hunger: 'Hunger',
+  night_vision: 'Night Vision',
 };
 
 /** Armor slot index: 0 head, 1 chest, 2 legs, 3 feet. */
@@ -377,7 +460,11 @@ export function durabilityFraction(s: ItemStack | null | undefined): number | nu
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
 const roman = (n: number) => ROMAN[n] ?? String(n);
 
+/** Effects given with /effect … infinite last this long (shown as ∞, like vanilla). */
+export const INFINITE_DURATION = 1_000_000_000;
+
 export function formatTicks(t: number): string {
+  if (t >= INFINITE_DURATION / 2) return '∞';
   const sec = Math.max(0, Math.ceil(t / 20));
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }

@@ -1,11 +1,14 @@
 import { INV_SIZE, SLOT_ARMOR, SLOT_OFFHAND, type Fighter } from '../game/Fighter';
 import { ITEMS, sameItem, stackLore, stackName, type ItemStack } from '../game/items';
+import { DEFAULT_KEYS, HOTBAR_ACTIONS, type KeyBinds } from '../input/keybinds';
 import { drawDurabilityBar, emptySlotIcon, itemIcon } from '../render/itemIcons';
 
 export interface InventoryCallbacks {
   /** Something moved: resync (online) and play a sound. */
   onChange(): void;
   onClose(): void;
+  /** Extra tooltip lines (the AppleSkin mod adds food values). */
+  extraLore?(st: ItemStack): string[];
 }
 
 interface SlotEl {
@@ -56,9 +59,12 @@ export class InventoryScreen {
   private dragFrom = -1;
   private hovered = -1;
   private cursorKey = '';
+  private tooltipHtml = '';
   mouseX = 0;
   mouseY = 0;
   open = false;
+  /** Hotbar and swap-hands keys over a slot follow Options → Key Binds. */
+  binds: KeyBinds = { ...DEFAULT_KEYS };
 
   constructor(
     parent: HTMLElement,
@@ -315,14 +321,12 @@ export class InventoryScreen {
       return;
     }
     if (this.hovered < 0 || this.carried) return;
-    if (e.code.startsWith('Digit')) {
-      const n = Number(e.code.slice(5));
-      if (n >= 1 && n <= 9) {
-        e.preventDefault();
-        this.swapWith(this.hovered, n - 1);
-        this.refresh();
-      }
-    } else if (e.code === 'KeyF') {
+    const n = HOTBAR_ACTIONS.findIndex((a) => this.binds[a] === e.code);
+    if (n >= 0) {
+      e.preventDefault();
+      this.swapWith(this.hovered, n);
+      this.refresh();
+    } else if (e.code === this.binds.swapHands) {
       e.preventDefault();
       this.swapWith(this.hovered, SLOT_OFFHAND);
       this.refresh();
@@ -382,8 +386,12 @@ export class InventoryScreen {
     }
     const name = stackName(st);
     const lore = stackLore(st);
-    const html = `<b class="${st.ench ? 'ench' : ''}">${name}</b>${lore.map((l) => `<span class="${l.startsWith(' ') ? 'attr' : ''}">${l || '&nbsp;'}</span>`).join('')}`;
-    if (this.tooltip.innerHTML !== html) this.tooltip.innerHTML = html;
+    const extra = this.cb.extraLore?.(st) ?? [];
+    const html = `<b class="${st.ench ? 'ench' : ''}">${name}</b>${lore.map((l) => `<span class="${l.startsWith(' ') ? 'attr' : ''}">${l || '&nbsp;'}</span>`).join('')}${extra.map((l) => `<span class="food">${l}</span>`).join('')}`;
+    if (this.tooltipHtml !== html) {
+      this.tooltipHtml = html;
+      this.tooltip.innerHTML = html;
+    }
     this.tooltip.style.display = 'block';
     this.tooltip.style.transform = `translate(${this.mouseX + 14}px, ${this.mouseY - 18}px)`;
   }

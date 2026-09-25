@@ -280,4 +280,36 @@ describe('axe bot', () => {
       expect(m.bot.stats.blocked).toBeGreaterThan(0);
     }
   });
+
+  it('a held-up shield never stalls it: the bot walks in and axes it (Axe and UHC, every tier)', () => {
+    /** Ticks from the shield going up until it is disabled; the player just stands there blocking. */
+    const timeToDisable = (kit: 'axe' | 'uhc', tier: DifficultyId, seed: number, close: boolean) => {
+      const m = new Match(kitById(kit), DIFFICULTIES[tier], seed);
+      while (m.phase !== 'fight') m.tick();
+      const p = m.player;
+      if (close) {
+        p.pos.set(0.5, p.pos.y, 1.5);
+        m.bot.pos.set(0.5, m.bot.pos.y, -1.5);
+      }
+      let raised = -1;
+      for (let t = 0; t < 400; t++) {
+        const b = m.bot;
+        p.yaw = Math.atan2(-(b.pos.x - p.pos.x), -(b.pos.z - p.pos.z));
+        p.pitch = 0;
+        m.useHeld = true;
+        m.tick();
+        if (raised < 0 && p.isBlocking()) raised = t;
+        if (p.shieldCooldown > 0) return t - raised;
+      }
+      return Infinity;
+    };
+    for (const kit of ['axe', 'uhc'] as const) {
+      for (const tier of ['lt5', 'lt4', 'lt3', 'lt1', 'ht1'] as DifficultyId[]) {
+        // From spawn (it used to stand aiming a crossbow at the shield for up to 4.5 s)...
+        expect(timeToDisable(kit, tier, 1, false)).toBeLessThan(60);
+        // ...and up close (it used to circle out of its own aim).
+        expect(timeToDisable(kit, tier, 4, true)).toBeLessThan(tier === 'lt5' ? 25 : 16);
+      }
+    }
+  });
 });

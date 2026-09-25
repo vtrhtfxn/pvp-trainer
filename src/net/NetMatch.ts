@@ -49,6 +49,8 @@ export class NetMatch {
   fightTicks = 0;
   tickCount = 0;
   winner: Fighter | null = null;
+  /** Our round trip to the host, as the server measures it (FPS mod). */
+  myPing = 0;
   useHeld = false;
   /** Holding left click (mining a block); sent to the server when it changes. */
   attackHeld = false;
@@ -201,7 +203,10 @@ export class NetMatch {
     this.fightTicks = fightTicks;
     const mine = players.find((p) => p.i === this.you);
     const theirs = players.find((p) => p.i !== this.you);
-    if (mine) this.applyAuthoritative(this.player, mine);
+    if (mine) {
+      this.applyAuthoritative(this.player, mine);
+      this.myPing = mine.ping;
+    }
     if (theirs) {
       this.applyAuthoritative(this.bot, theirs);
       this.bot.name = theirs.name;
