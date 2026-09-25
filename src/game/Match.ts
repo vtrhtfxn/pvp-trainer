@@ -75,6 +75,7 @@ export class Match {
     this.bot.reset(0, -half, Math.PI, this.kit);
     this.world.clearEntities();
     this.player.naturalRegen = this.bot.naturalRegen = this.kit.naturalRegen ?? true;
+    this.player.food.locked = this.bot.food.locked = !!this.kit.noHunger;
     this.brain.resetRound();
     this.phase = 'countdown';
     this.phaseTicks = 0;

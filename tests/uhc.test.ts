@@ -300,7 +300,8 @@ describe('UHC bot', () => {
     const total = { lava: 0, water: 0, web: 0, planks: 0, broken: 0 };
     let finished = 0;
     for (let seed = 1; seed <= 5; seed++) {
-      const { m, used } = duel('lt2', 'lt1', seed * 3);
+      // LT1 and up use every item (lava pickup, webs, pillars).
+      const { m, used } = duel('lt1', 'ht1', seed * 3);
       if (m.phase === 'ended') finished++;
       for (const k of Object.keys(total) as (keyof typeof total)[]) total[k] += used[k];
     }

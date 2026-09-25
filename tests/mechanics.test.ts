@@ -184,9 +184,36 @@ describe('damage', () => {
   });
 });
 
-describe('golden apple', () => {
-  it('takes 32 ticks (1.6 s) and gives Regeneration II + Absorption', () => {
+describe('Sword kit', () => {
+  it('has no golden apples, and hunger stays full so you can always sprint', () => {
     const { a } = setup();
+    expect(a.countItem('golden_apple')).toBe(0);
+    a.food.locked = true; // what Match / Duel set up for the Sword kit
+    a.health = 12;
+    a.input.forward = 1;
+    a.input.sprint = true;
+    for (let i = 0; i < 20 * 300; i++) {
+      a.input.jump = i % 12 === 0;
+      if (i % 100 === 0) a.pos.set(0, a.pos.y, 10);
+      step(a);
+      if (!a.sprinting && !a.horizontalCollision) throw new Error(`lost sprint at tick ${i} (food ${a.food.level})`);
+    }
+    expect(a.food.level).toBe(20);
+    expect(a.food.saturation).toBe(0);
+    expect(a.health).toBe(20); // natural regeneration keeps going (1 HP every 4 s)
+  });
+});
+
+describe('golden apple', () => {
+  // The Sword kit has none any more: hand them out in slot 2.
+  const setupApples = () => {
+    const s = setup();
+    s.a.inventory[1] = { id: 'golden_apple', count: 5 };
+    return s;
+  };
+
+  it('takes 32 ticks (1.6 s) and gives Regeneration II + Absorption', () => {
+    const { a } = setupApples();
     a.health = 10;
     a.selectSlot(1);
     for (let i = 0; i < 3; i++) step(a); // item switch settles
@@ -207,7 +234,7 @@ describe('golden apple', () => {
   });
 
   it('slows movement to 20% while eating', () => {
-    const { a } = setup();
+    const { a } = setupApples();
     a.selectSlot(1);
     for (let i = 0; i < 3; i++) step(a);
     a.input.forward = 1;

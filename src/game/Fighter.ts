@@ -173,6 +173,8 @@ export class FoodData {
   saturation = C.START_SATURATION;
   exhaustion = 0;
   tickTimer = 0;
+  /** Hunger never drops (the kit has hunger off); saturation still does. */
+  locked = false;
 
   addExhaustion(v: number) {
     this.exhaustion = Math.min(this.exhaustion + v, C.EXHAUSTION_MAX);
@@ -187,7 +189,7 @@ export class FoodData {
     if (this.exhaustion > 4) {
       this.exhaustion -= 4;
       if (this.saturation > 0) this.saturation = Math.max(this.saturation - 1, 0);
-      else this.level = Math.max(this.level - 1, 0);
+      else if (!this.locked) this.level = Math.max(this.level - 1, 0);
     }
     const hurt = f.health > 0 && f.health < f.maxHealth;
     if (naturalRegen && this.saturation > 0 && hurt && this.level >= 20) {

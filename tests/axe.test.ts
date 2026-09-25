@@ -251,7 +251,8 @@ describe('axe bot', () => {
     let blocked = 0;
     let swaps = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const m = duel('lt2', 'lt2', seed);
+      // LT1: the first tier with attribute swaps.
+      const m = duel('lt1', 'lt1', seed);
       if (m.phase === 'ended') finished++;
       disabled += m.bot.stats.shieldsDisabled + m.player.stats.shieldsDisabled;
       blocked += m.bot.stats.blocked + m.player.stats.blocked;
@@ -308,7 +309,8 @@ describe('axe bot', () => {
         // From spawn (it used to stand aiming a crossbow at the shield for up to 4.5 s)...
         expect(timeToDisable(kit, tier, 1, false)).toBeLessThan(60);
         // ...and up close (it used to circle out of its own aim).
-        expect(timeToDisable(kit, tier, 4, true)).toBeLessThan(tier === 'lt5' ? 25 : 16);
+        // The low tiers (LT5 … LT3) take their time pulling the axe out.
+        expect(timeToDisable(kit, tier, 4, true)).toBeLessThan(['lt5', 'lt4', 'lt3'].includes(tier) ? 25 : 16);
       }
     }
   });

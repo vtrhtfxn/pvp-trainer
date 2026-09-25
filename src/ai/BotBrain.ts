@@ -398,12 +398,16 @@ export class BotBrain {
 
   private perceive(): Perceived {
     const P = this.profile;
-    const n = this.seen.length;
-    const i = Math.max(0, n - 1 - P.reactionTicks);
-    const s = this.seen[i];
-    const prev = this.seen[Math.max(0, i - 1)];
-    const vx = s.x - prev.x;
-    const vz = s.z - prev.z;
+    // Tiers between two whole reaction times (4.5 ticks) see a point between two remembered ticks.
+    const r = Math.max(0, P.reactionTicks);
+    const k = Math.floor(r);
+    const f = r - k;
+    const a = this.seenLate(k);
+    const b = this.seenLate(k + 1);
+    const c = this.seenLate(k + 2);
+    const s = { ...(f >= 0.5 ? b : a), x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f };
+    const vx = s.x - (b.x + (c.x - b.x) * f);
+    const vz = s.z - (b.z + (c.z - b.z) * f);
     // Speed II (NethPot) makes a strafing target move 40% further per tick; without leading its
     // reaction delay even a Normal bot's crosshair trails 40° behind. Everyone learns to track
     // that, so pot fights lead by at least three quarters of the delay.

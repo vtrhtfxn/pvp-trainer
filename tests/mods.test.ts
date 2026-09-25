@@ -66,9 +66,10 @@ describe('mod manager', () => {
 });
 
 describe('AppleSkin', () => {
-  // The estimate must match what FoodData's regeneration really gives back after eating.
+  // The estimate must match what FoodData's regeneration really gives back after eating
+  // (in a kit with hunger: the Sword kit keeps it full, so regeneration never stops there).
   const real = (level: number, sat: number, hp: number, id: 'golden_apple' | 'cooked_beef') => {
-    const m = duel();
+    const m = duel('axe');
     const p = m.player;
     Object.assign(p.food, { level, saturation: sat, exhaustion: 0, tickTimer: 0 });
     p.health = hp;
