@@ -10,20 +10,28 @@
 
 import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
 
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
 
 /**
- * How far behind the newest snapshot the opponent is drawn, in server ticks.
- *
- * Two ticks (100 ms) is enough to ride out one dropped or late packet, which is what keeps
- * remote movement smooth instead of stuttering. It costs nothing in hit registration because
- * the server rewinds by exactly this much plus the attacker's latency before testing a swing
- * (see Duel.queueAttack) — you hit what you saw.
+ * The fallback rewind for a swing that does not say what its sender was looking at: the
+ * opponent's nominal drawing delay, in server ticks.
  */
 export const INTERP_TICKS = 2;
+
+/**
+ * The opponent is drawn on their own clock: every move carries the sender's tick number `q`,
+ * the server relays it the moment it arrives, and the receiver plays the moves back this far
+ * behind the newest one it could have — at least MIN, more on a jittery network, never more
+ * than MAX (milliseconds).
+ */
+export const PLAYBACK_MIN_MS = 60;
+export const PLAYBACK_MAX_MS = 450;
+
+/** A swing is tested where its sender saw the target — but never further back than this (ms). */
+export const MAX_REWIND_MS = 600;
 
 /** Never rewind a target further than this; beyond it, lag compensation becomes abuse. */
 export const MAX_REWIND_TICKS = 10;
@@ -176,6 +184,8 @@ export type ClientMsg =
   | { t: 'join'; room: string; name: string; v: number; kit?: string }
   | {
       t: 'move';
+      /** The sender's own tick number: the opponent plays moves back on this clock. */
+      q: number;
       x: number;
       y: number;
       z: number;
@@ -196,7 +206,8 @@ export type ClientMsg =
       /** The last teleport (pearl) this client has applied; older moves are ignored. */
       tp?: number;
     }
-  | { t: 'attack' }
+  /** A click. `v`: the opponent's tick (their `q`) that was on screen, for lag compensation. */
+  | { t: 'attack'; v?: number }
   | { t: 'use'; down: boolean }
   /** Holding left click on a block: mining. */
   | { t: 'mine'; down: boolean }
@@ -249,6 +260,11 @@ export type ServerMsg =
       /** World events (explosions, splashes, blocks placed/broken, …). */
       we?: Record<string, unknown>[];
     }
+  /**
+   * The opponent's move, relayed as soon as the server gets it: their tick `q`, position,
+   * look, and flags (1 on ground, 2 sprinting, 4 sneaking, 8 gliding).
+   */
+  | { t: 'mv'; q: number; x: number; y: number; z: number; yaw: number; pitch: number; f: number }
   /** Knockback, an explosion or a wind burst moved YOU — the client takes this velocity. */
   | { t: 'motion'; vx: number; vy: number; vz: number }
   /** A pearl moved YOU; moves sent before you applied it are ignored. */

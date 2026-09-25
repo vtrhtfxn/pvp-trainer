@@ -205,11 +205,21 @@ explosions and wind launches reach you as a velocity packet and a pearl as a tel
 sent before applying it are ignored). Your client still predicts your own movement, elytra
 gliding included, and reports its fall distance — crits, mace smashes and fall damage use it.
 
-**Hits are lag-compensated.** Your client draws the opponent `INTERP_TICKS` (100 ms) behind the
-newest snapshot and interpolates between the two snapshots either side of that moment, so remote
-movement is smooth and — more importantly — delayed by a known amount. When you swing, the server
-rewinds the target by exactly that delay plus half your round-trip time before testing the ray, so
-a swing that connected on your screen connects here. Rewinds are clamped to `MAX_REWIND_TICKS`.
+**Opponents move smoothly, even on shaky Wi-Fi.** Every move a client sends carries its own tick
+number, and the server relays it to the opponent the moment it arrives (it does not wait for its
+next tick, so a busy or throttled host no longer freezes anyone). The receiver plays the moves
+back on the sender's own clock, a little behind the newest: about 100 ms on a good network, more
+only when arrivals get jittery (up to 450 ms), learned from the last few seconds of traffic. So
+Wi-Fi hiccups, frames that ran two ticks at once and late server ticks no longer turn into stops
+and jumps, and anything that does need correcting after a long stall is eased in over a few ticks
+instead of snapped. `tests/netsim.ts` models it — both clients' frame loops, the server's timer,
+and links with latency, jitter and stalls — and `tests/netsmooth.test.ts` holds it to no visible
+jumps or freezes on ordinary Wi-Fi.
+
+**Hits are lag-compensated.** Each swing tells the server which of the opponent's ticks was on
+your screen, and the server tests it against where they were at that tick (interpolated from the
+moves it logged), so a swing that connected on your screen connects there. It never rewinds more
+than `MAX_REWIND_MS` (600 ms).
 
 The split is Minecraft's own: **movement is client-authoritative** (each client runs its own
 `Fighter` so the controls never wait on the network) and **combat is server-authoritative** —
