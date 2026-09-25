@@ -431,7 +431,9 @@ export class Menus {
           () => (s.maxFps === 0 ? 260 : s.maxFps),
           (v) => (s.maxFps = v >= 260 ? 0 : v),
           (v) => (v >= 260 ? 'Unlimited' : `${v} fps`),
-          'Caps the frame rate to save power (Unlimited = your screen’s refresh rate)',
+          window.pvpNative
+            ? 'Unlimited = as fast as your PC can go. Lower it to save battery and heat'
+            : 'Caps the frame rate to save power. Browsers never go past your screen’s refresh rate (60 Hz screen = 60 FPS) — the desktop app does',
         );
         slider(
           'Render Scale',

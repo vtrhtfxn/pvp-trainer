@@ -21,6 +21,11 @@ protocol.registerSchemesAsPrivileged([
 // fixed-step simulation the moment the window loses focus.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
+// Uncapped frame rate: by default Chromium waits for the screen's refresh (VSync), which held
+// the game at 60 FPS on a 60 Hz display. Options → Video → Max Framerate caps it again.
+app.commandLine.appendSwitch('disable-frame-rate-limit');
+app.commandLine.appendSwitch('disable-gpu-vsync');
+
 /** @type {BrowserWindow | null} */
 let win = null;
 
