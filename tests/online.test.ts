@@ -21,11 +21,19 @@ function room(kit: KitId) {
   const clients = [0, 1].map((i) => new NetMatch(nets[i] as never, i, kit));
   const deliver = (i: number, m: ServerMsg) => clients[i].handle(JSON.parse(JSON.stringify(m)) as ServerMsg);
   for (let i = 0; i < 2; i++) deliver(i, { t: 'start', countdown: 3, kit });
+  // One clock for everyone, 50 ms per tick, like a real game.
+  let now = 0;
+  duel.clock = () => now;
+  for (const c of clients) c.clock = () => now;
   let n = 0;
   const tick = () => {
+    now += 50;
     for (let i = 0; i < 2; i++) {
       clients[i].tick();
-      for (const m of nets[i].out) duel.receive(i, m);
+      for (const m of nets[i].out) {
+        const relay = duel.receive(i, m);
+        if (relay) deliver(1 - i, relay);
+      }
       nets[i].out.length = 0;
     }
     for (const e of duel.tick()) {

@@ -86,7 +86,7 @@ class Client {
 class Room {
   readonly seats: (Client | null)[] = [null, null];
   duel: Duel | null = null;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private tick = 0;
   private rematchVotes = new Set<number>();
 
@@ -123,8 +123,44 @@ class Room {
     this.duel = new Duel(names, this.kit);
     this.rematchVotes.clear();
     this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
-    this.timer = setInterval(() => this.step(), TICK_MS);
+    this.startClock();
     log(`room ${this.code}: duel started — ${names[0]} vs ${names[1]}`);
+  }
+
+  /**
+   * Ticks on a fixed schedule. setInterval re-arms from whenever its callback ran, so every late
+   * tick (a busy or throttled host) pushed all later ones back and the lost time was never made
+   * up — the game ran slow and in lurches. This keeps to the schedule and catches up a few
+   * missed ticks at once; after a long stall it resets instead of fast-forwarding.
+   */
+  private startClock() {
+    this.stopClock();
+    let due = performance.now() + TICK_MS;
+    let warned = 0;
+    const run = () => {
+      const now = performance.now();
+      let n = 0;
+      while (now >= due && n < 4) {
+        this.step();
+        if (!this.duel) return;
+        due += TICK_MS;
+        n++;
+      }
+      if (now - due > TICK_MS * 4) {
+        if (now - warned > 60_000) {
+          warned = now;
+          log(`room ${this.code}: the server fell ${Math.round(now - due)} ms behind — is this computer busy, asleep or on low power?`);
+        }
+        due = now + TICK_MS;
+      }
+      this.timer = setTimeout(run, Math.max(0, due - performance.now()));
+    };
+    this.timer = setTimeout(run, TICK_MS);
+  }
+
+  private stopClock() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
   }
 
   private step() {
@@ -133,8 +169,7 @@ class Room {
     } catch (err) {
       // One broken duel must not take every other room down with it.
       log(`room ${this.code}: duel crashed — ${(err as Error)?.stack ?? err}`);
-      if (this.timer) clearInterval(this.timer);
-      this.timer = null;
+      this.stopClock();
       this.duel = null;
       for (const c of this.players) c.send({ t: 'error', message: 'The duel hit an error on the server. Join the room again to play on.' });
     }
@@ -169,8 +204,7 @@ class Room {
   leave(client: Client) {
     if (this.seats[client.seat] === client) this.seats[client.seat] = null;
     this.rematchVotes.delete(client.seat);
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    this.stopClock();
     this.duel = null;
     if (this.players.length === 0) {
       rooms.delete(this.code);
@@ -229,9 +263,14 @@ function handle(client: Client, msg: ClientMsg) {
     case 'mine':
     case 'slot':
     case 'swap':
-    case 'inv':
-      client.room?.duel?.receive(client.seat, msg);
+    case 'inv': {
+      const room = client.room;
+      const relay = room?.duel?.receive(client.seat, msg);
+      // Moves go straight on to the opponent: waiting for the next tick would re-time them to
+      // the server's clock, which is what made fighters stutter and jump on each other's screens.
+      if (relay && room) room.seats[1 - client.seat]?.send(relay);
       return;
+    }
     case 'rematch':
       client.room?.voteRematch(client.seat);
       return;

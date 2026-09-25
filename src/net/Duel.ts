@@ -6,7 +6,7 @@ import { kitById, type KitDef, type KitId } from '../game/kits';
 import { World } from '../game/World';
 import { COUNTDOWN_TICKS, SPAWN_DISTANCE } from '../game/Match';
 import { Rng } from '../core/rng';
-import { INTERP_TICKS, MAX_REWIND_TICKS, NET_TPS, fromSlot, itemTotals, toSlot, type NetEntities, type NetEvent, type NetFighter, type NetPhase, type ClientMsg, type ServerMsg, type Slot } from './protocol';
+import { INTERP_TICKS, MAX_REWIND_MS, MAX_REWIND_TICKS, NET_TPS, fromSlot, itemTotals, toSlot, type NetEntities, type NetEvent, type NetFighter, type NetPhase, type ClientMsg, type ServerMsg, type Slot } from './protocol';
 
 /** Where a fighter was on one past tick, for lag compensation. */
 interface Rewind {
@@ -15,6 +15,13 @@ interface Rewind {
   z: number;
   sneaking: boolean;
   fallFlying: boolean;
+}
+
+/** One accepted move, by the sender's tick number, for rewinding to what an opponent saw. */
+interface LoggedMove extends Rewind {
+  q: number;
+  /** Server time it arrived, ms. */
+  at: number;
 }
 
 export interface DuelEvent {
@@ -50,6 +57,12 @@ export class Duel {
   private readonly useHeld: [boolean, boolean] = [false, false];
   private readonly mineHeld: [boolean, boolean] = [false, false];
   private readonly pendingAttacks: [number, number] = [0, 0];
+  /** The opponent tick each queued click was aimed at (from the attacker's screen), if sent. */
+  private readonly attackViews: [(number | null)[], (number | null)[]] = [[], []];
+  /** Every accepted move per fighter, newest last (about two seconds). */
+  private readonly moveLog: [LoggedMove[], LoggedMove[]] = [[], []];
+  /** Server clock, ms (tests drive it). */
+  clock: () => number = () => performance.now();
   private readonly pendingSlot: [number | null, number | null] = [null, null];
   private readonly pendingSwap: [number, number] = [0, 0];
   private readonly pendingUse: [number, number] = [0, 0];
@@ -95,6 +108,8 @@ export class Duel {
     for (let i = 0; i < 2; i++) {
       this.useHeld[i] = this.mineHeld[i] = false;
       this.pendingAttacks[i] = this.pendingSwap[i] = this.pendingUse[i] = 0;
+      this.attackViews[i].length = 0;
+      this.moveLog[i].length = 0;
       this.pendingSlot[i] = null;
       this.lastInv[i] = '';
       this.history[i].length = 0;
@@ -111,9 +126,12 @@ export class Duel {
     this.fighters[i].name = name;
   }
 
-  queueAttack(i: number) {
+  /** A click; `view` is the opponent tick the attacker had on screen (see rewindToView). */
+  queueAttack(i: number, view?: number) {
     // One click per tick is all a 20 Hz simulation can resolve; more would just be swallowed.
-    if (this.pendingAttacks[i] < 4) this.pendingAttacks[i]++;
+    if (this.pendingAttacks[i] >= 4) return;
+    this.pendingAttacks[i]++;
+    this.attackViews[i].push(typeof view === 'number' && Number.isFinite(view) ? view : null);
   }
 
   setPing(i: number, ms: number) {
@@ -157,9 +175,15 @@ export class Duel {
     if (this.pendingSwap[i] < 2) this.pendingSwap[i]++;
   }
 
-  /** A movement packet. Ignored until the client has applied the last pearl teleport. */
-  applyMove(i: number, m: { x: number; y: number; z: number; yaw: number; pitch: number; g: boolean; sp: boolean; sn: boolean; vy: number; ff?: boolean; fd?: number; tp?: number }) {
-    if ((Number(m.tp) | 0) < this.teleportId[i]) return;
+  /**
+   * A movement packet. Ignored until the client has applied the last pearl teleport. Returns the
+   * move to relay to the opponent (null if it was ignored).
+   */
+  applyMove(
+    i: number,
+    m: { q?: number; x: number; y: number; z: number; yaw: number; pitch: number; g: boolean; sp: boolean; sn: boolean; vy: number; ff?: boolean; fd?: number; tp?: number },
+  ): Extract<ServerMsg, { t: 'mv' }> | null {
+    if ((Number(m.tp) | 0) < this.teleportId[i]) return null;
     this.teleportAcked[i] = this.teleportId[i];
     const num = (v: unknown, lo: number, hi: number) => {
       const n = Number(v);
@@ -182,6 +206,13 @@ export class Duel {
       !!m.ff,
       m.fd === undefined ? null : num(m.fd, 0, 400),
     );
+    const q = Number(m.q);
+    if (!Number.isFinite(q)) return null;
+    const log = this.moveLog[i];
+    log.push({ q, at: this.clock(), x: f.pos.x, y: f.pos.y, z: f.pos.z, sneaking: f.input.sneak, fallFlying: f.fallFlying });
+    if (log.length > 60) log.shift();
+    const flags = (f.onGround ? 1 : 0) | (f.sprinting ? 2 : 0) | (f.input.sneak ? 4 : 0) | (f.fallFlying ? 8 : 0);
+    return { t: 'mv', q, x: r3(f.pos.x), y: r3(f.pos.y), z: r3(f.pos.z), yaw: r3(f.yaw), pitch: r3(f.pitch), f: flags };
   }
 
   /**
@@ -225,6 +256,7 @@ export class Duel {
       for (let i = 0; i < 2; i++) this.handleActions(i);
     } else {
       this.pendingAttacks[0] = this.pendingAttacks[1] = 0;
+      this.attackViews[0].length = this.attackViews[1].length = 0;
       // Hotbar keys still work during the countdown (the client already shows the new slot).
       for (let i = 0; i < 2; i++) {
         const slot = this.pendingSlot[i];
@@ -277,14 +309,16 @@ export class Duel {
     if (f.usingItem) {
       if (!this.useHeld[i]) f.releaseUsingItem();
       this.pendingAttacks[i] = 0; // clicks are swallowed while an item is in use
+      this.attackViews[i].length = 0;
       this.pendingUse[i] = 0;
       return;
     }
     let mined = false;
     while (this.pendingAttacks[i] > 0) {
       this.pendingAttacks[i]--;
+      const view = this.attackViews[i].shift() ?? null;
       // An end crystal nearer than the opponent takes the hit (against the rewound opponent).
-      const restore = this.rewind(1 - i, this.rewindTicks(i));
+      const restore = (view !== null && this.rewindToView(1 - i, view)) || this.rewind(1 - i, this.rewindTicks(i));
       const cr = crosshairCrystal(f);
       const t = rayDistanceToTarget(f, other);
       if (cr && (t < 0 || cr.t < t)) {
@@ -340,6 +374,46 @@ export class Duel {
       f.pos.set(x, y, z);
       f.fallFlying = ff;
       if (past.sneaking !== sneak) f.input = { ...f.input, sneak: sneak };
+    };
+  }
+
+  /**
+   * Puts fighter `i` where the attacker saw them: at their own tick `view` (the moves are logged
+   * by tick number, so this is exact however jittery the network was), interpolated between
+   * logged moves. Bounded to MAX_REWIND_MS, so a client cannot claim a stale view. Returns the
+   * function that puts them back, or null to fall back to the time-based rewind.
+   */
+  private rewindToView(i: number, view: number): (() => void) | null {
+    const log = this.moveLog[i];
+    if (log.length < 2) return null;
+    const f = this.fighters[i];
+    const newest = log[log.length - 1];
+    if (view >= newest.q) return () => {};
+    const limit = this.clock() - MAX_REWIND_MS;
+    let k = log.length - 1;
+    while (k > 0 && log[k].q > view) k--;
+    let a = log[k];
+    let b = log[Math.min(k + 1, log.length - 1)];
+    // Too far back (or older than the log): the oldest moment still allowed.
+    if (a.at < limit || a.q > view) {
+      const j = log.findIndex((m) => m.at >= limit);
+      a = b = log[j < 0 ? log.length - 1 : j];
+      view = a.q;
+    }
+    const t = b.q > a.q ? Math.min(1, Math.max(0, (view - a.q) / (b.q - a.q))) : 0;
+    const x = f.pos.x;
+    const y = f.pos.y;
+    const z = f.pos.z;
+    const sneak = f.input.sneak;
+    const ff = f.fallFlying;
+    const past = t < 0.5 ? a : b;
+    f.pos.set(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+    f.fallFlying = past.fallFlying;
+    if (past.sneaking !== sneak) f.input = { ...f.input, sneak: past.sneaking };
+    return () => {
+      f.pos.set(x, y, z);
+      f.fallFlying = ff;
+      if (past.sneaking !== sneak) f.input = { ...f.input, sneak };
     };
   }
 
@@ -446,35 +520,37 @@ export class Duel {
     };
   }
 
-  /** A player's input message (everything but joining, rematches and pings). */
-  receive(i: number, msg: ClientMsg) {
+  /**
+   * A player's input message (everything but joining, rematches and pings). Returns a message
+   * to pass straight on to the opponent: their move, relayed without waiting for a tick.
+   */
+  receive(i: number, msg: ClientMsg): ServerMsg | null {
     switch (msg.t) {
       case 'move':
-        this.applyMove(i, msg);
-        return;
+        return this.applyMove(i, msg);
       case 'attack':
-        this.queueAttack(i);
-        return;
+        this.queueAttack(i, msg.v);
+        return null;
       case 'use':
         this.setUse(i, !!msg.down);
-        return;
+        return null;
       case 'mine':
         this.setMining(i, !!msg.down);
-        return;
+        return null;
       case 'slot':
         this.setSlot(i, Number(msg.i) | 0);
-        return;
+        return null;
       case 'swap':
         this.queueSwap(i);
-        return;
+        return null;
       case 'inv':
         this.setInventory(i, msg.slots);
         // Accepted or not, send back the real inventory: the client's copy was frozen while its
         // inventory screen was open and may have fallen behind (worn armor, a pickup).
         this.lastInv[i] = '';
-        return;
+        return null;
       default:
-        return;
+        return null;
     }
   }
 
