@@ -10,7 +10,7 @@ export interface BotProfile {
   name: string;
   tagline: string;
   color: string;
-  /** Ticks of delay before the bot "sees" where you are. */
+  /** Ticks of delay before the bot "sees" where you are (may be fractional). */
   reactionTicks: number;
   /** 0..1 how much the bot leads your movement to compensate its delay. */
   predict: number;
@@ -152,6 +152,11 @@ export interface NethSkill {
   pcrit: number;
   /** Eats a golden apple for absorption when the opponent is at least this far away. */
   gapDist: number;
+  /**
+   * Chance, per round, that it throws Strength II and Speed II on itself. The low tiers mostly
+   * fight unbuffed, so they are no faster and hit no harder than you do without your own pots.
+   */
+  buffChance: number;
 }
 
 export interface AxeSkill {
@@ -162,7 +167,10 @@ export interface AxeSkill {
    * 5 ticks after it is raised, so anything below 5 means some hits get through.
    */
   shieldLead: number;
-  /** Extra ticks before it notices you raised or lowered your shield. */
+  /**
+   * Ticks before it notices you raised or lowered your shield. The axe-swapping tiers wait 8
+   * (0.4 s), about what a very good player needs to see the shield and swap to the axe.
+   */
   shieldReact: number;
   /** Disables your shield with an attribute swap: switch to the axe and swing on the same tick. */
   swap: boolean;
@@ -178,8 +186,8 @@ export interface AxeSkill {
 
 type Skills = Omit<BotProfile, 'id' | 'name' | 'tagline' | 'color' | 'passive'>;
 
-/** Low Tier 5: slow reactions, sloppy aim, short reach, spams clicks. */
-const LT5: Skills = {
+/** Skill 0 = LT5: slow reactions, sloppy aim, short reach, spams clicks. */
+const BASIC: Skills = {
   reactionTicks: 6,
   predict: 0.55,
   aimGain: 0.35,
@@ -213,7 +221,7 @@ const LT5: Skills = {
   maxGapsPerRetreat: 1,
   comboEscape: 'none',
   axe: { shieldChance: 0.25, shieldLead: 1, shieldReact: 7, swap: false, axeDelay: [12, 20], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
-  neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 30, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7 },
+  neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 30, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7, buffChance: 0 },
   uhc: { lava: 0.15, lavaPickup: false, web: 0, water: false, pillar: false, mine: false, headHP: 6, aimSettle: 8 },
   crystal: {
     clickGap: 8, aimSettle: 6, comboGap: 30, thinkTicks: 8, selfWeight: 0.3, minDamage: 1,
@@ -222,9 +230,9 @@ const LT5: Skills = {
   mace: { launch: 0.25, steer: 0.4, elytra: false, pickMace: false, defend: 0, smashDepth: 0 },
 };
 
-/** Low Tier 4: starts to space and W-tap; anchors, pearls, water and a crossbow come in. */
-const LT4: Skills = {
-  ...LT5,
+/** Skill 2 (from LT2 up): starts to space and W-tap; anchors, pearls, water and a crossbow come in. */
+const DECENT: Skills = {
+  ...BASIC,
   reactionTicks: 4,
   predict: 0.75,
   aimGain: 0.45,
@@ -243,6 +251,7 @@ const LT4: Skills = {
   strafeSwitch: [25, 55],
   spacing: 2.7,
   spacingDiscipline: 0.15,
+  // Sprint-jumping (7 blocks/s) outruns a player who only sprints (5.6): LT2 and up only.
   chaseSprintJump: true,
   retreatHP: 6.5,
   returnHP: 13,
@@ -253,8 +262,8 @@ const LT4: Skills = {
   // Walking while eating can't get away anyway: aborting would only waste the apple.
   abortEatDistance: 0,
   comboEscape: 'jumpreset',
-  axe: { shieldChance: 0.5, shieldLead: 3, shieldReact: 5, swap: false, axeDelay: [7, 12], readAxe: 0.15, ranged: 1, rangedNoiseDeg: 3.2 },
-  neth: { potHP: 8, potNoiseDeg: 12, potGap: 5, invTicks: 20, totemReact: 18, hotbarTotem: false, rebuff: true, mendAt: 0.4, pcrit: 0.1, gapDist: 7 },
+  axe: { shieldChance: 0.5, shieldLead: 3, shieldReact: 7, swap: false, axeDelay: [7, 12], readAxe: 0.15, ranged: 1, rangedNoiseDeg: 3.2 },
+  neth: { potHP: 8, potNoiseDeg: 12, potGap: 5, invTicks: 20, totemReact: 18, hotbarTotem: false, rebuff: true, mendAt: 0.4, pcrit: 0.1, gapDist: 7, buffChance: 0.6 },
   uhc: { lava: 0.3, lavaPickup: false, web: 0.15, water: true, pillar: false, mine: true, headHP: 8, aimSettle: 6 },
   crystal: {
     clickGap: 6, aimSettle: 4, comboGap: 20, thinkTicks: 6, selfWeight: 0.5, minDamage: 1.2,
@@ -263,8 +272,8 @@ const LT4: Skills = {
   mace: { launch: 0.55, steer: 0.6, elytra: false, pickMace: true, defend: 1, smashDepth: 0.3 },
 };
 
-/** Low Tier 3: times its hits, sometimes W-taps and crits; uses the crossbow and hotbar totems. */
-const LT3: Skills = {
+/** Skill 4 = HT2: times its hits, sometimes W-taps and crits; uses the crossbow and hotbar totems. */
+const GOOD: Skills = {
   reactionTicks: 3,
   predict: 0.9,
   aimGain: 0.5,
@@ -297,8 +306,8 @@ const LT3: Skills = {
   punishEating: true,
   maxGapsPerRetreat: 1,
   comboEscape: 'jumpreset',
-  axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 4, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
-  neth: { potHP: 9, potNoiseDeg: 9, potGap: 4, invTicks: 12, totemReact: 9, hotbarTotem: true, rebuff: true, mendAt: 0.5, pcrit: 0.25, gapDist: 6.5 },
+  axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 7, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
+  neth: { potHP: 9, potNoiseDeg: 9, potGap: 4, invTicks: 12, totemReact: 9, hotbarTotem: true, rebuff: true, mendAt: 0.5, pcrit: 0.25, gapDist: 6.5, buffChance: 1 },
   uhc: { lava: 0.4, lavaPickup: true, web: 0.25, water: true, pillar: false, mine: true, headHP: 9, aimSettle: 5 },
   crystal: {
     clickGap: 4, aimSettle: 3, comboGap: 14, thinkTicks: 5, selfWeight: 0.7, minDamage: 1.5,
@@ -307,8 +316,8 @@ const LT3: Skills = {
   mace: { launch: 0.8, steer: 0.75, elytra: true, pickMace: true, defend: 1, smashDepth: 0.6 },
 };
 
-/** Low Tier 2: W-taps, jump-resets, crits, attribute swaps, surrounds and digs — every item. */
-const LT2: Skills = {
+/** Skill 6 = LT1: W-taps, jump-resets, crits, attribute swaps, surrounds and digs — every item. */
+const STRONG: Skills = {
   reactionTicks: 3,
   predict: 0.95,
   aimGain: 0.6,
@@ -341,8 +350,8 @@ const LT2: Skills = {
   punishEating: true,
   maxGapsPerRetreat: 2,
   comboEscape: 'jumpreset',
-  axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 2, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
-  neth: { potHP: 10, potNoiseDeg: 4, potGap: 3, invTicks: 7, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.7, pcrit: 0.55, gapDist: 6 },
+  axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 8, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
+  neth: { potHP: 10, potNoiseDeg: 4, potGap: 3, invTicks: 7, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.7, pcrit: 0.55, gapDist: 6, buffChance: 1 },
   uhc: { lava: 0.7, lavaPickup: true, web: 0.5, water: true, pillar: true, mine: true, headHP: 11, aimSettle: 3 },
   crystal: {
     clickGap: 2, aimSettle: 2, comboGap: 6, thinkTicks: 3, selfWeight: 0.9, minDamage: 2,
@@ -351,79 +360,91 @@ const LT2: Skills = {
   mace: { launch: 0.9, steer: 0.88, elytra: true, pickMace: true, defend: 2, smashDepth: 1 },
 };
 
-/** Low Tier 1: tier-tester level — near-perfect timing and spacing. */
-const LT1: Skills = {
-  ...LT2,
-  reactionTicks: 2,
-  predict: 1,
+/** Skill 8 (between LT1 and HT1): tier-tester level — near-perfect timing and spacing. */
+const ELITE: Skills = {
+  ...STRONG,
+  reactionTicks: 3,
+  predict: 0.93,
   aimGain: 0.8,
   maxTurnDeg: 40,
-  aimNoiseDeg: 0.8,
+  aimNoiseDeg: 1.3,
   maxReach: 2.97,
-  chargeMin: 0.97,
-  wtapChance: 0.95,
-  wtapTicks: [1, 1],
-  stapChance: 0.35,
+  chargeMin: 0.955,
+  wtapChance: 0.85,
+  wtapTicks: [1, 2],
+  stapChance: 0.3,
   critChance: 0.4,
-  jumpResetChance: 0.7,
-  hitSelectChance: 0.6,
+  jumpResetChance: 0.55,
+  hitSelectChance: 0.45,
   strafeChance: 0.9,
   strafeSwitch: [8, 25],
   spacing: 3.3,
-  spacingDiscipline: 0.85,
+  spacingDiscipline: 0.78,
   retreatHP: 9,
   returnHP: 17,
   eatDistance: 7.5,
   maxRetreatTicks: 110,
   abortEatDistance: 2.8,
   comboEscape: 'shold',
-  axe: { shieldChance: 0.95, shieldLead: 6, shieldReact: 1, swap: true, axeDelay: [1, 2], readAxe: 0.85, ranged: 2, rangedNoiseDeg: 0.6 },
-  neth: { potHP: 11, potNoiseDeg: 2, potGap: 2, invTicks: 4, totemReact: 3, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.8, gapDist: 5.5 },
-  uhc: { lava: 0.9, lavaPickup: true, web: 0.7, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 1 },
-  crystal: { ...LT2.crystal, clickGap: 1, aimSettle: 1, comboGap: 3, thinkTicks: 2, selfWeight: 1 },
-  mace: { launch: 0.97, steer: 0.95, elytra: true, pickMace: true, defend: 2, smashDepth: 1.3 },
+  axe: { shieldChance: 0.85, shieldLead: 5, shieldReact: 8, swap: true, axeDelay: [2, 3], readAxe: 0.65, ranged: 2, rangedNoiseDeg: 0.6 },
+  neth: { potHP: 10.5, potNoiseDeg: 3, potGap: 3, invTicks: 7, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.75, pcrit: 0.6, gapDist: 5.5, buffChance: 1 },
+  uhc: { lava: 0.72, lavaPickup: true, web: 0.52, water: true, pillar: true, mine: true, headHP: 11.5, aimSettle: 2 },
+  crystal: { ...STRONG.crystal, clickGap: 2, aimSettle: 2, comboGap: 5, thinkTicks: 3, selfWeight: 1 },
+  mace: { launch: 0.92, steer: 0.9, elytra: true, pickMace: true, defend: 2, smashDepth: 1.1 },
 };
 
-/** High Tier 1: the best there is — one-tick reactions, perfect spacing, no wasted clicks. */
-const HT1: Skills = {
-  ...LT1,
-  reactionTicks: 1,
-  predict: 1,
-  aimGain: 0.9,
-  maxTurnDeg: 55,
-  aimNoiseDeg: 0.4,
-  maxReach: 3.0,
-  chargeMin: 0.98,
-  wtapChance: 1,
-  stapChance: 0.4,
-  critChance: 0.45,
-  jumpResetChance: 0.85,
-  hitSelectChance: 0.75,
-  strafeChance: 0.95,
+/**
+ * Skill 9 = HT1: the best there is, but still within what a human can do — ~0.13 s reactions,
+ * 0.4 s before it answers a raised shield, the odd missed W-tap or pot.
+ */
+const BEST: Skills = {
+  ...ELITE,
+  reactionTicks: 2.6,
+  predict: 0.92,
+  aimGain: 0.85,
+  maxTurnDeg: 45,
+  aimNoiseDeg: 1.1,
+  maxReach: 2.98,
+  chargeMin: 0.96,
+  wtapChance: 0.9,
+  stapChance: 0.35,
+  critChance: 0.4,
+  jumpResetChance: 0.65,
+  hitSelectChance: 0.55,
+  strafeChance: 0.85,
   strafeSwitch: [6, 20],
-  spacing: 3.4,
-  spacingDiscipline: 0.95,
+  spacing: 3.35,
+  spacingDiscipline: 0.85,
   retreatHP: 9.5,
   returnHP: 18,
   eatDistance: 8,
   maxRetreatTicks: 120,
   abortEatDistance: 3,
-  axe: { shieldChance: 0.98, shieldLead: 7, shieldReact: 0, swap: true, axeDelay: [1, 1], readAxe: 0.95, ranged: 2, rangedNoiseDeg: 0.4 },
-  neth: { potHP: 11.5, potNoiseDeg: 1, potGap: 1, invTicks: 2, totemReact: 1, hotbarTotem: true, rebuff: true, mendAt: 0.85, pcrit: 0.9, gapDist: 5 },
-  uhc: { lava: 0.95, lavaPickup: true, web: 0.8, water: true, pillar: true, mine: true, headHP: 12.5, aimSettle: 1 },
-  crystal: { ...LT1.crystal, clickGap: 0, comboGap: 1, thinkTicks: 1, selfWeight: 1.1 },
-  mace: { launch: 1, steer: 1, elytra: true, pickMace: true, defend: 2, smashDepth: 1.5 },
+  axe: { shieldChance: 0.9, shieldLead: 5, shieldReact: 8, swap: true, axeDelay: [2, 3], readAxe: 0.75, ranged: 2, rangedNoiseDeg: 0.4 },
+  neth: { potHP: 11, potNoiseDeg: 2.5, potGap: 3, invTicks: 6, totemReact: 4, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.7, gapDist: 5, buffChance: 1 },
+  uhc: { lava: 0.75, lavaPickup: true, web: 0.55, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 2 },
+  crystal: { ...ELITE.crystal, clickGap: 1, aimSettle: 2, comboGap: 4, thinkTicks: 2, selfWeight: 1.1 },
+  mace: { launch: 0.95, steer: 0.93, elytra: true, pickMace: true, defend: 2, smashDepth: 1.2 },
 };
 
-/** Tier ladder index (0 = LT5 … 9 = HT1) of each hand-tuned profile; the rest are blended. */
+/**
+ * The hand-tuned profiles, spaced out on a skill scale from 0 (BASIC) to 9 (BEST). Tiers sit
+ * somewhere on this scale (TIER_SKILL) and blend the two profiles either side of them.
+ */
 const ANCHORS: [number, Skills][] = [
-  [0, LT5],
-  [2, LT4],
-  [4, LT3],
-  [6, LT2],
-  [8, LT1],
-  [9, HT1],
+  [0, BASIC],
+  [2, DECENT],
+  [4, GOOD],
+  [6, STRONG],
+  [8, ELITE],
+  [9, BEST],
 ];
+
+/**
+ * Where each tier sits on that scale. The low tiers are packed close together, so each step up
+ * from LT5 is a small one and HT4 / LT3 stay beatable; the scale only opens up near the top.
+ */
+const TIER_SKILL: Record<TierId, number> = { lt5: 0, ht5: 0.25, lt4: 0.5, ht4: 0.8, lt3: 1.2, ht3: 1.7, lt2: 2.5, ht2: 4, lt1: 6, ht1: 9 };
 
 /**
  * Blends two profiles: numbers (and number pairs) linearly — whole numbers stay whole — while
@@ -433,12 +454,18 @@ const ANCHORS: [number, Skills][] = [
 const LEVELS = new Set(['ranged', 'pearls', 'defend', 'maxGapsPerRetreat']);
 /** Numbers where 0 means "never": a blend must not switch them on early. */
 const ZERO_OFF = new Set(['abortEatDistance']);
+/**
+ * Whole numbers that may blend to fractions: a reaction time of 4.5 ticks is played (see
+ * BotBrain.perceive), and rounding it would make it drop a whole tick between two tiers.
+ */
+const FRACTIONAL = new Set(['reactionTicks']);
 
 function blend<T>(a: T, b: T, t: number, key = ''): T {
   if (LEVELS.has(key) || (ZERO_OFF.has(key) && a === 0)) return a;
   if (typeof a === 'number' && typeof b === 'number') {
     const v = a + (b - a) * t;
-    return (Number.isInteger(a) && Number.isInteger(b) ? Math.round(v) : Math.round(v * 1000) / 1000) as T;
+    const whole = Number.isInteger(a) && Number.isInteger(b) && !FRACTIONAL.has(key);
+    return (whole ? Math.round(v) : Math.round(v * 1000) / 1000) as T;
   }
   if (Array.isArray(a)) return a.map((x, i) => blend(x, (b as unknown[])[i], t)) as T;
   if (a && typeof a === 'object') {
@@ -449,33 +476,34 @@ function blend<T>(a: T, b: T, t: number, key = ''): T {
   return a;
 }
 
-function skillsAt(tier: number): Skills {
+/** The profile at any point of the skill scale (0 = BASIC … 9 = BEST); tiers use TIER_SKILL. */
+export function skillsAt(skill: number): Skills {
   for (let i = 0; i < ANCHORS.length - 1; i++) {
     const [ia, a] = ANCHORS[i];
     const [ib, b] = ANCHORS[i + 1];
-    if (tier >= ia && tier < ib) return blend(a, b, (tier - ia) / (ib - ia));
+    if (skill >= ia && skill < ib) return blend(a, b, (skill - ia) / (ib - ia));
   }
   return ANCHORS[ANCHORS.length - 1][1];
 }
 
 const TIERS: { id: TierId; name: string; tagline: string; color: string }[] = [
   { id: 'lt5', name: 'LT5', tagline: 'Low Tier 5 — slow reactions, sloppy aim, short reach, spams clicks. Basic items only.', color: '#aaaaaa' },
-  { id: 'ht5', name: 'HT5', tagline: 'High Tier 5 — still slow, but its hits start to land.', color: '#55ff55' },
-  { id: 'lt4', name: 'LT4', tagline: 'Low Tier 4 — W-taps now and then; anchors, pearls, water buckets and the crossbow come in.', color: '#55ffaa' },
-  { id: 'ht4', name: 'HT4', tagline: 'High Tier 4 — better spacing and aim, re-totems faster.', color: '#55ffff' },
-  { id: 'lt3', name: 'LT3', tagline: 'Low Tier 3 — times its hits, crits and W-taps; hotbar totems, mending, webs, Slow Falling crossbow.', color: '#7f7fff' },
-  { id: 'ht3', name: 'HT3', tagline: 'High Tier 3 — quicker combos, cleaner pots.', color: '#ffff55' },
-  { id: 'lt2', name: 'LT2', tagline: 'Low Tier 2 — every item: attribute swaps, surrounds, digging, pillars, hurt-immunity timing.', color: '#ffaa00' },
-  { id: 'ht2', name: 'HT2', tagline: 'High Tier 2 — sharp spacing, near-full reach.', color: '#ff5555' },
-  { id: 'lt1', name: 'LT1', tagline: 'Low Tier 1 — tier-tester level: near-perfect timing and spacing.', color: '#ff55ff' },
-  { id: 'ht1', name: 'HT1', tagline: 'High Tier 1 — the best there is: one-tick reactions, full reach, no wasted clicks.', color: '#aa00aa' },
+  { id: 'ht5', name: 'HT5', tagline: 'High Tier 5 — a touch quicker and steadier than LT5. Basic items only.', color: '#55ff55' },
+  { id: 'lt4', name: 'LT4', tagline: 'Low Tier 4 — waits a little longer between clicks, so more of its hits count. Basic items only.', color: '#55ffaa' },
+  { id: 'ht4', name: 'HT4', tagline: 'High Tier 4 — steadier aim, a bit more reach, the odd W-tap. Basic items only.', color: '#55ffff' },
+  { id: 'lt3', name: 'LT3', tagline: 'Low Tier 3 — quicker reactions and cleaner clicks. Basic items only.', color: '#7f7fff' },
+  { id: 'ht3', name: 'HT3', tagline: 'High Tier 3 — times its hits well, starts to crit and jump-reset. Basic items only.', color: '#ffff55' },
+  { id: 'lt2', name: 'LT2', tagline: 'Low Tier 2 — sprint-jumps after you; anchors, pearls, water buckets, the crossbow and re-buffing come in.', color: '#ffaa00' },
+  { id: 'ht2', name: 'HT2', tagline: 'High Tier 2 — full-charge hits; hotbar totems, lava pickup, Slow Falling crossbow, elytra.', color: '#ff5555' },
+  { id: 'lt1', name: 'LT1', tagline: 'Low Tier 1 — every item: attribute swaps, surrounds, digging, pillars, hurt-immunity timing.', color: '#ff55ff' },
+  { id: 'ht1', name: 'HT1', tagline: 'High Tier 1 — the best there is: quick reactions, full reach, few wasted clicks. Still beatable.', color: '#aa00aa' },
 ];
 
 export const DIFFICULTIES = {
   // LT5's movement, aim and healing with every attack removed, so you can drill combos, reach
   // and W-taps against a target that still moves like a player.
   practice: {
-    ...LT5,
+    ...BASIC,
     id: 'practice',
     name: 'Practice',
     tagline: 'Moves like LT5 but never attacks — free combo and reach practice.',
@@ -484,13 +512,13 @@ export const DIFFICULTIES = {
     missClickChance: 0,
     wtapChance: 0,
     critChance: 0,
-    axe: { ...LT5.axe, shieldChance: 0.85, shieldLead: 5, shieldReact: 4, axeDelay: [12, 20] },
-    neth: { ...LT5.neth, potHP: 8, potNoiseDeg: 14, totemReact: 20, gapDist: 6 },
-    uhc: { ...LT5.uhc, lava: 0, water: true, mine: true, headHP: 8 },
-    crystal: { ...LT5.crystal, clickGap: 10, aimSettle: 8, comboGap: 40, thinkTicks: 10, selfWeight: 1, minDamage: 99 },
-    mace: { ...LT5.mace, launch: 0 },
+    axe: { ...BASIC.axe, shieldChance: 0.85, shieldLead: 5, shieldReact: 4, axeDelay: [12, 20] },
+    neth: { ...BASIC.neth, potHP: 8, potNoiseDeg: 14, totemReact: 20, gapDist: 6 },
+    uhc: { ...BASIC.uhc, lava: 0, water: true, mine: true, headHP: 8 },
+    crystal: { ...BASIC.crystal, clickGap: 10, aimSettle: 8, comboGap: 40, thinkTicks: 10, selfWeight: 1, minDamage: 99 },
+    mace: { ...BASIC.mace, launch: 0 },
   },
-  ...Object.fromEntries(TIERS.map((t, i) => [t.id, { ...skillsAt(i), ...t, passive: false }])),
+  ...Object.fromEntries(TIERS.map((t) => [t.id, { ...skillsAt(TIER_SKILL[t.id]), ...t, passive: false }])),
 } as Record<DifficultyId, BotProfile>;
 
 export const DIFFICULTY_ORDER: DifficultyId[] = ['practice', ...TIERS.map((t) => t.id)];

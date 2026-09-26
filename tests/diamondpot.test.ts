@@ -102,7 +102,7 @@ describe('Diamond Pot bot', () => {
     let pots = 0;
     let combo = 0;
     for (let seed = 1; seed <= 4; seed++) {
-      const m = duel('lt2', 'lt2', seed);
+      const m = duel('lt1', 'lt1', seed);
       if (m.phase === 'ended') finished++;
       for (const f of [m.player, m.bot]) {
         hits += f.stats.hits;

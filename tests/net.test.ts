@@ -211,17 +211,17 @@ describe('online inventory', () => {
     const d = new Duel(['A', 'B']);
     const f = d.fighters[0];
     const layout = Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k)));
-    // Move the golden apples from hotbar 1 to main slot 20.
+    // Move the sword from hotbar 0 to main slot 20.
     const moved = [...layout];
-    moved[20] = moved[1];
-    moved[1] = null;
+    moved[20] = moved[0];
+    moved[0] = null;
     expect(d.setInventory(0, moved)).toBe(true);
-    expect(f.inventory[20]?.id).toBe('golden_apple');
-    // Doubling the apples is refused.
+    expect(f.inventory[20]?.id).toBe('diamond_sword');
+    // Doubling the sword is refused.
     const dup = Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k)));
     dup[5] = dup[20];
     expect(d.setInventory(0, dup)).toBe(false);
-    expect(f.countItem('golden_apple')).toBe(5);
+    expect(f.countItem('diamond_sword')).toBe(1);
     // Armor slots only take the matching piece.
     const bad = Array.from({ length: SLOT_COUNT }, (_, k) => toSlot(f.getSlot(k)));
     [bad[36], bad[39]] = [bad[39], bad[36]];

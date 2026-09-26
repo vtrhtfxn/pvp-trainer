@@ -117,8 +117,9 @@ describe('SMP bot', () => {
     const used = { disables: 0, pots: 0, gapples: 0, xp: 0, pearls: 0, swaps: 0, blocked: 0 };
     let finished = 0;
     for (let seed = 1; seed <= 3; seed++) {
-      const m = new Match(smp, DIFFICULTIES.lt2, seed);
-      const pb = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.lt2, new Rng(seed + 99), () => performAttack(m.player, m.bot));
+      // LT1: the first tier with every item (hotbar totem + F, pearls out, attribute swaps).
+      const m = new Match(smp, DIFFICULTIES.lt1, seed);
+      const pb = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.lt1, new Rng(seed + 99), () => performAttack(m.player, m.bot));
       pb.resetRound();
       while (m.phase !== 'ended' && m.tickCount < 20 * 60 * 4) {
         if (m.phase === 'fight') {

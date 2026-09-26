@@ -1,4 +1,11 @@
-/** Small WebAudio synth for combat feedback (no copyrighted game audio). */
+import critUrl from '../assets/sounds/crit.ogg?url';
+import knockbackUrl from '../assets/sounds/knockback.ogg?url';
+import sweepUrl from '../assets/sounds/sweep.ogg?url';
+
+/**
+ * Small WebAudio synth for combat feedback, plus recorded samples for crits, knockback hits
+ * and sweeps (the synth stands in until they are decoded, or if the browser can't decode Ogg).
+ */
 
 export interface Listener {
   x: number;
@@ -17,6 +24,7 @@ export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
+  private readonly samples: Partial<Record<'crit' | 'knockback' | 'sweep', AudioBuffer>> = {};
   volume = 0.8;
   /** Silences new sounds (during /tick sprint, when thousands of ticks run per second). */
   muted = false;
@@ -34,6 +42,7 @@ export class Sound {
       this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this.loadSamples();
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
@@ -65,6 +74,39 @@ export class Sound {
       p.connect(this.master);
     } else g.connect(this.master);
     return g;
+  }
+
+  private loadSamples() {
+    const ctx = this.ctx!;
+    const list = [
+      ['crit', critUrl],
+      ['knockback', knockbackUrl],
+      ['sweep', sweepUrl],
+    ] as const;
+    for (const [name, url] of list) {
+      fetch(url)
+        .then((r) => r.arrayBuffer())
+        .then((b) => ctx.decodeAudioData(b))
+        .then((buf) => (this.samples[name] = buf))
+        .catch(() => {
+          /* keep the synth version */
+        });
+    }
+  }
+
+  /** Plays a decoded sample; false when it isn't ready (the caller synthesises instead). */
+  private sample(name: 'crit' | 'knockback' | 'sweep', dest: AudioNode, peak = 1): boolean {
+    const buf = this.samples[name];
+    if (!buf) return false;
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const g = ctx.createGain();
+    g.gain.value = peak;
+    src.connect(g).connect(dest);
+    src.start();
+    return true;
   }
 
   private noiseBurst(dest: AudioNode, t0: number, dur: number, type: BiquadFilterType, f0: number, f1: number, q: number, peak: number) {
@@ -113,11 +155,13 @@ export class Sound {
         this.tone(d, t, 0.1, 'sine', 170, 55, 0.7);
         break;
       case 'knockback':
+        if (this.sample('knockback', d)) break;
         this.noiseBurst(d, t, 0.16, 'bandpass', 500, 2400, 1.2, 0.6);
         this.noiseBurst(d, t, 0.08, 'bandpass', 1400, 500, 0.9, 0.75);
         this.tone(d, t, 0.11, 'sine', 160, 50, 0.7);
         break;
       case 'crit':
+        if (this.sample('crit', d)) break;
         this.noiseBurst(d, t, 0.11, 'highpass', 2600, 1200, 0.8, 0.9);
         this.tone(d, t, 0.05, 'square', 1900, 700, 0.18);
         this.tone(d, t, 0.1, 'sine', 190, 60, 0.6);
@@ -138,6 +182,7 @@ export class Sound {
   sweep(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.6);
     if (!d) return;
+    if (this.sample('sweep', d, 1.4)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.22, 'bandpass', 600, 2600, 1.1, 0.45);
   }

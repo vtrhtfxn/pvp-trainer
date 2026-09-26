@@ -251,14 +251,16 @@ describe('axe bot', () => {
     let blocked = 0;
     let swaps = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const m = duel('lt2', 'lt2', seed);
+      // LT1: the first tier with attribute swaps.
+      const m = duel('lt1', 'lt1', seed);
       if (m.phase === 'ended') finished++;
       disabled += m.bot.stats.shieldsDisabled + m.player.stats.shieldsDisabled;
       blocked += m.bot.stats.blocked + m.player.stats.blocked;
       swaps += m.bot.stats.attributeSwaps + m.player.stats.attributeSwaps;
     }
     expect(finished).toBeGreaterThanOrEqual(5);
-    expect(disabled).toBeGreaterThan(6);
+    // Shields take 0.4 s to read, so fewer get disabled than blocked.
+    expect(disabled).toBeGreaterThan(3);
     expect(blocked).toBeGreaterThan(6);
     expect(swaps).toBeGreaterThan(3);
   });
@@ -308,8 +310,36 @@ describe('axe bot', () => {
         // From spawn (it used to stand aiming a crossbow at the shield for up to 4.5 s)...
         expect(timeToDisable(kit, tier, 1, false)).toBeLessThan(60);
         // ...and up close (it used to circle out of its own aim).
-        expect(timeToDisable(kit, tier, 4, true)).toBeLessThan(tier === 'lt5' ? 25 : 16);
+        // The low tiers (LT5 … LT3) take their time pulling the axe out.
+        expect(timeToDisable(kit, tier, 4, true)).toBeLessThan(['lt5', 'lt4', 'lt3'].includes(tier) ? 25 : 16);
+      }
+    }
+  });
+
+  it('never disables a shield faster than a human could react (0.4 s, LT1 and HT1)', () => {
+    for (const kit of ['axe', 'uhc', 'smp'] as const) {
+      for (const tier of ['lt1', 'ht1'] as DifficultyId[]) {
+        for (let seed = 1; seed <= 4; seed++) {
+          const m = new Match(kitById(kit), DIFFICULTIES[tier], seed);
+          while (m.phase !== 'fight') m.tick();
+          const p = m.player;
+          let raised = -1;
+          for (let t = 0; t < 300; t++) {
+            const b = m.bot;
+            p.yaw = Math.atan2(-(b.pos.x - p.pos.x), -(b.pos.z - p.pos.z));
+            p.pitch = 0;
+            // Shield up once the bot is right on you.
+            if (raised < 0 && t > 40 && Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) < 3.2) raised = t;
+            m.useHeld = raised >= 0;
+            m.tick();
+            if (raised >= 0 && p.shieldCooldown > 0) {
+              expect(t - raised, `${kit} ${tier}`).toBeGreaterThanOrEqual(8);
+              break;
+            }
+          }
+        }
       }
     }
   });
 });
+

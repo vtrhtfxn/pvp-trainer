@@ -100,6 +100,7 @@ export class Duel {
     for (const f of this.fighters) {
       f.networked = true;
       f.naturalRegen = this.kit.naturalRegen ?? true;
+      f.food.locked = !!this.kit.noHunger;
     }
     this.phase = 'countdown';
     this.phaseTicks = 0;

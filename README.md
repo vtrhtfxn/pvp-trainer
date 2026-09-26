@@ -253,7 +253,7 @@ when they do not, which is what keeps it playable on integrated graphics.
 
 | Mode | Status |
 | --- | --- |
-| **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV), 5 golden apples | ✅ Playable |
+| **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV) · no golden apples, hunger off (you can always sprint) | ✅ Playable |
 | **Axe** — Diamond Axe, Diamond Sword, Crossbow, Bow, 6 Arrows, Shield (off hand), Diamond armor (unenchanted) | ✅ Playable (vs bot) |
 | **NethPot** — Netherite Sword (Sharpness V, Fire Aspect II, Unbreaking III, Mending), Netherite armor (Protection IV, Unbreaking III, Mending), 3 totems (one in the off hand), 64 golden apples, 3× Strength II, 3× Speed II, 3× Fire Resistance (8:00), 21× Splash Healing II, 2 stacks of Bottles o' Enchanting | ✅ Playable (vs bot) |
 | **Diamond Pot** — Diamond Sword (Sharpness V), Diamond armor (Protection IV, Unbreaking III), 26× Splash Healing II, 3× Strength II, 3× Speed II, 3× Regeneration (all 1:30), 5 steak (off hand); all damage +33% | ✅ Playable (vs bot) |
@@ -268,22 +268,30 @@ The arena is 80 × 80 blocks (walls 16 high). Every kit also works online (see M
 
 The bot follows the PvP tier lists, weakest to strongest: **LT5, HT5, LT4, HT4, LT3, HT3, LT2, HT2,
 LT1, HT1** (Low / High Tier 5 … 1). Each tier up has more reach (2.4 → 3.0 blocks), faster reactions
-(6 ticks → 1), steadier aim, better click timing and faster item play (re-totem 30 ticks → 1, crystal
-click gap 8 ticks → 0, inventory 30 ticks → 2), and unlocks more of the kit:
+(6 ticks → 2.6), steadier aim, better click timing and faster item play (re-totem 30 ticks → 4, crystal
+click gap 8 ticks → 1, inventory 30 ticks → 6), and unlocks more of the kit:
 
 | From | Also uses |
 | --- | --- |
 | LT5 | sword, golden apples, shield and axe, buffs at the start, crystals on obsidian, lava, re-totems through the inventory |
-| HT5 | crossbow (Axe/UHC), pearls in (Crystal), XP mending, the odd cobweb |
-| LT4 | respawn anchors, water bucket, mining blocks in its way (UHC pickaxe for stone and obsidian), re-buffing |
-| LT3 | hotbar totem + F, lava pickup, Slow Falling crossbow (Crystal), sets off your crystals |
-| HT3 | bow, pearls out when it is about to die |
-| LT2 | everything: attribute swaps, ender-chest surrounds, digging for foot-level crystals, mining your surround, pillars, hurt-immunity timing |
+| HT5 | a little of everything that comes in slowly: Strength and Speed in pot kits (some rounds), the odd cobweb, XP mending, P-crits, jump-resets |
+| LT2 | sprint-jumping after you, respawn anchors, pearls in, water bucket, mining blocks in its way, crossbow (Axe/UHC), re-buffing |
+| HT2 | hotbar totem + F, lava pickup, Slow Falling crossbow (Crystal), sets off your crystals, elytra (Mace) |
+| LT1 | everything: attribute swaps, bow, ender-chest surrounds, digging for foot-level crystals, mining your surround, pillars, hurt-immunity timing, pearls out |
+
+LT1 and HT1 stay within human limits: about 0.13–0.15 s reactions, at least **0.4 s** to notice a
+raised shield before the axe comes out, 4–5 ticks to re-totem, a crystal click gap of 1–2 ticks, and the
+odd missed W-tap, jump-reset or pot. They are hard, not unbeatable.
+
+The steps are small at the bottom and grow towards the top: HT5 is only a touch stronger than LT5,
+and LT5 … HT3 all play with basic items. Each tier sits on a skill scale between six hand-tuned
+profiles (`TIER_SKILL` in `src/ai/difficulty.ts`); numbers in between are blended (reaction time
+too, down to fractions of a tick) and on/off skills unlock at the profiles. Measured against
+scripted "human" opponents, the bot's damage dealt ÷ damage taken rises by roughly 5–25% per step
+from LT5 to LT2. `tests/tiers.test.ts` checks the low steps stay small and that a few tiers up wins
+in every kit.
 
 Old saved difficulties map onto the ladder (Easy → LT5, Normal → LT3, Hard → LT2, Expert → LT1).
-The numbers in between anchor tiers (LT5, LT4, LT3, LT2, LT1, HT1) are blended, and on/off skills
-unlock at those anchors. `tests/tiers.test.ts` plays every kit three tiers apart and checks the
-stronger one wins; in tuning runs each single tier step won most duels in every kit.
 
 **Practice** moves, strafes, chases and eats golden apples like LT5, but never swings — you take no
 damage, so you can drill combos, W-taps, crits and reach without the duel fighting back. Its
@@ -458,11 +466,12 @@ nametag reads *Passive*.
 The bot only presses keys, moves the mouse and clicks, with a reaction delay and aim error
 that depend on its tier. It plays with the same physics and combat rules you do. It:
 
-- times hits to the cooldown (half-swings on LT2+), W-taps and S-taps after sprint hits
+- times hits to the cooldown (half-swings on LT1+), W-taps and S-taps after sprint hits
 - goes for jump crits, jump-resets, hit-selects and circle strafes
 - keeps its spacing while its sword recharges, and backs out of combos
-- **retreats when its health is low**: it lands a last knockback hit, runs (sprint-jumping on
-  LT2+), eats golden apples once it's far enough away, and comes back once it has healed
+- **retreats when its health is low** (kits with golden apples): it lands a last knockback hit, runs
+  (sprint-jumping on LT1+), eats golden apples once it's far enough away, and comes back once it has healed
+- chases by sprinting like you do; only LT2 and up sprint-jump after you (7 blocks/s against a sprint's 5.6)
 - punishes you with crits when you eat
 
 In the **Axe** kit it also plays the shield game:
@@ -470,43 +479,45 @@ In the **Axe** kit it also plays the shield game:
 - raises its shield when your weapon is about to be charged and its own is not (it tracks your swings
   and your held item's cooldown, and needs the 5-tick raise lead to be safe), and drops it for a tick to
   hit back
-- disables your shield with the axe — **LT2 and up attribute-swap** (axe in hand and swing on the
+- disables your shield with the axe — **LT1 and up attribute-swap** (axe in hand and swing on the
   same tick, sword damage and cooldown), lower tiers pull the axe out and commit to it
 - goes all in with sword crits for the 5 s your shield is down, and reads your axe: higher tiers lower their
   shield and hits you when you pull yours out
-- loads the crossbow when you keep your distance and shoots it (and the bow on HT3+) with ballistic
+- loads the crossbow when you keep your distance and shoots it (and the bow on LT1+) with ballistic
   aim and lead, stops when you close in
 - Practice keeps its shield up at you and never swings — a shield-disable drill
 
 In **NethPot** it plays the pot game:
 
 - throws Strength, Speed and Fire Resistance at the start and re-applies them when they run out
-  (LT4+), fetching them from the inventory — the inventory takes real time to open, and it can't
+  (LT2+). Strength and Speed come in slowly: LT5 never uses them, and the chance per round grows
+  until HT2, so the low tiers are no faster than you and hit no harder. It only speeds up its aim
+  and leads its tracking more once *you* have Speed on. fetching them from the inventory — the inventory takes real time to open, and it can't
   move or attack while it's open
 - pots by looking straight down and backing off, at a health threshold that rises with tier
   (HT1 pots below 6 hearts, two pots back to back when it's low); lower tiers aim sloppily
   and waste some of each pot
-- re-totems after a pop: slot key + F from a hotbar totem on LT3+, through the inventory below that,
+- re-totems after a pop: slot key + F from a hotbar totem on HT2+, through the inventory below that,
   and restocks the hotbar totem and healing pots when it has room
 - mends its armor with XP bottles in the gaps knockback opens, and eats a golden apple for absorption
   when you are far away
-- goes for jump crits and **P-crits** (LT2 55%, LT1 80%, HT1 90% of the times you hit it)
+- goes for jump crits and **P-crits** (LT1 55%, HT1 70% of the times you hit it)
 
 In **UHC** it plays the Axe-kit shield game (with stuns) plus:
 
 - pours **lava** at your feet when you're 2–4 blocks away and not fire-resistant, then picks it back
-  up once you've burned (LT3+), and never walks into lava itself
-- **webs** you as you come in, or itself when it's being comboed low (LT4+)
+  up once you've burned (HT2+), and never walks into lava itself
+- **webs** you as you come in, or itself when it's being comboed low (LT2+)
 - puts itself out with a **water** bucket at its feet, washes webs off, and picks the water back up
 - eats a **golden head** the moment it's low and the head is off cooldown
-- **pillars** three blocks up to eat golden apples when you're 6–12 blocks off (LT2+; any closer and
+- **pillars** three blocks up to eat golden apples when you're 6–12 blocks off (LT1+; any closer and
   your axe would have it down in 4 ticks), and **mines** the pillar
   out from under you — or any planks between you — with its Efficiency III axe
 - shoots you off a pillar with its crossbow
 
 In **Diamond Pot** it plays for combos instead: with normal knockback, Speed II and Strength II the
 damage comes from sprint-hit chains (W-/S-taps between hits), with crits only as a bonus. When it is
-being comboed low on health it sprints out of range (LT4+), **run-pots** — sprinting away and
+being comboed low on health it sprints out of range (LT2+), **run-pots** — sprinting away and
 throwing at its feet so the potion lands under it — keeps Strength, Speed and Regeneration up, and eats
 steak from the off hand before its hunger gets low enough to stop sprinting.
 
@@ -514,22 +525,22 @@ In **Crystal** it plays the crystal game. Every few ticks it scores each option 
 the damage it would deal you after armor minus (per tier) what it would cost itself, per tick it takes, and never
 picks one that would kill it without a totem:
 
-- **hits a crystal** that is already standing (LT3+ also sets off yours when that hurts you more)
+- **hits a crystal** that is already standing (HT2+ also sets off yours when that hurts you more)
 - **crystals obsidian** that is already there, or **places obsidian, then a crystal, then hits it** —
-  crosshair on each face, with a click gap that shrinks from 8 ticks (LT5) to 0 (HT1)
-- **anchors** you (LT4+): places an anchor next to you, charges it with glowstone, then switches to
+  crosshair on each face, with a click gap that shrinks from 8 ticks (LT5) to 1 (HT1)
+- **anchors** you (LT2+): places an anchor next to you, charges it with glowstone, then switches to
   its totem slot and clicks it
-- waits out your hurt immunity before it blows anything up (LT2+)
-- **surrounds** itself when it is low and you are close (LT2+): steps to the middle of its block and puts
+- waits out your hurt immunity before it blows anything up (LT1+)
+- **surrounds** itself when it is low and you are close (LT1+): steps to the middle of its block and puts
   an ender chest on each side (fetched from the inventory; crystals can't go on them), then eats
   inside and stays there until it has healed
-- **digs** (LT2+): when you are eating or walled in, digs the grass beside you, sets obsidian into the
+- **digs** (LT1+): when you are eating or walled in, digs the grass beside you, sets obsidian into the
   hole and crystals it at your feet; and **mines your surround** open with the pickaxe
 - shoots the **crossbow** (Quick Charge III, Multishot, Slow Falling arrows) when you are out of crystal
-  range (LT3+)
+  range (HT2+)
 - re-totems, restocks its hotbar, eats golden apples, buffs with Strength and Speed, mends with XP
-- pearls in when you are far away (HT5+) and pearls out when it is about to die with no totems
-  left (HT3+); falls back to the sword when nothing is worth blowing up, and jumps out of craters
+- pearls in when you are far away (LT2+) and pearls out when it is about to die with no totems
+  left (LT1+); falls back to the sword when nothing is worth blowing up, and jumps out of craters
 
 Anchors do most of the damage on flat ground; once craters open up, foot-level crystals take over.
 Utility items (potions, XP, the pickaxe, ender chests) take turns in one hotbar slot and the item
@@ -537,23 +548,23 @@ they displaced is restocked afterwards. In **UHC** it likewise fetches spare wat
 planks and the bow from the inventory in quiet moments, and the pickaxe when stone or obsidian is in
 its way.
 
-In **SMP** it plays the Axe-kit shield game with the netherite axe (attribute-swapping it on LT2+) and:
+In **SMP** it plays the Axe-kit shield game with the netherite axe (attribute-swapping it on LT1+) and:
 
 - throws Strength and Speed, and Fire Resistance whenever your Fire Aspect has it burning; mends
   with XP in the gaps; refills its hotbar potions, apples and pearls from the inventory
-- retreats to eat golden apples; LT2+ lands the parting hit with the **Knockback sword swapped in on
+- retreats to eat golden apples; LT1+ lands the parting hit with the **Knockback sword swapped in on
   the same tick** (the charged sword's cooldown, Knockback I's push)
 - has one totem, which only works from a hand: at 7 HP or less with you close it swaps the totem into
   its off hand in place of the shield, and puts the shield back once it is safe (or the totem popped)
-- pearls in when you run far (HT5+) and pearls out once per retreat when you are still on it (HT3+)
+- pearls in when you run far (LT2+) and pearls out once per retreat when you are still on it (LT1+)
 
 In **Mace** it sprints in and throws a wind charge at its feet (looking straight down) to get
 above you, steers over you in the air and smashes on the way down with whichever mace does more
-against your armor from that height (Density V from high up, Breach IV from low — LT4+). Wind
-Burst throws it back up for the next one. From up there, if you have moved away (LT3+), it swaps
+against your armor from that height (Density V from high up, Breach IV from low — LT2+). Wind
+Burst throws it back up for the next one. From up there, if you have moved away (HT2+), it swaps
 the elytra on at the top, glides over, dives steeply so the fall distance builds, swaps the
-chestplate back and smashes. Against your smashes it sidesteps (LT4+) or raises its shield
-(LT2+). On the ground it fights with the sword and axe, buffs, eats and re-totems. Higher tiers
+chestplate back and smashes. Against your smashes it sidesteps (LT2+) or raises its shield
+(LT1+). On the ground it fights with the sword and axe, buffs, eats and re-totems. Higher tiers
 launch more often, steer better and wait for a bigger fall before hitting.
 
 ## Project layout

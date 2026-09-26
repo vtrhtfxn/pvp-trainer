@@ -44,10 +44,31 @@ describe('tier ladder', () => {
     }
   });
 
-  it('unlocks every item by LT2, only the basics at LT5', () => {
-    const lt5 = DIFFICULTIES.lt5;
-    expect(lt5.crystal.anchors || lt5.crystal.crossbow || lt5.crystal.surround || lt5.crystal.mine || lt5.uhc.water).toBe(false);
-    for (const id of ['lt2', 'ht2', 'lt1', 'ht1'] as const) {
+  it('climbs in small steps at the bottom: HT5 is only a little stronger than LT5', () => {
+    const low = (['lt5', 'ht5', 'lt4', 'ht4', 'lt3'] as const).map((id) => DIFFICULTIES[id]);
+    for (let i = 1; i < low.length; i++) {
+      const [a, b] = [low[i - 1], low[i]];
+      expect(b.chargeMin - a.chargeMin, `${b.id} click timing`).toBeLessThanOrEqual(0.1);
+      expect(a.reactionTicks - b.reactionTicks, `${b.id} reactions`).toBeLessThanOrEqual(0.6);
+      expect(a.aimNoiseDeg - b.aimNoiseDeg, `${b.id} aim`).toBeLessThanOrEqual(0.6);
+      expect(b.maxReach - a.maxReach, `${b.id} reach`).toBeLessThanOrEqual(0.1);
+    }
+    const [lt5, ht5] = [DIFFICULTIES.lt5, DIFFICULTIES.ht5];
+    expect(ht5.chargeMin - lt5.chargeMin).toBeLessThan(0.05);
+    expect(ht5.missClickChance).toBeGreaterThan(0.08);
+  });
+
+  it('only sprint-jumps after you from LT2 up (a sprinting player can keep up with the rest)', () => {
+    for (const id of ['lt5', 'ht5', 'lt4', 'ht4', 'lt3', 'ht3'] as const) expect(DIFFICULTIES[id].chaseSprintJump, id).toBe(false);
+    for (const id of ['lt2', 'ht2', 'lt1', 'ht1'] as const) expect(DIFFICULTIES[id].chaseSprintJump, id).toBe(true);
+  });
+
+  it('unlocks every item by LT1, only the basics up to HT4', () => {
+    for (const id of ['lt5', 'ht5', 'lt4', 'ht4'] as const) {
+      const p = DIFFICULTIES[id];
+      expect(p.crystal.anchors || p.crystal.crossbow || p.crystal.surround || p.crystal.mine || p.uhc.water || p.axe.swap, id).toBe(false);
+    }
+    for (const id of ['lt1', 'ht1'] as const) {
       const p = DIFFICULTIES[id];
       expect(p.crystal).toMatchObject({ anchors: true, crossbow: true, surround: true, mine: true, iframeTiming: true, pearls: 2 });
       expect(p.uhc).toMatchObject({ water: true, mine: true, pillar: true, lavaPickup: true });
@@ -57,12 +78,14 @@ describe('tier ladder', () => {
     }
   });
 
+  // The low steps are small on purpose, so a single step can go either way between two bots:
+  // a few tiers up must win.
   const kits: KitId[] = ['sword', 'axe', 'neth_pot', 'diamond_pot', 'uhc', 'crystal', 'smp', 'mace'];
   for (const kit of kits) {
-    it(`${kit}: three tiers up wins`, () => {
+    it(`${kit}: a few tiers up wins`, () => {
       for (const [lo, hi] of [
-        ['lt5', 'ht4'],
-        ['ht4', 'lt2'],
+        ['lt5', 'ht3'],
+        ['lt4', 'lt2'],
         ['ht3', 'ht1'],
       ] as [TierId, TierId][]) {
         let wins = 0;

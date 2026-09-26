@@ -47,6 +47,11 @@ export interface KitDef extends Loadout {
   shieldStuns?: boolean;
   /** Layers of diggable ground (grass over dirt) that explosions crater; 0 = unbreakable floor. */
   floorDepth?: number;
+  /**
+   * Hunger stays full (like duel servers with hunger off), so nobody loses their sprint in a long
+   * fight. Saturation still runs down, so natural regeneration slows to vanilla's 1 HP / 4 s.
+   */
+  noHunger?: boolean;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
@@ -307,15 +312,13 @@ export const KITS: KitDef[] = [
     name: 'Sword',
     icon: 'sword',
     available: true,
-    summary: 'Pure sword combos, crits, W-taps and spacing.',
-    contents: ['Diamond Sword — Sharpness V', 'Full Diamond Armor — Protection IV', '5× Golden Apple'],
-    hotbar: [
-      { id: 'diamond_sword', count: 1, ench: { sharpness: 5 } },
-      { id: 'golden_apple', count: 5 },
-    ],
+    summary: 'Pure sword combos, crits, W-taps and spacing. No golden apples, no hunger.',
+    contents: ['Diamond Sword — Sharpness V', 'Full Diamond Armor — Protection IV', 'Hunger off: you can always sprint'],
+    hotbar: [{ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }],
     armor: diamondArmor(4),
     offhand: null,
     armorLabel: 'Diamond · Prot IV',
+    noHunger: true,
   },
   {
     id: 'axe',
