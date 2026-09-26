@@ -152,6 +152,11 @@ export interface NethSkill {
   pcrit: number;
   /** Eats a golden apple for absorption when the opponent is at least this far away. */
   gapDist: number;
+  /**
+   * Chance, per round, that it throws Strength II and Speed II on itself. The low tiers mostly
+   * fight unbuffed, so they are no faster and hit no harder than you do without your own pots.
+   */
+  buffChance: number;
 }
 
 export interface AxeSkill {
@@ -213,7 +218,7 @@ const BASIC: Skills = {
   maxGapsPerRetreat: 1,
   comboEscape: 'none',
   axe: { shieldChance: 0.25, shieldLead: 1, shieldReact: 7, swap: false, axeDelay: [12, 20], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
-  neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 30, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7 },
+  neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 30, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7, buffChance: 0 },
   uhc: { lava: 0.15, lavaPickup: false, web: 0, water: false, pillar: false, mine: false, headHP: 6, aimSettle: 8 },
   crystal: {
     clickGap: 8, aimSettle: 6, comboGap: 30, thinkTicks: 8, selfWeight: 0.3, minDamage: 1,
@@ -255,7 +260,7 @@ const DECENT: Skills = {
   abortEatDistance: 0,
   comboEscape: 'jumpreset',
   axe: { shieldChance: 0.5, shieldLead: 3, shieldReact: 5, swap: false, axeDelay: [7, 12], readAxe: 0.15, ranged: 1, rangedNoiseDeg: 3.2 },
-  neth: { potHP: 8, potNoiseDeg: 12, potGap: 5, invTicks: 20, totemReact: 18, hotbarTotem: false, rebuff: true, mendAt: 0.4, pcrit: 0.1, gapDist: 7 },
+  neth: { potHP: 8, potNoiseDeg: 12, potGap: 5, invTicks: 20, totemReact: 18, hotbarTotem: false, rebuff: true, mendAt: 0.4, pcrit: 0.1, gapDist: 7, buffChance: 0.6 },
   uhc: { lava: 0.3, lavaPickup: false, web: 0.15, water: true, pillar: false, mine: true, headHP: 8, aimSettle: 6 },
   crystal: {
     clickGap: 6, aimSettle: 4, comboGap: 20, thinkTicks: 6, selfWeight: 0.5, minDamage: 1.2,
@@ -299,7 +304,7 @@ const GOOD: Skills = {
   maxGapsPerRetreat: 1,
   comboEscape: 'jumpreset',
   axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 4, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
-  neth: { potHP: 9, potNoiseDeg: 9, potGap: 4, invTicks: 12, totemReact: 9, hotbarTotem: true, rebuff: true, mendAt: 0.5, pcrit: 0.25, gapDist: 6.5 },
+  neth: { potHP: 9, potNoiseDeg: 9, potGap: 4, invTicks: 12, totemReact: 9, hotbarTotem: true, rebuff: true, mendAt: 0.5, pcrit: 0.25, gapDist: 6.5, buffChance: 1 },
   uhc: { lava: 0.4, lavaPickup: true, web: 0.25, water: true, pillar: false, mine: true, headHP: 9, aimSettle: 5 },
   crystal: {
     clickGap: 4, aimSettle: 3, comboGap: 14, thinkTicks: 5, selfWeight: 0.7, minDamage: 1.5,
@@ -343,7 +348,7 @@ const STRONG: Skills = {
   maxGapsPerRetreat: 2,
   comboEscape: 'jumpreset',
   axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 2, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
-  neth: { potHP: 10, potNoiseDeg: 4, potGap: 3, invTicks: 7, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.7, pcrit: 0.55, gapDist: 6 },
+  neth: { potHP: 10, potNoiseDeg: 4, potGap: 3, invTicks: 7, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.7, pcrit: 0.55, gapDist: 6, buffChance: 1 },
   uhc: { lava: 0.7, lavaPickup: true, web: 0.5, water: true, pillar: true, mine: true, headHP: 11, aimSettle: 3 },
   crystal: {
     clickGap: 2, aimSettle: 2, comboGap: 6, thinkTicks: 3, selfWeight: 0.9, minDamage: 2,
@@ -379,7 +384,7 @@ const ELITE: Skills = {
   abortEatDistance: 2.8,
   comboEscape: 'shold',
   axe: { shieldChance: 0.95, shieldLead: 6, shieldReact: 1, swap: true, axeDelay: [1, 2], readAxe: 0.85, ranged: 2, rangedNoiseDeg: 0.6 },
-  neth: { potHP: 11, potNoiseDeg: 2, potGap: 2, invTicks: 4, totemReact: 3, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.8, gapDist: 5.5 },
+  neth: { potHP: 11, potNoiseDeg: 2, potGap: 2, invTicks: 4, totemReact: 3, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.8, gapDist: 5.5, buffChance: 1 },
   uhc: { lava: 0.9, lavaPickup: true, web: 0.7, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 1 },
   crystal: { ...STRONG.crystal, clickGap: 1, aimSettle: 1, comboGap: 3, thinkTicks: 2, selfWeight: 1 },
   mace: { launch: 0.97, steer: 0.95, elytra: true, pickMace: true, defend: 2, smashDepth: 1.3 },
@@ -410,7 +415,7 @@ const BEST: Skills = {
   maxRetreatTicks: 120,
   abortEatDistance: 3,
   axe: { shieldChance: 0.98, shieldLead: 7, shieldReact: 0, swap: true, axeDelay: [1, 1], readAxe: 0.95, ranged: 2, rangedNoiseDeg: 0.4 },
-  neth: { potHP: 11.5, potNoiseDeg: 1, potGap: 1, invTicks: 2, totemReact: 1, hotbarTotem: true, rebuff: true, mendAt: 0.85, pcrit: 0.9, gapDist: 5 },
+  neth: { potHP: 11.5, potNoiseDeg: 1, potGap: 1, invTicks: 2, totemReact: 1, hotbarTotem: true, rebuff: true, mendAt: 0.85, pcrit: 0.9, gapDist: 5, buffChance: 1 },
   uhc: { lava: 0.95, lavaPickup: true, web: 0.8, water: true, pillar: true, mine: true, headHP: 12.5, aimSettle: 1 },
   crystal: { ...ELITE.crystal, clickGap: 0, comboGap: 1, thinkTicks: 1, selfWeight: 1.1 },
   mace: { launch: 1, steer: 1, elytra: true, pickMace: true, defend: 2, smashDepth: 1.5 },

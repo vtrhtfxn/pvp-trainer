@@ -274,7 +274,7 @@ click gap 8 ticks → 0, inventory 30 ticks → 2), and unlocks more of the kit:
 | From | Also uses |
 | --- | --- |
 | LT5 | sword, golden apples, shield and axe, buffs at the start, crystals on obsidian, lava, re-totems through the inventory |
-| HT5 | a little of everything that comes in slowly: the odd cobweb, XP mending, P-crits, jump-resets |
+| HT5 | a little of everything that comes in slowly: Strength and Speed in pot kits (some rounds), the odd cobweb, XP mending, P-crits, jump-resets |
 | LT2 | sprint-jumping after you, respawn anchors, pearls in, water bucket, mining blocks in its way, crossbow (Axe/UHC), re-buffing |
 | HT2 | hotbar totem + F, lava pickup, Slow Falling crossbow (Crystal), sets off your crystals, elytra (Mace) |
 | LT1 | everything: attribute swaps, bow, ender-chest surrounds, digging for foot-level crystals, mining your surround, pillars, hurt-immunity timing, pearls out |
@@ -486,7 +486,9 @@ In the **Axe** kit it also plays the shield game:
 In **NethPot** it plays the pot game:
 
 - throws Strength, Speed and Fire Resistance at the start and re-applies them when they run out
-  (LT2+), fetching them from the inventory — the inventory takes real time to open, and it can't
+  (LT2+). Strength and Speed come in slowly: LT5 never uses them, and the chance per round grows
+  until HT2, so the low tiers are no faster than you and hit no harder. It only speeds up its aim
+  and leads its tracking more once *you* have Speed on. fetching them from the inventory — the inventory takes real time to open, and it can't
   move or attack while it's open
 - pots by looking straight down and backing off, at a health threshold that rises with tier
   (HT1 pots below 6 hearts, two pots back to back when it's low); lower tiers aim sloppily

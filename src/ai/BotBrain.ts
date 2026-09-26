@@ -200,6 +200,9 @@ export class BotBrain {
   /** In the air from a launch (wind charge, Wind Burst) rather than an ordinary jump. */
   private maceFlight = false;
 
+  /** This round it throws Strength and Speed on itself. */
+  private buffs = true;
+
   // ---- Crystal
   private crystalKit = false;
   private cplan: CrystalPlan | null = null;
@@ -262,6 +265,8 @@ export class BotBrain {
     this.rangedBlocked = 0;
     const b = this.bot;
     this.potKit = b.countItem('splash_potion') > 0;
+    // Low tiers mostly fight a pot round without Strength and Speed (see NethSkill.buffChance).
+    this.buffs = !this.potKit || this.rng.chance(this.profile.neth.buffChance);
     this.weapon = b.countItem('netherite_sword') > 0 ? 'netherite_sword' : 'diamond_sword';
     this.comboStyle = this.potKit && b.countItem('totem_of_undying') === 0;
     this.runTimer = 0;
@@ -396,6 +401,11 @@ export class BotBrain {
     }
   }
 
+  /** The opponent has Speed on (pot fights once they have buffed). */
+  private get fastTarget(): boolean {
+    return this.target.effects.has('speed');
+  }
+
   private perceive(): Perceived {
     const P = this.profile;
     // Tiers between two whole reaction times (4.5 ticks) see a point between two remembered ticks.
@@ -408,10 +418,10 @@ export class BotBrain {
     const s = { ...(f >= 0.5 ? b : a), x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f };
     const vx = s.x - (b.x + (c.x - b.x) * f);
     const vz = s.z - (b.z + (c.z - b.z) * f);
-    // Speed II (NethPot) makes a strafing target move 40% further per tick; without leading its
-    // reaction delay even a Normal bot's crosshair trails 40° behind. Everyone learns to track
-    // that, so pot fights lead by at least three quarters of the delay.
-    const lead = P.reactionTicks * (this.potKit ? Math.max(P.predict, 0.75) : P.predict);
+    // Speed II makes a strafing target move 40% further per tick; without leading its reaction
+    // delay even a Normal bot's crosshair trails 40° behind. Everyone learns to track that, so
+    // against a sped-up opponent it leads by at least three quarters of the delay.
+    const lead = P.reactionTicks * (this.fastTarget ? Math.max(P.predict, 0.75) : P.predict);
     return { ...s, x: s.x + vx * lead, z: s.z + vz * lead, vx, vz };
   }
 
@@ -427,9 +437,8 @@ export class BotBrain {
     const n = P.aimNoiseDeg * DEG;
     this.errYaw += (this.rng.gauss() * n * 2 - this.errYaw) * 0.15;
     this.errPitch += (this.rng.gauss() * n * 1.2 - this.errPitch) * 0.15;
-    // Pot fights are fought at Speed II; keeping the crosshair on a sped-up strafe takes faster
-    // mouse movement from everyone.
-    this.turnTo(wantYaw + this.errYaw, wantPitch + this.errPitch, this.potKit ? gain * 1.6 : gain);
+    // Keeping the crosshair on a strafe at Speed II takes faster mouse movement from everyone.
+    this.turnTo(wantYaw + this.errYaw, wantPitch + this.errPitch, this.fastTarget ? gain * 1.6 : gain);
   }
 
   private turnTo(yaw: number, pitch: number, gain = 1) {
@@ -1069,8 +1078,8 @@ export class BotBrain {
     const theirSword = T.heldStack();
     const burns = (theirSword?.ench?.fireAspect ?? 0) > 0 || b.onFire;
     if (buffOk && burns && low('fire_resistance') && has('fire_resistance')) return { what: 'fire_resistance', left: 1 };
-    if (buffOk && !this.profile.passive && low('strength') && has('strength')) return { what: 'strength', left: 1 };
-    if (buffOk && low('speed') && has('swiftness')) return { what: 'swiftness', left: 1 };
+    if (buffOk && this.buffs && !this.profile.passive && low('strength') && has('strength')) return { what: 'strength', left: 1 };
+    if (buffOk && this.buffs && low('speed') && has('swiftness')) return { what: 'swiftness', left: 1 };
     if (buffOk && low('regeneration') && has('regeneration')) return { what: 'regeneration', left: 1 };
     // Mending: in bursts whenever a knockback opens a gap.
     if (N.mendAt > 0 && trueDist > 4.5 && b.countItem('experience_bottle') > 0) {
