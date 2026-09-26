@@ -167,7 +167,10 @@ export interface AxeSkill {
    * 5 ticks after it is raised, so anything below 5 means some hits get through.
    */
   shieldLead: number;
-  /** Extra ticks before it notices you raised or lowered your shield. */
+  /**
+   * Ticks before it notices you raised or lowered your shield. The axe-swapping tiers wait 8
+   * (0.4 s), about what a very good player needs to see the shield and swap to the axe.
+   */
   shieldReact: number;
   /** Disables your shield with an attribute swap: switch to the axe and swing on the same tick. */
   swap: boolean;
@@ -259,7 +262,7 @@ const DECENT: Skills = {
   // Walking while eating can't get away anyway: aborting would only waste the apple.
   abortEatDistance: 0,
   comboEscape: 'jumpreset',
-  axe: { shieldChance: 0.5, shieldLead: 3, shieldReact: 5, swap: false, axeDelay: [7, 12], readAxe: 0.15, ranged: 1, rangedNoiseDeg: 3.2 },
+  axe: { shieldChance: 0.5, shieldLead: 3, shieldReact: 7, swap: false, axeDelay: [7, 12], readAxe: 0.15, ranged: 1, rangedNoiseDeg: 3.2 },
   neth: { potHP: 8, potNoiseDeg: 12, potGap: 5, invTicks: 20, totemReact: 18, hotbarTotem: false, rebuff: true, mendAt: 0.4, pcrit: 0.1, gapDist: 7, buffChance: 0.6 },
   uhc: { lava: 0.3, lavaPickup: false, web: 0.15, water: true, pillar: false, mine: true, headHP: 8, aimSettle: 6 },
   crystal: {
@@ -303,7 +306,7 @@ const GOOD: Skills = {
   punishEating: true,
   maxGapsPerRetreat: 1,
   comboEscape: 'jumpreset',
-  axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 4, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
+  axe: { shieldChance: 0.6, shieldLead: 4, shieldReact: 7, swap: false, axeDelay: [4, 8], readAxe: 0.3, ranged: 1, rangedNoiseDeg: 2.5 },
   neth: { potHP: 9, potNoiseDeg: 9, potGap: 4, invTicks: 12, totemReact: 9, hotbarTotem: true, rebuff: true, mendAt: 0.5, pcrit: 0.25, gapDist: 6.5, buffChance: 1 },
   uhc: { lava: 0.4, lavaPickup: true, web: 0.25, water: true, pillar: false, mine: true, headHP: 9, aimSettle: 5 },
   crystal: {
@@ -347,7 +350,7 @@ const STRONG: Skills = {
   punishEating: true,
   maxGapsPerRetreat: 2,
   comboEscape: 'jumpreset',
-  axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 2, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
+  axe: { shieldChance: 0.82, shieldLead: 5, shieldReact: 8, swap: true, axeDelay: [2, 4], readAxe: 0.6, ranged: 2, rangedNoiseDeg: 1.2 },
   neth: { potHP: 10, potNoiseDeg: 4, potGap: 3, invTicks: 7, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.7, pcrit: 0.55, gapDist: 6, buffChance: 1 },
   uhc: { lava: 0.7, lavaPickup: true, web: 0.5, water: true, pillar: true, mine: true, headHP: 11, aimSettle: 3 },
   crystal: {
@@ -360,65 +363,68 @@ const STRONG: Skills = {
 /** Skill 8 (between LT1 and HT1): tier-tester level — near-perfect timing and spacing. */
 const ELITE: Skills = {
   ...STRONG,
-  reactionTicks: 2,
-  predict: 1,
+  reactionTicks: 3,
+  predict: 0.93,
   aimGain: 0.8,
   maxTurnDeg: 40,
-  aimNoiseDeg: 0.8,
+  aimNoiseDeg: 1.3,
   maxReach: 2.97,
-  chargeMin: 0.97,
-  wtapChance: 0.95,
-  wtapTicks: [1, 1],
-  stapChance: 0.35,
+  chargeMin: 0.955,
+  wtapChance: 0.85,
+  wtapTicks: [1, 2],
+  stapChance: 0.3,
   critChance: 0.4,
-  jumpResetChance: 0.7,
-  hitSelectChance: 0.6,
+  jumpResetChance: 0.55,
+  hitSelectChance: 0.45,
   strafeChance: 0.9,
   strafeSwitch: [8, 25],
   spacing: 3.3,
-  spacingDiscipline: 0.85,
+  spacingDiscipline: 0.78,
   retreatHP: 9,
   returnHP: 17,
   eatDistance: 7.5,
   maxRetreatTicks: 110,
   abortEatDistance: 2.8,
   comboEscape: 'shold',
-  axe: { shieldChance: 0.95, shieldLead: 6, shieldReact: 1, swap: true, axeDelay: [1, 2], readAxe: 0.85, ranged: 2, rangedNoiseDeg: 0.6 },
-  neth: { potHP: 11, potNoiseDeg: 2, potGap: 2, invTicks: 4, totemReact: 3, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.8, gapDist: 5.5, buffChance: 1 },
-  uhc: { lava: 0.9, lavaPickup: true, web: 0.7, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 1 },
-  crystal: { ...STRONG.crystal, clickGap: 1, aimSettle: 1, comboGap: 3, thinkTicks: 2, selfWeight: 1 },
-  mace: { launch: 0.97, steer: 0.95, elytra: true, pickMace: true, defend: 2, smashDepth: 1.3 },
+  axe: { shieldChance: 0.85, shieldLead: 5, shieldReact: 8, swap: true, axeDelay: [2, 3], readAxe: 0.65, ranged: 2, rangedNoiseDeg: 0.6 },
+  neth: { potHP: 10.5, potNoiseDeg: 3, potGap: 3, invTicks: 7, totemReact: 5, hotbarTotem: true, rebuff: true, mendAt: 0.75, pcrit: 0.6, gapDist: 5.5, buffChance: 1 },
+  uhc: { lava: 0.72, lavaPickup: true, web: 0.52, water: true, pillar: true, mine: true, headHP: 11.5, aimSettle: 2 },
+  crystal: { ...STRONG.crystal, clickGap: 2, aimSettle: 2, comboGap: 5, thinkTicks: 3, selfWeight: 1 },
+  mace: { launch: 0.92, steer: 0.9, elytra: true, pickMace: true, defend: 2, smashDepth: 1.1 },
 };
 
-/** Skill 9 = HT1: the best there is — one-tick reactions, perfect spacing, no wasted clicks. */
+/**
+ * Skill 9 = HT1: the best there is, but still within what a human can do — ~0.13 s reactions,
+ * 0.4 s before it answers a raised shield, the odd missed W-tap or pot.
+ */
 const BEST: Skills = {
   ...ELITE,
-  reactionTicks: 1,
-  predict: 1,
-  aimGain: 0.9,
-  maxTurnDeg: 55,
-  aimNoiseDeg: 0.4,
-  maxReach: 3.0,
-  chargeMin: 0.98,
-  wtapChance: 1,
-  stapChance: 0.4,
-  critChance: 0.45,
-  jumpResetChance: 0.85,
-  hitSelectChance: 0.75,
-  strafeChance: 0.95,
+  reactionTicks: 2.6,
+  predict: 0.92,
+  aimGain: 0.85,
+  maxTurnDeg: 45,
+  aimNoiseDeg: 1.1,
+  maxReach: 2.98,
+  chargeMin: 0.96,
+  wtapChance: 0.9,
+  stapChance: 0.35,
+  critChance: 0.4,
+  jumpResetChance: 0.65,
+  hitSelectChance: 0.55,
+  strafeChance: 0.85,
   strafeSwitch: [6, 20],
-  spacing: 3.4,
-  spacingDiscipline: 0.95,
+  spacing: 3.35,
+  spacingDiscipline: 0.85,
   retreatHP: 9.5,
   returnHP: 18,
   eatDistance: 8,
   maxRetreatTicks: 120,
   abortEatDistance: 3,
-  axe: { shieldChance: 0.98, shieldLead: 7, shieldReact: 0, swap: true, axeDelay: [1, 1], readAxe: 0.95, ranged: 2, rangedNoiseDeg: 0.4 },
-  neth: { potHP: 11.5, potNoiseDeg: 1, potGap: 1, invTicks: 2, totemReact: 1, hotbarTotem: true, rebuff: true, mendAt: 0.85, pcrit: 0.9, gapDist: 5, buffChance: 1 },
-  uhc: { lava: 0.95, lavaPickup: true, web: 0.8, water: true, pillar: true, mine: true, headHP: 12.5, aimSettle: 1 },
-  crystal: { ...ELITE.crystal, clickGap: 0, comboGap: 1, thinkTicks: 1, selfWeight: 1.1 },
-  mace: { launch: 1, steer: 1, elytra: true, pickMace: true, defend: 2, smashDepth: 1.5 },
+  axe: { shieldChance: 0.9, shieldLead: 5, shieldReact: 8, swap: true, axeDelay: [2, 3], readAxe: 0.75, ranged: 2, rangedNoiseDeg: 0.4 },
+  neth: { potHP: 11, potNoiseDeg: 2.5, potGap: 3, invTicks: 6, totemReact: 4, hotbarTotem: true, rebuff: true, mendAt: 0.8, pcrit: 0.7, gapDist: 5, buffChance: 1 },
+  uhc: { lava: 0.75, lavaPickup: true, web: 0.55, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 2 },
+  crystal: { ...ELITE.crystal, clickGap: 1, aimSettle: 2, comboGap: 4, thinkTicks: 2, selfWeight: 1.1 },
+  mace: { launch: 0.95, steer: 0.93, elytra: true, pickMace: true, defend: 2, smashDepth: 1.2 },
 };
 
 /**
@@ -490,7 +496,7 @@ const TIERS: { id: TierId; name: string; tagline: string; color: string }[] = [
   { id: 'lt2', name: 'LT2', tagline: 'Low Tier 2 — sprint-jumps after you; anchors, pearls, water buckets, the crossbow and re-buffing come in.', color: '#ffaa00' },
   { id: 'ht2', name: 'HT2', tagline: 'High Tier 2 — full-charge hits; hotbar totems, lava pickup, Slow Falling crossbow, elytra.', color: '#ff5555' },
   { id: 'lt1', name: 'LT1', tagline: 'Low Tier 1 — every item: attribute swaps, surrounds, digging, pillars, hurt-immunity timing.', color: '#ff55ff' },
-  { id: 'ht1', name: 'HT1', tagline: 'High Tier 1 — the best there is: one-tick reactions, full reach, no wasted clicks.', color: '#aa00aa' },
+  { id: 'ht1', name: 'HT1', tagline: 'High Tier 1 — the best there is: quick reactions, full reach, few wasted clicks. Still beatable.', color: '#aa00aa' },
 ];
 
 export const DIFFICULTIES = {

@@ -268,8 +268,8 @@ The arena is 80 × 80 blocks (walls 16 high). Every kit also works online (see M
 
 The bot follows the PvP tier lists, weakest to strongest: **LT5, HT5, LT4, HT4, LT3, HT3, LT2, HT2,
 LT1, HT1** (Low / High Tier 5 … 1). Each tier up has more reach (2.4 → 3.0 blocks), faster reactions
-(6 ticks → 1), steadier aim, better click timing and faster item play (re-totem 30 ticks → 1, crystal
-click gap 8 ticks → 0, inventory 30 ticks → 2), and unlocks more of the kit:
+(6 ticks → 2.6), steadier aim, better click timing and faster item play (re-totem 30 ticks → 4, crystal
+click gap 8 ticks → 1, inventory 30 ticks → 6), and unlocks more of the kit:
 
 | From | Also uses |
 | --- | --- |
@@ -278,6 +278,10 @@ click gap 8 ticks → 0, inventory 30 ticks → 2), and unlocks more of the kit:
 | LT2 | sprint-jumping after you, respawn anchors, pearls in, water bucket, mining blocks in its way, crossbow (Axe/UHC), re-buffing |
 | HT2 | hotbar totem + F, lava pickup, Slow Falling crossbow (Crystal), sets off your crystals, elytra (Mace) |
 | LT1 | everything: attribute swaps, bow, ender-chest surrounds, digging for foot-level crystals, mining your surround, pillars, hurt-immunity timing, pearls out |
+
+LT1 and HT1 stay within human limits: about 0.13–0.15 s reactions, at least **0.4 s** to notice a
+raised shield before the axe comes out, 4–5 ticks to re-totem, a crystal click gap of 1–2 ticks, and the
+odd missed W-tap, jump-reset or pot. They are hard, not unbeatable.
 
 The steps are small at the bottom and grow towards the top: HT5 is only a touch stronger than LT5,
 and LT5 … HT3 all play with basic items. Each tier sits on a skill scale between six hand-tuned
@@ -497,7 +501,7 @@ In **NethPot** it plays the pot game:
   and restocks the hotbar totem and healing pots when it has room
 - mends its armor with XP bottles in the gaps knockback opens, and eats a golden apple for absorption
   when you are far away
-- goes for jump crits and **P-crits** (LT1 55%, HT1 90% of the times you hit it)
+- goes for jump crits and **P-crits** (LT1 55%, HT1 70% of the times you hit it)
 
 In **UHC** it plays the Axe-kit shield game (with stuns) plus:
 
@@ -523,7 +527,7 @@ picks one that would kill it without a totem:
 
 - **hits a crystal** that is already standing (HT2+ also sets off yours when that hurts you more)
 - **crystals obsidian** that is already there, or **places obsidian, then a crystal, then hits it** —
-  crosshair on each face, with a click gap that shrinks from 8 ticks (LT5) to 0 (HT1)
+  crosshair on each face, with a click gap that shrinks from 8 ticks (LT5) to 1 (HT1)
 - **anchors** you (LT2+): places an anchor next to you, charges it with glowstone, then switches to
   its totem slot and clicks it
 - waits out your hurt immunity before it blows anything up (LT1+)

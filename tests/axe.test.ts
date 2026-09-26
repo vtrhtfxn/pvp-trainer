@@ -259,7 +259,8 @@ describe('axe bot', () => {
       swaps += m.bot.stats.attributeSwaps + m.player.stats.attributeSwaps;
     }
     expect(finished).toBeGreaterThanOrEqual(5);
-    expect(disabled).toBeGreaterThan(6);
+    // Shields take 0.4 s to read, so fewer get disabled than blocked.
+    expect(disabled).toBeGreaterThan(3);
     expect(blocked).toBeGreaterThan(6);
     expect(swaps).toBeGreaterThan(3);
   });
@@ -314,4 +315,31 @@ describe('axe bot', () => {
       }
     }
   });
+
+  it('never disables a shield faster than a human could react (0.4 s, LT1 and HT1)', () => {
+    for (const kit of ['axe', 'uhc', 'smp'] as const) {
+      for (const tier of ['lt1', 'ht1'] as DifficultyId[]) {
+        for (let seed = 1; seed <= 4; seed++) {
+          const m = new Match(kitById(kit), DIFFICULTIES[tier], seed);
+          while (m.phase !== 'fight') m.tick();
+          const p = m.player;
+          let raised = -1;
+          for (let t = 0; t < 300; t++) {
+            const b = m.bot;
+            p.yaw = Math.atan2(-(b.pos.x - p.pos.x), -(b.pos.z - p.pos.z));
+            p.pitch = 0;
+            // Shield up once the bot is right on you.
+            if (raised < 0 && t > 40 && Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) < 3.2) raised = t;
+            m.useHeld = raised >= 0;
+            m.tick();
+            if (raised >= 0 && p.shieldCooldown > 0) {
+              expect(t - raised, `${kit} ${tier}`).toBeGreaterThanOrEqual(8);
+              break;
+            }
+          }
+        }
+      }
+    }
+  });
 });
+
