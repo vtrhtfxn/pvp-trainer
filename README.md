@@ -293,6 +293,22 @@ in every kit.
 
 Old saved difficulties map onto the ladder (Easy → LT5, Normal → LT3, Hard → LT2, Expert → LT1).
 
+### First to N and My Tiers
+
+**First to** (title screen, next to the tier picker) turns a duel into a series: you fight the same
+bot, round after round, until one of you has N round wins (FT1 = a single duel, up to FT20). The score
+shows under the opponent's health bar.
+
+**My Tiers** keeps the best tier you have beaten in each kit: win a series against a tier bot and you
+hold that tier in that kit. Your points are the sum over all kits:
+
+| LT5 | HT5 | LT4 | HT4 | LT3 | HT3 | LT2 | HT2 | LT1 | HT1 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 2 | 3 | 4 | 6 | 10 | 20 | 30 | 45 | 60 |
+
+Practice, online duels and series changed by commands don't earn tiers. Tiers are saved in the
+browser (or the desktop app), like your records.
+
 **Practice** moves, strafes, chases and eats golden apples like LT5, but never swings — you take no
 damage, so you can drill combos, W-taps, crits and reach without the duel fighting back. Its
 nametag reads *Passive*.

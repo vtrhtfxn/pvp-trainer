@@ -18,6 +18,7 @@ import { HUD } from '../ui/HUD';
 import { Marketplace } from '../ui/Marketplace';
 import { Menus } from '../ui/Menus';
 import { loadPlayerName, loadRecords, saveRecords, saveSettings, type Records, type Settings } from '../ui/settings';
+import { awardTier, loadMyTiers, newSeries, saveMyTiers, scoreRound, TIER_POINTS, type MyTiers, type Series } from './series';
 import { makeKitIcon, type Sprite } from '../ui/sprites';
 import { itemIcon } from '../render/itemIcons';
 import { InventoryScreen } from '../ui/Inventory';
@@ -65,6 +66,9 @@ export class Game {
   private readonly input: Input;
   private readonly sound = new Sound();
   private records: Records;
+  private readonly myTiers: MyTiers = loadMyTiers();
+  /** The "first to" series the current duel belongs to. */
+  private series: Series | null = null;
   private acc = 0;
   private last = performance.now();
   private time = 0;
@@ -163,6 +167,7 @@ export class Game {
     this.inventory.preview.appendChild(this.previewCanvas);
     this.menus = new Menus(uiRoot, settings, this.records, kitIcons, {
       onStart: () => this.startDuel(),
+      myTiers: () => this.myTiers,
       onResume: () => this.resume(),
       onRestart: () => {
         if (!this.online) this.startDuel();
@@ -607,6 +612,7 @@ export class Game {
   }
 
   private toMenu() {
+    this.series = null;
     this.inventory.hide();
     this.state = 'menu';
     this.chat.hide();
@@ -629,13 +635,19 @@ export class Game {
     this.menus.show('main');
   }
 
-  private startDuel() {
+  /** `nextRound`: the next round of the running "first to" series (otherwise a new series). */
+  private startDuel(nextRound = false) {
     this.sound.unlock();
     this.inventory.hide();
     this.netMatch = null;
     this.net.close();
     const kit = kitById(this.settings.kit);
     const profile = DIFFICULTIES[this.settings.difficulty];
+    const s = this.series;
+    if (!nextRound || !s || s.kit !== kit.id || s.tier !== profile.id) {
+      this.series = newSeries(kit.id, profile.id, this.settings.firstTo);
+    }
+    this.hud.setSeries(this.series!.target > 1 ? this.seriesScore() : null);
     this.match = new Match(kit, profile);
     // A new duel keeps what commands set up (rules, reach, game modes, time…) but not the rest.
     this.state = 'playing';
@@ -723,6 +735,8 @@ export class Game {
     if (msg.t === 'start') {
       if (!this.netMatch || this.netMatch.kit.id !== msg.kit) {
         this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId);
+        this.series = null;
+        this.hud.setSeries(null);
         this.match = this.netMatch;
       }
       this.netMatch.handle(msg);
@@ -813,6 +827,11 @@ export class Game {
     void this.input.lock();
   }
 
+  private seriesScore(): string {
+    const s = this.series!;
+    return `FT${s.target} · You ${s.you} – ${s.bot} Bot`;
+  }
+
   private finishDuel() {
     const m = this.match;
     const won = m.winner === m.player;
@@ -828,6 +847,21 @@ export class Game {
       saveRecords(this.records);
     }
     if (this.sprinting) this.finishSprint();
+    const series = this.series ?? newSeries(m.kit.id, this.settings.difficulty, 1);
+    const outcome = scoreRound(series, won, this.cheated);
+    // Winning a series against a tier bot earns that tier in this kit (My Tiers).
+    let earned = false;
+    if (outcome === 'you' && !series.modified && awardTier(this.myTiers, series.kit, series.tier)) {
+      earned = true;
+      saveMyTiers(this.myTiers);
+    }
+    if (outcome === null) {
+      // The series goes on: straight into the next round against the same bot.
+      this.chat.print([{ t: `${won ? 'Round won' : 'Round lost'} — ${this.seriesScore()}`, c: won ? COLOR.green : COLOR.red }]);
+      this.startDuel(true);
+      this.hud.showCenter(`You ${series.you} – ${series.bot} Bot`, 'toast', 50);
+      return;
+    }
     if (this.session.rules.doImmediateRespawn) {
       // /gamerule doImmediateRespawn true: no results screen, straight into the next duel.
       const secs = Math.floor(m.fightTicks / 20);
@@ -837,6 +871,8 @@ export class Game {
           c: won ? COLOR.green : COLOR.red,
         },
       ]);
+      if (series.target > 1) this.chat.print([{ t: `${outcome === 'you' ? 'Series won' : 'Series lost'} — ${this.seriesScore()}`, c: won ? COLOR.green : COLOR.red }]);
+      if (earned) this.chat.print([{ t: `New tier: ${m.profile.name} in ${m.kit.name} (+${TIER_POINTS[series.tier as keyof typeof TIER_POINTS]} pts)`, c: COLOR.gold }]);
       this.startDuel();
       return;
     }
@@ -854,6 +890,9 @@ export class Game {
         botName: m.bot.name,
         newBestCombo: newBest && m.player.stats.maxCombo > 0,
         unrecorded: this.cheated,
+        series: series.target > 1 ? { target: series.target, you: series.you, bot: series.bot } : undefined,
+        tierEarned: earned ? { name: m.profile.name, color: m.profile.color, kit: m.kit.name, points: TIER_POINTS[series.tier as keyof typeof TIER_POINTS] } : undefined,
+        tierBlocked: outcome === 'you' && series.modified && m.profile.id !== 'practice',
       },
       () => this.startDuel(),
     );

@@ -4,6 +4,7 @@ import { KITS, kitById, type KitId } from '../game/kits';
 import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Action } from '../input/keybinds';
 import type { Sprite } from './sprites';
 import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
+import { MAX_FIRST_TO, TIER_POINTS, clampFirstTo, totalPoints, type MyTiers } from '../game/series';
 
 export interface MenuCallbacks {
   onStart(): void;
@@ -18,6 +19,8 @@ export interface MenuCallbacks {
   onMarketplace(): void;
   /** How many mods are installed (for the Marketplace button). */
   installedMods(): number;
+  /** The tiers earned so far (My Tiers). */
+  myTiers(): MyTiers;
 }
 
 type SettingsTab = 'video' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
@@ -30,7 +33,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer';
+type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers';
 
 export interface ResultData {
   won: boolean;
@@ -43,6 +46,12 @@ export interface ResultData {
   online?: boolean;
   /** Commands changed the duel, so it was not recorded. */
   unrecorded?: boolean;
+  /** The "first to" series this round finished (absent for a single duel). */
+  series?: { target: number; you: number; bot: number };
+  /** A tier this win earned (My Tiers). */
+  tierEarned?: { name: string; color: string; kit: string; points: number };
+  /** The series was won, but commands changed it, so no tier. */
+  tierBlocked?: boolean;
 }
 
 function h<K extends keyof HTMLElementTagNameMap>(
@@ -71,6 +80,7 @@ export class Menus {
   private roomInput!: HTMLInputElement;
   private serverInput!: HTMLInputElement;
   private diffDesc!: HTMLDivElement;
+  private ftValue!: HTMLDivElement;
   private kitInfo!: HTMLDivElement;
   private marketBtns: HTMLButtonElement[] = [];
   private settingsTab: SettingsTab = 'video';
@@ -94,6 +104,7 @@ export class Menus {
       controls: this.buildControls(),
       multiplayer: this.buildMultiplayer(),
       results: h('div', { class: 'screen results' }),
+      tiers: h('div', { class: 'screen tiers' }),
     };
     for (const s of Object.values(this.screens)) {
       s.style.display = 'none';
@@ -118,6 +129,7 @@ export class Menus {
     this.hideAll();
     this.screens[name].style.display = '';
     if (name === 'main') this.refreshMain();
+    if (name === 'tiers') this.renderTiers();
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -199,6 +211,24 @@ export class Menus {
     this.diffDesc = h('div', { class: 'diff-desc' });
     panel.append(this.diffDesc);
 
+    // First to N: rounds against the same bot until one side has N wins.
+    const setFt = (n: number) => {
+      this.settings.firstTo = clampFirstTo(n);
+      saveSettings(this.settings);
+      this.refreshMain();
+    };
+    this.ftValue = h('div', { class: 'ft-value' });
+    panel.append(
+      h(
+        'div',
+        { class: 'ft-row', title: `Rounds against the same bot until one side has this many wins (up to ${MAX_FIRST_TO}). Win a series against a tier bot to earn that tier in My Tiers.` },
+        h('span', { class: 'section-title' }, 'First to'),
+        this.button('−', () => setFt(this.settings.firstTo - 1), 'ft-btn'),
+        this.ftValue,
+        this.button('+', () => setFt(this.settings.firstTo + 1), 'ft-btn'),
+      ),
+    );
+
     panel.append(this.button('Start Duel', () => this.cb.onStart(), 'big'));
     panel.append(this.button('Multiplayer — fight a friend', () => this.show('multiplayer'), 'big online'));
     const market = this.button('Marketplace', () => {
@@ -209,9 +239,10 @@ export class Menus {
     panel.append(
       h(
         'div',
-        { class: 'btn-row three' },
+        { class: 'btn-row four' },
         this.button('Settings', () => this.openSettings('main')),
         this.button('Controls', () => this.show('controls')),
+        this.button('My Tiers', () => this.show('tiers')),
         market,
       ),
     );
@@ -243,6 +274,8 @@ export class Menus {
       h('ul', {}, ...kit.contents.map((c) => h('li', {}, c))),
     );
     this.diffDesc.textContent = d.tagline;
+    const ft = this.settings.firstTo;
+    this.ftValue.textContent = ft === 1 ? 'FT1 — single duel' : `FT${ft} — first to ${ft} wins`;
     this.diffDesc.style.color = d.color;
     const r = this.records[`${kit.id}:${d.id}`];
     this.recordEl.textContent = r
@@ -771,6 +804,45 @@ export class Menus {
     if (room && this.roomInput && !this.roomInput.value) this.roomInput.value = room;
   }
 
+  // ------------------------------------------------------------------ My Tiers
+
+  private renderTiers() {
+    const root = this.screens.tiers;
+    root.replaceChildren();
+    const tiers = this.cb.myTiers();
+    const panel = h('div', { class: 'menu-panel' });
+    panel.append(h('div', { class: 'screen-title' }, 'My Tiers'));
+    panel.append(h('div', { class: 'tiers-total' }, `${totalPoints(tiers)} points`));
+    panel.append(
+      h('div', { class: 'tiers-sub' }, 'Win a series (First to, on the title screen) against a tier bot to earn that tier in that kit. Your best tier in each kit counts.'),
+    );
+    const list = h('div', { class: 'tiers-list' });
+    for (const kit of KITS) {
+      const iconEl = h('canvas', { width: '16', height: '16' });
+      const icon = this.kitIcons[kit.icon];
+      if (icon) {
+        const ctx = iconEl.getContext('2d')!;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(icon, 0, 0, 16, 16);
+      }
+      const t = tiers[kit.id];
+      const badge = h('span', { class: `tiers-badge${t ? '' : ' none'}` }, t ? DIFFICULTIES[t].name : 'Unranked');
+      if (t) badge.style.setProperty('--tier', DIFFICULTIES[t].color);
+      list.append(h('div', { class: 'tiers-row' }, iconEl, h('span', {}, kit.name), badge, h('span', { class: 'tiers-pts' }, t ? `${TIER_POINTS[t]} pts` : '—')));
+    }
+    panel.append(list);
+    const table = h('div', { class: 'tiers-table' });
+    for (const [id, pts] of Object.entries(TIER_POINTS)) {
+      const d = DIFFICULTIES[id as DifficultyId];
+      const cell = h('span', {}, h('b', {}, d.name), `${pts} pts`);
+      cell.style.setProperty('--tier', d.color);
+      table.append(cell);
+    }
+    panel.append(table);
+    panel.append(this.button('Done', () => this.show('main'), 'big'));
+    root.append(panel);
+  }
+
   // ------------------------------------------------------------------ results
 
   showResults(r: ResultData, onRematch: () => void) {
@@ -779,7 +851,18 @@ export class Menus {
     root.classList.toggle('won', r.won);
     root.classList.toggle('lost', !r.won);
     const panel = h('div', { class: 'menu-panel' });
-    panel.append(h('div', { class: 'result-title' }, r.won ? 'Victory!' : 'You Died!'));
+    const title = r.series ? (r.won ? 'Series Won!' : 'Series Lost!') : r.won ? 'Victory!' : 'You Died!';
+    panel.append(h('div', { class: 'result-title' }, title));
+    if (r.series) {
+      panel.append(h('div', { class: 'result-sub' }, `FT${r.series.target} · You ${r.series.you} – ${r.series.bot} ${r.botName}`));
+    }
+    if (r.tierEarned) {
+      const t = h('div', { class: 'result-tier' }, 'New tier: ', h('b', {}, r.tierEarned.name), ` in ${r.tierEarned.kit} · +${r.tierEarned.points} pts`);
+      t.style.setProperty('--tier', r.tierEarned.color);
+      panel.append(t);
+    } else if (r.tierBlocked) {
+      panel.append(h('div', { class: 'result-note' }, 'Commands changed this series, so it didn’t earn a tier.'));
+    }
     const mins = Math.floor(r.seconds / 60);
     const secs = Math.floor(r.seconds % 60);
     panel.append(
