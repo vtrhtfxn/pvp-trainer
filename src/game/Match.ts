@@ -28,7 +28,8 @@ export class Match {
   winner: Fighter | null = null;
 
   // Player controls fed by the input layer
-  private queuedClicks = 0;
+  /** Clicks this tick, each with what it hit on screen (renderedPick; NaN = test it at the tick). */
+  private queuedClicks: number[] = [];
   private queuedSlot: number | null = null;
   private queuedUse = 0;
   private queuedSwap = 0;
@@ -81,7 +82,7 @@ export class Match {
     this.phaseTicks = 0;
     this.fightTicks = 0;
     this.winner = null;
-    this.queuedClicks = 0;
+    this.queuedClicks.length = 0;
     this.queuedSlot = null;
     this.queuedUse = 0;
     this.queuedSwap = 0;
@@ -100,8 +101,8 @@ export class Match {
     this.queuedSwap++;
   }
 
-  queueClick() {
-    this.queuedClicks++;
+  queueClick(picked = Number.NaN) {
+    this.queuedClicks.push(picked);
   }
 
   queueSlot(i: number) {
@@ -156,7 +157,7 @@ export class Match {
   }
 
   private clearQueues() {
-    this.queuedClicks = 0;
+    this.queuedClicks.length = 0;
     this.queuedUse = 0;
     this.queuedSwap = 0;
   }
@@ -185,25 +186,26 @@ export class Match {
     }
     if (p.usingItem) {
       if (!this.useHeld) p.releaseUsingItem();
-      this.queuedClicks = 0; // clicks are swallowed while an item is in use
+      this.queuedClicks.length = 0; // clicks are swallowed while an item is in use
       this.queuedUse = 0;
     } else {
       // A click on a block starts mining it (and is not an attack: no cooldown reset); holding
       // the button keeps mining. Anything else is a swing at the opponent.
       let mined = false;
-      while (this.queuedClicks > 0) {
-        this.queuedClicks--;
+      for (const picked of this.queuedClicks) {
+        const onScreen = Number.isNaN(picked) ? undefined : picked;
         // The crosshair picks whatever is nearest: an end crystal in front of the opponent
         // gets hit (and blows up) instead of them.
         const cr = crosshairCrystal(p);
-        const botT = rayDistanceToTarget(p, this.bot);
+        const botT = onScreen ?? rayDistanceToTarget(p, this.bot);
         if (cr && (botT < 0 || cr.t < botT)) {
           attackCrystal(p, cr.crystal);
           continue;
         }
         if (!mined && p.tickMining(true, true)) mined = true;
-        else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot);
+        else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot, onScreen);
       }
+      this.queuedClicks.length = 0;
       if (!mined) p.tickMining(this.attackHeld, false);
       while (this.queuedUse > 0) {
         this.queuedUse--;

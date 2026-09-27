@@ -26,7 +26,7 @@ import { NetClient, type NetStatus } from '../net/Client';
 import { NetMatch } from '../net/NetMatch';
 import { CHAT_MAX, type ChatKind, type ServerMsg } from '../net/protocol';
 import type { AttributeId } from './attributes';
-import { performAttack, rayDistanceToTarget } from './combat';
+import { performAttack, rayDistanceToTarget, renderedPick } from './combat';
 import type { Fighter, FighterEvent } from './Fighter';
 import { EFFECT_COLORS, ITEMS, type ItemStack } from './items';
 import { KITS, kitById, type KitId } from './kits';
@@ -89,6 +89,8 @@ export class Game {
   private readonly session: SessionState = defaultSession();
   /** Commands changed this duel: it is not recorded. */
   private cheated = false;
+  /** How far between the last tick and the next the last frame was drawn. */
+  private renderAlpha = 1;
   /** /tick step: ticks left to run while frozen. */
   private stepTicks = 0;
   /** /tick sprint in progress. */
@@ -197,7 +199,10 @@ export class Game {
     this.input = new Input(canvas, {
       onClick: () => {
         if (this.state !== 'playing') return;
-        this.match.queueClick();
+        // Judge the click on what is on screen right now (see renderedPick).
+        const m = this.match;
+        if (m instanceof Match) m.queueClick(renderedPick(m.player, m.bot, this.renderAlpha));
+        else m.queueClick();
         this.hud.registerClick(performance.now());
       },
       onSlot: (i) => this.state === 'playing' && this.match.queueSlot(i),
@@ -1019,6 +1024,7 @@ export class Game {
       }
     }
     const alpha = ticking ? Math.min(1, this.acc / tickMs) : 1;
+    this.renderAlpha = alpha;
 
     this.updateWeather(dt, offlineDuel);
     this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;

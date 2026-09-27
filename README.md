@@ -317,7 +317,11 @@ nametag reads *Passive*.
 
 - **Attack cooldown**: damage × (0.2 + 0.8·charge²); a sword fully charges in 12 ticks
   (0.6 s). Every click, including a miss, resets the cooldown. Switching items resets it too.
-- **Reach**: 3.0 blocks from the eyes to the 0.6 × 1.8 hitbox, ray-tested against your crosshair.
+- **Reach**: 3.0 blocks from the eyes to the hitbox, ray-tested against your crosshair. The box a
+  swing has to hit is 10% wider and 9% taller than the body (0.66 × 1.96). A click is judged on
+  what is on screen when you click — both fighters where they are drawn, your aim as it is — like
+  a Minecraft client picking the entity under the crosshair, not a tick later against positions
+  you never saw.
 - **Damage**: Diamond Sword 7 + Sharpness V 3. Against Diamond Prot IV a full hit deals
   1.08 HP and a crit 1.63 HP (vanilla armor-toughness and Protection formulas).
 - **Critical hits**: falling, not on the ground, charge > 90%, and not *server-side* sprinting →

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Fighter } from '../src/game/Fighter';
 import { World } from '../src/game/World';
-import { damageAfterArmor, damageAfterProtection, performAttack } from '../src/game/combat';
+import { HITBOX_GROW_XZ, damageAfterArmor, damageAfterProtection, performAttack, rayDistanceToTarget, renderedPick } from '../src/game/combat';
 import { kitById } from '../src/game/kits';
 
 const kit = kitById('sword');
@@ -181,6 +181,39 @@ describe('damage', () => {
     const r = performAttack(a, b);
     expect(r.hit).toBe(true);
     expect(r.crit).toBe(true);
+  });
+});
+
+describe('hitting what you see', () => {
+  it('a click on the opponent as drawn hits, even when the tick has already moved them on', () => {
+    const { a, b } = setup();
+    // 1.4 blocks apart; b strafes sideways at sprint speed (0.28 blocks a tick).
+    a.pos.set(0, 0, 1.4);
+    b.pos.set(0.28, 0, 0);
+    b.prevPos.set(0, 0, 0);
+    a.prevPos.copy(a.pos);
+    a.yaw = 0; // looking straight at where b is drawn at the start of the tick
+    a.pitch = 0;
+    // Frame drawn 10% of the way into the tick: b is on screen at x = 0.03, under the crosshair.
+    expect(renderedPick(a, b, 0.1)).toBeGreaterThan(0);
+    // b is 0.2 blocks further along by the next tick: the old test there missed, and at alpha = 1
+    // (b drawn where it really is) the crosshair is off it too.
+    b.pos.set(0.6, 0, 0);
+    expect(rayDistanceToTarget(a, b)).toBe(-1);
+    b.pos.set(0.28, 0, 0);
+    // The click lands with the pick it made on screen.
+    a.attackStrengthTicker = 100;
+    expect(performAttack(a, b, renderedPick(a, b, 0.1)).hit).toBe(true);
+  });
+
+  it('the hitbox is 10% wider and 9% taller than the body', () => {
+    const { a, b } = setup();
+    a.pos.set(0.3 + HITBOX_GROW_XZ - 0.005, 0, 2.5); // just inside the grown edge
+    a.yaw = 0;
+    a.pitch = 0;
+    expect(rayDistanceToTarget(a, b)).toBeGreaterThan(0);
+    a.pos.set(0.3 + HITBOX_GROW_XZ + 0.01, 0, 2.5);
+    expect(rayDistanceToTarget(a, b)).toBe(-1);
   });
 });
 
