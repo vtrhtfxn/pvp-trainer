@@ -112,6 +112,7 @@ export class HUD {
   private readonly titleMain: HTMLDivElement;
   private readonly titleSub: HTMLDivElement;
   private readonly actionbar: HTMLDivElement;
+  private readonly seriesEl: HTMLDivElement;
   private titleTime = 0;
   private actionTime = 0;
   private readonly sprites: HudSprites;
@@ -173,6 +174,14 @@ export class HUD {
     this.titleMain = el('div', 'title-main', this.titleBox);
     this.titleSub = el('div', 'title-sub', this.titleBox);
     this.actionbar = el('div', 'actionbar', this.root);
+    this.seriesEl = el('div', 'series-score', this.root);
+    this.seriesEl.style.display = 'none';
+  }
+
+  /** The "first to" score under the opponent's bar; null hides it (a single duel). */
+  setSeries(text: string | null) {
+    this.seriesEl.textContent = text ?? '';
+    this.seriesEl.style.display = text ? '' : 'none';
   }
 
   /** /title: a big title (with its subtitle), the action bar above the hotbar, or clear. */

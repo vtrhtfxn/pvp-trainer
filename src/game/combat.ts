@@ -41,12 +41,58 @@ const tmpDir = new V3();
 const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 const rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 
+/**
+ * How much bigger than the 0.6 × 1.8 body the box a swing has to hit is: 0.66 wide (+10%) and
+ * 1.96 tall (+9%), so hits that look like hits count.
+ */
+export const HITBOX_GROW_XZ = 0.03;
+export const HITBOX_GROW_Y = 0.08;
+
+/** The box a swing is tested against, shifted by (dx, dy, dz) from the target's position. */
+function attackBox(target: Fighter, dx = 0, dy = 0, dz = 0): AABB {
+  target.aabbInto(tmpBox);
+  tmpBox.minX += dx - HITBOX_GROW_XZ;
+  tmpBox.maxX += dx + HITBOX_GROW_XZ;
+  tmpBox.minZ += dz - HITBOX_GROW_XZ;
+  tmpBox.maxZ += dz + HITBOX_GROW_XZ;
+  tmpBox.minY += dy - HITBOX_GROW_Y;
+  tmpBox.maxY += dy + HITBOX_GROW_Y;
+  return tmpBox;
+}
+
 /** Distance along the attacker's crosshair ray to the target hitbox, or -1 if out of reach. */
 export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = attacker.entityReach()): number {
   if (target.dead || target.gameMode === 'spectator') return -1;
   attacker.eyePos(tmpEye);
   attacker.look(tmpDir);
-  const t = rayAABB(tmpEye, tmpDir, target.aabbInto(tmpBox));
+  return pickAlong(attacker, attackBox(target), reach);
+}
+
+/**
+ * The same test against what is on screen: both fighters drawn `alpha` of the way from their last
+ * tick to this one (the renderer's interpolation), with the aim as it is now. A click is judged
+ * on this, like a Minecraft client picks the entity under the crosshair when you click — not a
+ * tick later against positions nobody saw.
+ */
+export function renderedPick(attacker: Fighter, target: Fighter, alpha: number, reach = attacker.entityReach()): number {
+  if (target.dead || target.gameMode === 'spectator') return -1;
+  const back = 1 - Math.min(1, Math.max(0, alpha));
+  attacker.eyePos(tmpEye);
+  tmpEye.x -= (attacker.pos.x - attacker.prevPos.x) * back;
+  tmpEye.y -= (attacker.pos.y - attacker.prevPos.y) * back;
+  tmpEye.z -= (attacker.pos.z - attacker.prevPos.z) * back;
+  attacker.look(tmpDir);
+  const box = attackBox(
+    target,
+    -(target.pos.x - target.prevPos.x) * back,
+    -(target.pos.y - target.prevPos.y) * back,
+    -(target.pos.z - target.prevPos.z) * back,
+  );
+  return pickAlong(attacker, box, reach);
+}
+
+function pickAlong(attacker: Fighter, box: AABB, reach: number): number {
+  const t = rayAABB(tmpEye, tmpDir, box);
   if (t < 0 || t > reach) return -1;
   // A block between us (placed planks, a pillar) is what the crosshair hits instead.
   const blocks = attacker.world.blocks;
@@ -173,11 +219,17 @@ export interface AttackOutcome {
  * A left click: Minecraft.startAttack + Player.attack. Clicking always swings and resets
  * the attack cooldown, even when it misses — that is what punishes spam-clicking in 1.9+.
  */
-export function performAttack(attacker: Fighter, target: Fighter): AttackOutcome {
+/**
+ * `picked`: where the click already found the target (renderedPick at the moment of the click),
+ * -1 for a click that missed on screen; left out, the crosshair is tested now.
+ */
+export function performAttack(attacker: Fighter, target: Fighter, picked?: number): AttackOutcome {
   const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0, blocked: false, disabled: false, swap: false };
   if (attacker.dead || attacker.usingItem || attacker.gameMode === 'spectator') return miss;
   attacker.stats.swings++;
-  const reach = rayDistanceToTarget(attacker, target);
+  let reach = picked ?? rayDistanceToTarget(attacker, target);
+  // A picked hit must still be plausible now (a tick later, a knockback or a teleport away).
+  if (picked !== undefined && reach >= 0 && (target.dead || Math.hypot(attacker.pos.x - target.pos.x, attacker.pos.y - target.pos.y, attacker.pos.z - target.pos.z) > attacker.entityReach() + 2)) reach = -1;
   if (reach < 0) {
     attacker.resetAttackStrength();
     attacker.swing();

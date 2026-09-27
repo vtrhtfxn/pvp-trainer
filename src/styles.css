@@ -1669,3 +1669,114 @@ body.custom-crosshair .crosshair {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- First to N: the series score during a duel */
+.series-score {
+  position: absolute;
+  left: 50%;
+  top: 74px;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffa0;
+  font-size: 15px;
+  text-shadow: 1px 1px 0 #3f3f3f;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- Main menu: First to */
+.ft-row {
+  display: grid;
+  grid-template-columns: auto 38px 1fr 38px;
+  gap: 8px;
+  align-items: center;
+}
+.ft-row .section-title {
+  margin: 0;
+}
+.ft-btn {
+  padding: 4px 0;
+}
+.ft-value {
+  text-align: center;
+  font-size: 17px;
+  color: #ffffa0;
+}
+.btn-row.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+@media (max-width: 640px) {
+  .btn-row.four {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---- My Tiers */
+.tiers-total {
+  text-align: center;
+  font-size: 22px;
+  margin: 4px 0 2px;
+  color: #ffffa0;
+}
+.tiers-sub {
+  text-align: center;
+  color: #aaa;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.tiers-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tiers-row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto 64px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid #000;
+}
+.tiers-row canvas {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+.tiers-badge {
+  font-weight: 700;
+  min-width: 44px;
+  text-align: center;
+  color: var(--tier, #777);
+}
+.tiers-badge.none {
+  color: #666;
+  font-weight: 400;
+}
+.tiers-pts {
+  text-align: right;
+  color: #ccc;
+}
+.tiers-table {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  font-size: 12px;
+  text-align: center;
+  color: #bbb;
+  margin-bottom: 12px;
+}
+.tiers-table b {
+  display: block;
+  color: var(--tier);
+}
+.result-tier {
+  text-align: center;
+  font-size: 18px;
+  margin: 4px 0 8px;
+  color: #ffffa0;
+}
+.result-tier b {
+  color: var(--tier);
+}

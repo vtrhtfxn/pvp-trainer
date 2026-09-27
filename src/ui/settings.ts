@@ -80,6 +80,8 @@ export interface Settings {
   // ---- game
   kit: KitId;
   difficulty: DifficultyId;
+  /** Rounds to win against the bot ("first to"); 1 = a single duel. */
+  firstTo: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -136,6 +138,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatWidth: 320,
   kit: 'sword',
   difficulty: 'ht4',
+  firstTo: 1,
 };
 
 const KEY = 'pvp-trainer.settings.v1';
