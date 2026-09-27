@@ -70,6 +70,7 @@ export class NetClient {
       } catch {
         return;
       }
+      if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
       if (msg.t === 'joined') {
         this.you = msg.you;
         this.room = msg.room;

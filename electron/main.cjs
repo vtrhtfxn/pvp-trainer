@@ -38,7 +38,14 @@ if (uncapped) {
   app.commandLine.appendSwitch('disable-frame-rate-limit');
   app.commandLine.appendSwitch('disable-gpu-vsync');
 }
-ipcMain.handle('pvp:set-uncapped', (_e, on) => {
+/** Only the game page itself may talk to the app shell. */
+function fromGame(event) {
+  const url = event.senderFrame?.url ?? '';
+  return url.startsWith(`${SCHEME}://${HOST}/`);
+}
+
+ipcMain.handle('pvp:set-uncapped', (e, on) => {
+  if (!fromGame(e)) return;
   try {
     fs.mkdirSync(path.dirname(DISPLAY_FILE), { recursive: true });
     fs.writeFileSync(DISPLAY_FILE, JSON.stringify({ uncapped: !!on }));
@@ -52,11 +59,19 @@ let win = null;
 
 function serveDist() {
   protocol.handle(SCHEME, (request) => {
-    const url = new URL(request.url);
-    const rel = decodeURIComponent(url.pathname);
-    const file = path.join(ROOT, rel === '/' ? 'index.html' : rel);
-    // Never serve anything outside dist/, whatever the URL asks for.
-    if (path.relative(ROOT, file).startsWith('..')) return new Response('Forbidden', { status: 403 });
+    let file;
+    try {
+      const url = new URL(request.url);
+      if (url.host !== HOST) return new Response('Not found', { status: 404 });
+      const rel = decodeURIComponent(url.pathname);
+      file = path.join(ROOT, rel === '/' ? 'index.html' : rel);
+    } catch {
+      return new Response('Bad request', { status: 400 });
+    }
+    // Never serve anything outside dist/, whatever the URL asks for (".." or, on Windows,
+    // another drive — path.relative then returns an absolute path, not one starting with "..").
+    const inside = path.relative(ROOT, file);
+    if (!inside || inside.startsWith('..') || path.isAbsolute(inside)) return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(file).toString());
   });
 }
@@ -146,6 +161,18 @@ function createWindow() {
     if (url.startsWith('https://')) void shell.openExternal(url);
     return { action: 'deny' };
   });
+  // The window only ever shows the game: any navigation away from it goes to the browser
+  // instead (https only), so no other page ever gets the app bridge.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith(`${SCHEME}://${HOST}/`)) return;
+    event.preventDefault();
+    if (url.startsWith('https://')) void shell.openExternal(url);
+  });
+  // Pointer lock and fullscreen are all the game asks for; camera, microphone, location,
+  // notifications and the rest are refused without a prompt.
+  const ALLOWED = new Set(['pointerLock', 'fullscreen']);
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => callback(ALLOWED.has(permission)));
+  win.webContents.session.setPermissionCheckHandler((_wc, permission) => ALLOWED.has(permission));
   win.on('closed', () => {
     win = null;
   });

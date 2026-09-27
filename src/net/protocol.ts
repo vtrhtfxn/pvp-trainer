@@ -94,9 +94,9 @@ export function fromSlot(slot: Slot | undefined): ItemStack | null {
   }
   const d = Number(slot[3]) | 0;
   if (d > 0) out.damage = d;
-  if (typeof slot[4] === 'string' && slot[4] in POTIONS) out.potion = slot[4] as PotionId;
+  if (typeof slot[4] === 'string' && Object.hasOwn(POTIONS, slot[4])) out.potion = slot[4] as PotionId;
   if (slot[5]) out.charged = true;
-  if (typeof slot[6] === 'string' && slot[6] in POTIONS) out.chargedPotion = slot[6] as PotionId;
+  if (typeof slot[6] === 'string' && Object.hasOwn(POTIONS, slot[6])) out.chargedPotion = slot[6] as PotionId;
   return out;
 }
 
@@ -284,6 +284,22 @@ export function roomCode(rng: () => number = Math.random): string {
   let s = '';
   for (let i = 0; i < 4; i++) s += alphabet[Math.floor(rng() * alphabet.length)];
   return s;
+}
+
+/**
+ * Control characters, zero-width characters and bidi overrides: invisible, or able to flip how
+ * the rest of a line reads (a name that makes chat look like someone else said something).
+ */
+const HIDDEN_CHARS = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+
+/** A player name as the server keeps it: visible characters only, trimmed, at most 16. */
+export function cleanName(raw: unknown): string {
+  return String(raw ?? '').replace(HIDDEN_CHARS, '').trim().slice(0, 16) || 'Player';
+}
+
+/** A chat line as the server passes it on: visible characters only, trimmed to `max`. */
+export function cleanChat(raw: unknown, max: number): string {
+  return String(raw ?? '').replace(HIDDEN_CHARS, '').trim().slice(0, max);
 }
 
 export function normalizeRoom(s: string): string {

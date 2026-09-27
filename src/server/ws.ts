@@ -99,7 +99,13 @@ export class WsConnection {
         return;
       }
       if (opcode === OP_PING) {
-        if (this.open) this.socket.write(frame(OP_PONG, payload));
+        // A ping flood from a client that never reads would queue pongs without limit.
+        if (this.socket.writableLength > MAX_BACKLOG) {
+          this.finish();
+          this.socket.destroy();
+          return;
+        }
+        if (this.open) this.socket.write(frame(OP_PONG, payload.subarray(0, 125)));
         continue;
       }
       if (opcode === OP_PONG) continue;

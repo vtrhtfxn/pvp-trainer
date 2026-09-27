@@ -1,5 +1,6 @@
 import { DIFFICULTIES, LEGACY_DIFFICULTY, type DifficultyId } from '../ai/difficulty';
-import type { KitId } from '../game/kits';
+import { KITS, type KitId } from '../game/kits';
+import { clampFirstTo } from '../game/series';
 import { DEFAULT_KEYS, normalizeBinds, type KeyBinds } from '../input/keybinds';
 
 export type ParticleLevel = 'all' | 'decreased' | 'minimal';
@@ -148,8 +149,15 @@ export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const saved = JSON.parse(raw) as Partial<Settings>;
+      const parsed: unknown = JSON.parse(raw);
+      const saved = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as Partial<Settings>;
       const s: Settings = { ...DEFAULT_SETTINGS, ...saved, keys: normalizeBinds(saved.keys) };
+      // Values of the wrong type (an old or hand-edited save) fall back to the default.
+      for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
+        if (typeof s[k] !== typeof DEFAULT_SETTINGS[k]) (s as unknown as Record<string, unknown>)[k] = DEFAULT_SETTINGS[k];
+      }
+      s.firstTo = clampFirstTo(s.firstTo);
+      if (!KITS.some((kit) => kit.id === s.kit)) s.kit = DEFAULT_SETTINGS.kit;
       // Easy / Normal / Hard / Expert became tiers; anything unknown falls back to the default.
       if (!(s.difficulty in DIFFICULTIES)) s.difficulty = LEGACY_DIFFICULTY[s.difficulty] ?? DEFAULT_SETTINGS.difficulty;
       return s;
@@ -179,7 +187,18 @@ export type Records = Record<string, DuelRecord>;
 export function loadRecords(): Records {
   try {
     const raw = localStorage.getItem(RECORD_KEY);
-    if (raw) return JSON.parse(raw) as Records;
+    const r: unknown = raw ? JSON.parse(raw) : null;
+    // Anything but a plain object (a corrupted or hand-edited value) would crash the end of
+    // every duel, so it is dropped; each record is checked too.
+    if (r && typeof r === 'object' && !Array.isArray(r)) {
+      const out: Records = {};
+      for (const [k, v] of Object.entries(r as Record<string, Partial<DuelRecord>>)) {
+        if (!v || typeof v !== 'object') continue;
+        const n = (x: unknown) => (Number.isFinite(Number(x)) ? Math.max(0, Math.floor(Number(x))) : 0);
+        out[k] = { wins: n(v.wins), losses: n(v.losses), bestCombo: n(v.bestCombo) };
+      }
+      return out;
+    }
   } catch {
     /* ignore */
   }

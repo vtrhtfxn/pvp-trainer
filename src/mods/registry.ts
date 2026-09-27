@@ -394,7 +394,8 @@ export class ModManager {
   constructor() {
     let saved: Partial<Record<ModId, Partial<ModState>>> = {};
     try {
-      saved = JSON.parse(localStorage.getItem(STORE) || '{}');
+      const parsed: unknown = JSON.parse(localStorage.getItem(STORE) || '{}');
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) saved = parsed as typeof saved;
     } catch {
       /* storage unavailable */
     }
@@ -403,8 +404,8 @@ export class ModManager {
       this.states[m.id] = {
         installed: !!s?.installed,
         enabled: s?.enabled ?? true,
-        config: { ...m.defaults, ...(s?.config ?? {}) },
-        pos: s?.pos,
+        config: { ...m.defaults, ...(s?.config && typeof s.config === 'object' ? s.config : {}) },
+        pos: s?.pos && Number.isFinite(s.pos.x) && Number.isFinite(s.pos.y) ? s.pos : undefined,
       };
     }
   }
