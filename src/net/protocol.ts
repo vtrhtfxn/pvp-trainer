@@ -10,7 +10,7 @@
 
 import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -206,8 +206,13 @@ export type ClientMsg =
       /** The last teleport (pearl) this client has applied; older moves are ignored. */
       tp?: number;
     }
-  /** A click. `v`: the opponent's tick (their `q`) that was on screen, for lag compensation. */
-  | { t: 'attack'; v?: number }
+  /**
+   * A click. `v`: the opponent's tick (their `q`, fractional: where they were drawn) that was on
+   * screen, for lag compensation. `p`: what the click hit on screen (distance along the crosshair,
+   * -1 = missed), with the aim `yaw` / `pitch` at that moment. The server checks the claim
+   * against its own log before it counts.
+   */
+  | { t: 'attack'; v?: number; p?: number; yaw?: number; pitch?: number }
   | { t: 'use'; down: boolean }
   /** Holding left click on a block: mining. */
   | { t: 'mine'; down: boolean }

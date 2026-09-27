@@ -321,7 +321,10 @@ nametag reads *Passive*.
   swing has to hit is 10% wider and 9% taller than the body (0.66 × 1.96). A click is judged on
   what is on screen when you click — both fighters where they are drawn, your aim as it is — like
   a Minecraft client picking the entity under the crosshair, not a tick later against positions
-  you never saw.
+  you never saw. Online works the same way: each click tells the server which moment of your
+  opponent was drawn, what the crosshair was on and your aim at that instant; the server rewinds
+  your opponent to that moment and accepts the hit if it is within 0.35 blocks of its own picture
+  (a click that missed on your screen is always a miss).
 - **Damage**: Diamond Sword 7 + Sharpness V 3. Against Diamond Prot IV a full hit deals
   1.08 HP and a crit 1.63 HP (vanilla armor-toughness and Protection formulas).
 - **Critical hits**: falling, not on the ground, charge > 90%, and not *server-side* sprinting →

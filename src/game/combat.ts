@@ -49,23 +49,28 @@ export const HITBOX_GROW_XZ = 0.03;
 export const HITBOX_GROW_Y = 0.08;
 
 /** The box a swing is tested against, shifted by (dx, dy, dz) from the target's position. */
-function attackBox(target: Fighter, dx = 0, dy = 0, dz = 0): AABB {
+function attackBox(target: Fighter, dx = 0, dy = 0, dz = 0, slack = 0): AABB {
   target.aabbInto(tmpBox);
-  tmpBox.minX += dx - HITBOX_GROW_XZ;
-  tmpBox.maxX += dx + HITBOX_GROW_XZ;
-  tmpBox.minZ += dz - HITBOX_GROW_XZ;
-  tmpBox.maxZ += dz + HITBOX_GROW_XZ;
-  tmpBox.minY += dy - HITBOX_GROW_Y;
-  tmpBox.maxY += dy + HITBOX_GROW_Y;
+  const gx = HITBOX_GROW_XZ + slack;
+  const gy = HITBOX_GROW_Y + slack;
+  tmpBox.minX += dx - gx;
+  tmpBox.maxX += dx + gx;
+  tmpBox.minZ += dz - gx;
+  tmpBox.maxZ += dz + gx;
+  tmpBox.minY += dy - gy;
+  tmpBox.maxY += dy + gy;
   return tmpBox;
 }
 
-/** Distance along the attacker's crosshair ray to the target hitbox, or -1 if out of reach. */
-export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = attacker.entityReach()): number {
+/**
+ * Distance along the attacker's crosshair ray to the target hitbox, or -1 if out of reach.
+ * `slack` grows the box further (the server's tolerance when it checks a client's claimed hit).
+ */
+export function rayDistanceToTarget(attacker: Fighter, target: Fighter, reach = attacker.entityReach(), slack = 0): number {
   if (target.dead || target.gameMode === 'spectator') return -1;
   attacker.eyePos(tmpEye);
   attacker.look(tmpDir);
-  return pickAlong(attacker, attackBox(target), reach);
+  return pickAlong(attacker, attackBox(target, 0, 0, 0, slack), reach + slack);
 }
 
 /**

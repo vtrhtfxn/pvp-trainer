@@ -45,6 +45,19 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
  * is the offline rule. Each tick it reports what changed (blocks, entities, events) for the
  * clients to mirror.
  */
+/** What a click hit on the attacker's screen (-1: nothing) and the aim it was made with. */
+export interface AttackClaim {
+  p: number;
+  yaw: number;
+  pitch: number;
+}
+
+/**
+ * How far (blocks) the server lets a claimed hit sit off its own rewound picture: the drawn
+ * opponent is smoothed, and the attacker's eye may be a tick off the click.
+ */
+const CLAIM_SLACK = 0.35;
+
 export class Duel {
   readonly kit: KitDef;
   readonly world: World;
@@ -59,6 +72,8 @@ export class Duel {
   private readonly pendingAttacks: [number, number] = [0, 0];
   /** The opponent tick each queued click was aimed at (from the attacker's screen), if sent. */
   private readonly attackViews: [(number | null)[], (number | null)[]] = [[], []];
+  /** What each click hit on the attacker's screen, and the aim then (null: not sent). */
+  private readonly attackClaims: [(AttackClaim | null)[], (AttackClaim | null)[]] = [[], []];
   /** Every accepted move per fighter, newest last (about two seconds). */
   private readonly moveLog: [LoggedMove[], LoggedMove[]] = [[], []];
   /** Server clock, ms (tests drive it). */
@@ -110,6 +125,7 @@ export class Duel {
       this.useHeld[i] = this.mineHeld[i] = false;
       this.pendingAttacks[i] = this.pendingSwap[i] = this.pendingUse[i] = 0;
       this.attackViews[i].length = 0;
+      this.attackClaims[i].length = 0;
       this.moveLog[i].length = 0;
       this.pendingSlot[i] = null;
       this.lastInv[i] = '';
@@ -127,12 +143,17 @@ export class Duel {
     this.fighters[i].name = name;
   }
 
-  /** A click; `view` is the opponent tick the attacker had on screen (see rewindToView). */
-  queueAttack(i: number, view?: number) {
+  /**
+   * A click; `view` is the opponent tick the attacker had on screen (see rewindToView), `claim`
+   * what the click hit there and the aim it was made with.
+   */
+  queueAttack(i: number, view?: number, claim?: AttackClaim) {
     // One click per tick is all a 20 Hz simulation can resolve; more would just be swallowed.
     if (this.pendingAttacks[i] >= 4) return;
     this.pendingAttacks[i]++;
     this.attackViews[i].push(typeof view === 'number' && Number.isFinite(view) ? view : null);
+    const ok = claim && [claim.p, claim.yaw, claim.pitch].every((n) => typeof n === 'number' && Number.isFinite(n));
+    this.attackClaims[i].push(ok ? claim : null);
   }
 
   setPing(i: number, ms: number) {
@@ -318,8 +339,21 @@ export class Duel {
     while (this.pendingAttacks[i] > 0) {
       this.pendingAttacks[i]--;
       const view = this.attackViews[i].shift() ?? null;
+      const claim = this.attackClaims[i].shift() ?? null;
       // An end crystal nearer than the opponent takes the hit (against the rewound opponent).
-      const restore = (view !== null && this.rewindToView(1 - i, view)) || this.rewind(1 - i, this.rewindTicks(i));
+      const unwind = (view !== null && this.rewindToView(1 - i, view)) || this.rewind(1 - i, this.rewindTicks(i));
+      // Swing with the aim the click was made with, not the one from the last move packet.
+      const yaw = f.yaw;
+      const pitch = f.pitch;
+      if (claim) {
+        f.yaw = claim.yaw;
+        f.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, claim.pitch));
+      }
+      const restore = () => {
+        unwind();
+        f.yaw = yaw;
+        f.pitch = pitch;
+      };
       const cr = crosshairCrystal(f);
       const t = rayDistanceToTarget(f, other);
       if (cr && (t < 0 || cr.t < t)) {
@@ -332,7 +366,7 @@ export class Duel {
         mined = true;
         continue;
       }
-      performAttack(f, other);
+      performAttack(f, other, this.judgeClaim(f, other, claim));
       restore();
     }
     if (!mined) f.tickMining(this.mineHeld[i], false);
@@ -341,6 +375,19 @@ export class Duel {
       f.startUsingItem(true);
     }
     if (this.useHeld[i]) f.startUsingItem();
+  }
+
+  /**
+   * What the attacker's screen showed, if the server agrees it could have: a click that missed on
+   * screen is a miss; a claimed hit counts (at its distance) when the rewound opponent is within
+   * CLAIM_SLACK of the crosshair — the smoothing, the frame and the tick between click and move
+   * packet. Anything else (an old client, an implausible claim) is tested here as usual.
+   */
+  private judgeClaim(f: Fighter, other: Fighter, claim: AttackClaim | null): number | undefined {
+    if (!claim) return undefined;
+    if (claim.p < 0) return -1;
+    if (rayDistanceToTarget(f, other, f.entityReach(), CLAIM_SLACK) < 0) return undefined;
+    return Math.min(claim.p, f.entityReach());
   }
 
   /** Snapshots both fighters so a later swing can be tested against where they used to be. */
@@ -530,7 +577,7 @@ export class Duel {
       case 'move':
         return this.applyMove(i, msg);
       case 'attack':
-        this.queueAttack(i, msg.v);
+        this.queueAttack(i, msg.v, msg.p === undefined ? undefined : { p: msg.p, yaw: msg.yaw ?? NaN, pitch: msg.pitch ?? NaN });
         return null;
       case 'use':
         this.setUse(i, !!msg.down);

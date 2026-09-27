@@ -201,8 +201,9 @@ export class Game {
         if (this.state !== 'playing') return;
         // Judge the click on what is on screen right now (see renderedPick).
         const m = this.match;
-        if (m instanceof Match) m.queueClick(renderedPick(m.player, m.bot, this.renderAlpha));
-        else m.queueClick();
+        const picked = renderedPick(m.player, m.bot, this.renderAlpha);
+        if (m instanceof Match) m.queueClick(picked);
+        else m.queueClick(picked, this.renderAlpha);
         this.hud.registerClick(performance.now());
       },
       onSlot: (i) => this.state === 'playing' && this.match.queueSlot(i),
