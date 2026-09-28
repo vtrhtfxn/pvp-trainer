@@ -45,7 +45,8 @@ export type ItemId =
   | 'chorus_fruit'
   | 'rail'
   | 'tnt_minecart'
-  | 'flint_and_steel';
+  | 'flint_and_steel'
+  | 'red_shulker_box';
 export type EffectId =
   | 'regeneration'
   | 'absorption'
@@ -287,6 +288,8 @@ export interface ItemStack {
   potion?: PotionId;
   /** Durability used up (ItemStack damage value). */
   damage?: number;
+  /** Shulker box: how many Minecarts with TNT are inside (0–27). */
+  stored?: number;
 }
 
 const MELEE_FIST = { attackDamage: FIST_DAMAGE, attackSpeed: FIST_ATTACK_SPEED };
@@ -432,6 +435,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   rail: { id: 'rail', name: 'Rail', maxStack: 64, ...MELEE_FIST, use: 'place', places: 15 },
   // Placed on a rail; explodes when a burning arrow hits it (the faster the arrow, the bigger).
   tnt_minecart: { id: 'tnt_minecart', name: 'Minecart with TNT', maxStack: 1, ...MELEE_FIST, use: 'cart' },
+  // Place it and right-click it to take out the 27 Minecarts with TNT it holds.
+  red_shulker_box: { id: 'red_shulker_box', name: 'Red Shulker Box', maxStack: 1, ...MELEE_FIST, use: 'place', places: 16 },
   flint_and_steel: { id: 'flint_and_steel', name: 'Flint and Steel', maxStack: 1, ...MELEE_FIST, use: 'ignite', maxDamage: 64 },
 };
 
@@ -480,6 +485,7 @@ export function sameItem(a: ItemStack, b: ItemStack): boolean {
     !!a.charged === !!b.charged &&
     a.potion === b.potion &&
     (a.damage ?? 0) === (b.damage ?? 0) &&
+    (a.stored ?? 0) === (b.stored ?? 0) &&
     JSON.stringify(a.ench ?? {}) === JSON.stringify(b.ench ?? {})
   );
 }
@@ -536,6 +542,7 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.unbreaking) out.push(`Unbreaking ${roman(e.unbreaking)}`);
   if (e?.mending) out.push('Mending');
   if (s.charged) out.push('Projectile: [Arrow]');
+  if (s.id === 'red_shulker_box') out.push(s.stored ? `Minecart with TNT x${s.stored}` : 'Empty');
   if (s.potion && s.id === 'tipped_arrow') {
     out.push(`${EFFECT_NAMES[POTIONS[s.potion].effect as EffectId]} (${formatTicks(POTIONS[s.potion].duration / 8)})`);
   } else if (s.potion) {

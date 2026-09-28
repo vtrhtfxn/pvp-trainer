@@ -113,6 +113,7 @@ export type FighterEvent =
   | { type: 'shoot'; crossbow: boolean; power: number }
   | { type: 'arrowHit'; target: Fighter; damage: number; crit: boolean }
   | { type: 'pickup' }
+  | { type: 'shulkerOpen'; taken: number }
   | { type: 'swapHands' }
   | { type: 'throw'; kind: 'potion' | 'xp' | 'pearl' | 'wind' }
   /** Right click swapped a piece of armor (or the elytra) on. */
@@ -959,6 +960,11 @@ export class Fighter {
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
       }
+      if (hit && hit.id === B.SHULKER) {
+        this.openShulker(hit.x, hit.y, hit.z);
+        this.rightClickDelay = C.USE_ITEM_DELAY;
+        return true;
+      }
     }
     for (const hand of ['main', 'off'] as const) {
       const s = this.stackIn(hand);
@@ -1094,6 +1100,26 @@ export class Fighter {
   }
 
   /**
+   * Opening a shulker box and shift-clicking its carts out: every Minecart with TNT that fits goes
+   * into empty slots, hotbar first. Returns how many came out.
+   */
+  openShulker(x: number, y: number, z: number): number {
+    const blocks = this.world.blocks;
+    let left = blocks.shulkerCarts(x, y, z);
+    let moved = 0;
+    for (let i = 0; i < INV_SIZE && left > 0; i++) {
+      if (this.inventory[i]) continue;
+      this.inventory[i] = { id: 'tnt_minecart', count: 1 };
+      left--;
+      moved++;
+    }
+    blocks.setShulkerCarts(x, y, z, left);
+    this.swing();
+    this.events.push({ type: 'shulkerOpen', taken: moved });
+    return moved;
+  }
+
+  /**
    * ChorusFruitItem.finishUsingItem: up to 16 tries at a random spot within 8 blocks (±8 up and
    * down) with ground to stand on and room for us; the first that works is where we land.
    */
@@ -1169,7 +1195,8 @@ export class Fighter {
         if (Blocks.boxOverlapsCell(c.x - 1, c.y, c.z - 1, c.x + 1, c.y + 2, c.z + 1, x, y, z)) return false;
       }
     }
-    blocks.set(x, y, z, id, id === B.RAIL && Math.abs(Math.sin(this.yaw)) > Math.abs(Math.cos(this.yaw)) ? 1 : 0);
+    const extra = id === B.RAIL ? (Math.abs(Math.sin(this.yaw)) > Math.abs(Math.cos(this.yaw)) ? 1 : 0) : id === B.SHULKER ? Math.min(27, s.stored ?? 0) : 0;
+    blocks.set(x, y, z, id, extra);
     this.consume(s, hand);
     if (hand === 'main') this.swing();
     this.world.emit({ type: 'blockPlace', x, y, z, block: id });
@@ -1298,10 +1325,13 @@ export class Fighter {
     const props = BLOCK_PROPS[block]!;
     const def = this.heldDef();
     const correct = !!def.tool && def.tool === props.tool;
+    const stored = block === B.SHULKER ? this.world.blocks.shulkerCarts(x, y, z) : 0;
     this.world.blocks.set(x, y, z, B.AIR);
     this.world.emit({ type: 'blockBreak', x, y, z, block });
     if (props.drop && (!props.needsTool || correct)) {
-      this.world.items.push(new DroppedItem({ id: props.drop, count: 1 }, x + 0.5, y + 0.25, z + 0.5, this.world.rng));
+      const drop: ItemStack = { id: props.drop, count: 1 };
+      if (stored) drop.stored = stored;
+      this.world.items.push(new DroppedItem(drop, x + 0.5, y + 0.25, z + 0.5, this.world.rng));
     }
     // Tools wear by 1 per block; swords (not made for it) by 2.
     if (def.maxDamage && props.hardness > 0) this.damageItem(this.selected, def.tool === 'sword' ? 2 : 1);

@@ -27,6 +27,8 @@ export const B = {
   OAK_LOG: 14,
   /** Flat and walk-through; its axis (0 north–south, 1 east–west) is kept in `amount`. */
   RAIL: 15,
+  /** Red shulker box: `amount` is the Minecarts with TNT still inside. */
+  SHULKER: 16,
   BEDROCK: 255,
 } as const;
 export type FluidId = typeof B.WATER | typeof B.LAVA;
@@ -46,7 +48,8 @@ export type BlockName =
   | 'grass_block'
   | 'dirt'
   | 'oak_log'
-  | 'rail';
+  | 'rail'
+  | 'red_shulker_box';
 
 export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.PLANKS]: 'oak_planks',
@@ -64,6 +67,7 @@ export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.DIRT]: 'dirt',
   [B.OAK_LOG]: 'oak_log',
   [B.RAIL]: 'rail',
+  [B.SHULKER]: 'red_shulker_box',
 };
 
 export interface BlockProps {
@@ -74,7 +78,7 @@ export interface BlockProps {
   /** Drops nothing unless mined with that tool (requiresCorrectToolForDrops). */
   needsTool: boolean;
   /** Item it drops (null: nothing). */
-  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | 'oak_log' | 'rail' | null;
+  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | 'oak_log' | 'rail' | 'red_shulker_box' | null;
 }
 
 /**
@@ -92,6 +96,7 @@ export function blastResistance(id: number): number {
     case B.RAIL:
       return 0.7;
     case B.OAK_LOG:
+    case B.SHULKER:
       return 2;
     case B.DIRT:
       return 0.5;
@@ -133,12 +138,15 @@ export const BLOCK_PROPS: Record<number, BlockProps> = {
   [B.DIRT]: { hardness: 0.5, tool: null, needsTool: false, drop: null },
   [B.OAK_LOG]: { hardness: 2, tool: 'axe', needsTool: false, drop: 'oak_log' },
   [B.RAIL]: { hardness: 0.7, tool: 'pickaxe', needsTool: false, drop: 'rail' },
+  // Keeps what is inside when broken.
+  [B.SHULKER]: { hardness: 2, tool: 'pickaxe', needsTool: false, drop: 'red_shulker_box' },
 };
 
 export function isSolid(id: number): boolean {
   return (
     id === B.PLANKS ||
     id === B.OAK_LOG ||
+    id === B.SHULKER ||
     id === B.COBBLESTONE ||
     id === B.OBSIDIAN ||
     id === B.STONE ||
@@ -294,7 +302,7 @@ export class Blocks {
     if (before === B.AIR && id !== B.AIR) this.count++;
     else if (before !== B.AIR && id === B.AIR) this.count--;
     this.id[i] = id;
-    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL ? amount : 0;
+    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL || id === B.SHULKER ? amount : 0;
     this.flags[i] = isFluid(id) ? (source ? 1 : 0) | (falling ? 2 : 0) : 0;
     this.version++;
     this.markDirty(x, z);
@@ -349,6 +357,19 @@ export class Blocks {
   }
 
   /** Respawn anchor charge, 0–4. */
+  /** Minecarts with TNT left in a placed shulker box. */
+  shulkerCarts(x: number, y: number, z: number): number {
+    return this.get(x, y, z) === B.SHULKER ? this.amount[this.index(x, y, z)] : 0;
+  }
+
+  setShulkerCarts(x: number, y: number, z: number, n: number) {
+    if (this.get(x, y, z) !== B.SHULKER) return;
+    const i = this.index(x, y, z);
+    this.amount[i] = Math.max(0, Math.min(27, n));
+    this.version++;
+    this.changeLog?.add(i);
+  }
+
   /** A rail's axis: 0 north–south (along Z), 1 east–west (along X). */
   railAxis(x: number, y: number, z: number): number {
     return this.get(x, y, z) === B.RAIL ? this.amount[this.index(x, y, z)] & 1 : 0;
