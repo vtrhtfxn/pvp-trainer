@@ -2307,3 +2307,22 @@ body.custom-crosshair .crosshair {
     padding: 6px 2px;
   }
 }
+
+/* ---- Subtiers */
+.subtier-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+.subtier-btn {
+  color: #ffd27f;
+}
+.subtier-btn.selected {
+  outline: 2px solid #ffd27f;
+  outline-offset: -2px;
+}
+.tiers-section {
+  font-size: 12px;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 8px 0 2px;
+}

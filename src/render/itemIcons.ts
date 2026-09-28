@@ -16,12 +16,13 @@ export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>)
 
 /** Block items drawn as a little isometric cube (the vanilla GUI block model). */
 export function isCubeItem(id: string): boolean {
-  return id === 'oak_planks' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';
+  return id === 'oak_planks' || id === 'oak_log' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';
 }
 
 /** Top texture of a cube item when it differs from its sides. */
 function cubeTop(id: string): string | null {
   if (id === 'respawn_anchor') return 'block/respawn_anchor_top_off';
+  if (id === 'oak_log') return 'block/oak_log_top';
   if (id === 'ender_chest') return enderChestLid();
   return null;
 }

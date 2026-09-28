@@ -8,6 +8,7 @@ import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks'
 import { DroppedItem } from './DroppedItem';
 import { burn, fallHurt, hurt, lavaHurt, type DamageKind } from './combat';
 import { canPlaceCrystal, detonateAnchor, placeCrystal } from './crystals';
+import { canHoldFire, canPlaceCart, placeCart } from './TntCart';
 import { Thrown } from './Thrown';
 import type { World } from './World';
 
@@ -64,6 +65,8 @@ export interface FighterStats {
   repaired: number;
   crystalsPlaced: number;
   crystalsBroken: number;
+  cartsPlaced: number;
+  cartsBlown: number;
   anchorsBlown: number;
   pearlsThrown: number;
   windCharges: number;
@@ -158,6 +161,8 @@ export function newStats(): FighterStats {
     repaired: 0,
     crystalsPlaced: 0,
     crystalsBroken: 0,
+    cartsPlaced: 0,
+    cartsBlown: 0,
     anchorsBlown: 0,
     pearlsThrown: 0,
     windCharges: 0,
@@ -979,6 +984,31 @@ export class Fighter {
           if (hand === 'main') this.swing();
           ok = true;
         }
+      } else if (def.use === 'cart') {
+        // MinecartItem.useOn: only on a rail.
+        if (hit === undefined) hit = this.crosshairBlock(this.blockReach(), true);
+        if (hit) {
+          if (!canPlaceCart(this.world, hit.x, hit.y, hit.z)) return false;
+          placeCart(this.world, this, hit.x, hit.y, hit.z);
+          this.consume(s, hand);
+          if (hand === 'main') this.swing();
+          ok = true;
+        }
+      } else if (def.use === 'ignite') {
+        // FlintAndSteelItem.useOn: fire in front of the clicked face, if it has ground under it.
+        if (!this.mayBuild()) continue;
+        if (hit === undefined) hit = this.crosshairBlock(this.blockReach(), true);
+        if (hit) {
+          const fx = hit.x + hit.nx;
+          const fy = hit.y + hit.ny;
+          const fz = hit.z + hit.nz;
+          if (!canHoldFire(this.world, fx, fy, fz)) return false;
+          this.world.blocks.set(fx, fy, fz, B.FIRE);
+          this.world.emit({ type: 'blockPlace', x: fx, y: fy, z: fz, block: B.FIRE });
+          this.damageItem(this.handSlot(hand), 1);
+          if (hand === 'main') this.swing();
+          ok = true;
+        }
       } else if (def.use === 'bucket') ok = this.mayBuild() && this.useBucket(s, hand);
       else if (def.use === 'equip') ok = this.equipFromHand(s, hand);
       else ok = this.tryUse(s, hand);
@@ -1063,6 +1093,37 @@ export class Fighter {
     fallHurt(this, C.PEARL_DAMAGE);
   }
 
+  /**
+   * ChorusFruitItem.finishUsingItem: up to 16 tries at a random spot within 8 blocks (±8 up and
+   * down) with ground to stand on and room for us; the first that works is where we land.
+   */
+  chorusTeleport(): boolean {
+    const blocks = this.world.blocks;
+    const rng = this.world.rng;
+    const hw = C.PLAYER_WIDTH / 2;
+    const h = this.height();
+    for (let i = 0; i < 16; i++) {
+      const x = this.pos.x + (rng.next() - 0.5) * 16;
+      const z = this.pos.z + (rng.next() - 0.5) * 16;
+      if (this.world.wallDistance(x, z) < hw + 0.05) continue;
+      let y = Math.min(Math.floor(this.pos.y + (rng.next() - 0.5) * 16), blocks.height - 2);
+      // Drop down to the first block to stand on (LivingEntity.randomTeleport).
+      while (y > -blocks.depth && !isSolid(blocks.get(Math.floor(x), y - 1, Math.floor(z)))) y--;
+      if (blocks.boxHasSolid(x - hw, y, z - hw, x + hw, y + h, z + hw)) continue;
+      const bx = Math.floor(x);
+      const bz = Math.floor(z);
+      if (isFluid(blocks.get(bx, y, bz)) || blocks.get(bx, y, bz) === B.FIRE) continue;
+      this.pos.set(x, y, z);
+      this.prevPos.copy(this.pos);
+      this.vel.set(0, 0, 0);
+      this.serverVel.set(0, 0, 0);
+      this.fallDistance = 0;
+      this.events.push({ type: 'pearlLand' });
+      return true;
+    }
+    return false;
+  }
+
   private readonly rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 
   /**
@@ -1094,6 +1155,8 @@ export class Fighter {
     if (!blocks.inside(x, y, z)) return false;
     const cur = blocks.get(x, y, z);
     if (cur !== B.AIR && !isFluid(cur)) return false;
+    // A rail needs solid ground; it runs the way you face (north–south or east–west).
+    if (id === B.RAIL && !isSolid(blocks.get(x, y - 1, z))) return false;
     if (isSolid(id)) {
       for (const f of this.world.fighters) {
         if (f.dead) continue;
@@ -1106,7 +1169,7 @@ export class Fighter {
         if (Blocks.boxOverlapsCell(c.x - 1, c.y, c.z - 1, c.x + 1, c.y + 2, c.z + 1, x, y, z)) return false;
       }
     }
-    blocks.set(x, y, z, id);
+    blocks.set(x, y, z, id, id === B.RAIL && Math.abs(Math.sin(this.yaw)) > Math.abs(Math.cos(this.yaw)) ? 1 : 0);
     this.consume(s, hand);
     if (hand === 'main') this.swing();
     this.world.emit({ type: 'blockPlace', x, y, z, block: id });
@@ -1400,6 +1463,8 @@ export class Fighter {
     const pow = weapon.ench?.power ?? 0;
     if (pow > 0) arrow.baseDamage += 0.5 * pow + 0.5;
     arrow.pierce = weapon.ench?.piercing ?? 0;
+    // Flame: the arrow leaves burning (100 fire ticks).
+    if (weapon.ench?.flame) arrow.fireTicks = 100;
     const d = yawOffsetDeg ? lookDir(this.yaw + (yawOffsetDeg * Math.PI) / 180, this.pitch, new V3()) : this.look();
     arrow.shoot(d.x, d.y, d.z, speed, 1, this.world.rng);
     if (addMotion) {
@@ -1605,6 +1670,7 @@ export class Fighter {
       this.stopUsingItem();
       if (def.cooldown) this.cooldowns.set(def.id, { ticks: def.cooldown, total: def.cooldown });
       if (def.id === 'golden_apple' || def.id === 'golden_head') this.stats.gapplesEaten++;
+      if (def.id === 'chorus_fruit') this.chorusTeleport();
       this.events.push({ type: 'eatDone' });
     }
   }
@@ -1904,10 +1970,19 @@ export class Fighter {
    * ×0.8 (×0.9 sprinting) and gravity / 16, lava ×0.5 and gravity / 4.
    */
   private travelInFluid(strafe: number, forward: number) {
-    this.moveRelative(strafe, forward, 0.02);
     const water = this.inWater;
+    // Depth Strider (water_movement_efficiency = level / 3, half of it off the ground) moves water's
+    // drag and push that far toward walking on land.
+    let ds = water ? Math.min(3, this.armorSlots[3]?.ench?.depthStrider ?? 0) / 3 : 0;
+    if (!this.onGround) ds *= 0.5;
+    let push = 0.02;
+    let h = water ? (this.sprinting ? 0.9 : 0.8) : 0.5;
+    if (ds > 0) {
+      h += (0.54600006 - h) * ds;
+      push += (this.movementSpeed() - push) * ds;
+    }
+    this.moveRelative(strafe, forward, push);
     this.move(this.vel.x, this.vel.y, this.vel.z);
-    const h = water ? (this.sprinting ? 0.9 : 0.8) : 0.5;
     this.vel.x *= h;
     this.vel.z *= h;
     this.vel.y *= water ? 0.8 : 0.5;

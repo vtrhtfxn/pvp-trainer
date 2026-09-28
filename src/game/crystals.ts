@@ -2,6 +2,7 @@ import { V3, rayAABB, type AABB } from '../core/math';
 import { B, type RayHit } from './Blocks';
 import { EndCrystal } from './EndCrystal';
 import { explode } from './Explosion';
+import { attackCart, crosshairCart } from './TntCart';
 import type { Fighter } from './Fighter';
 import type { World } from './World';
 
@@ -83,4 +84,20 @@ export function detonateAnchor(world: World, x: number, y: number, z: number, so
   world.blocks.set(x, y, z, B.AIR);
   if (source) source.stats.anchorsBlown++;
   explode(world, x + 0.5, y + 0.5, z + 0.5, ANCHOR_POWER, { fire: true, source });
+}
+
+/**
+ * A click that finds an end crystal or TNT minecart nearer than the opponent (at `targetT` along
+ * the crosshair, -1 if not there) hits that instead. True if it did.
+ */
+export function hitNearerEntity(f: Fighter, targetT: number): boolean {
+  const cr = crosshairCrystal(f);
+  const cart = crosshairCart(f);
+  const crT = cr ? cr.t : Infinity;
+  const cartT = cart ? cart.t : Infinity;
+  const nearest = Math.min(crT, cartT);
+  if (nearest === Infinity || (targetT >= 0 && targetT <= nearest)) return false;
+  if (cr && crT <= cartT) attackCrystal(f, cr.crystal);
+  else attackCart(f, cart!.cart);
+  return true;
 }

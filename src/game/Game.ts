@@ -28,7 +28,7 @@ import { CHAT_MAX, type ChatKind, type ServerMsg } from '../net/protocol';
 import type { AttributeId } from './attributes';
 import { performAttack, rayDistanceToTarget, renderedPick } from './combat';
 import type { Fighter, FighterEvent } from './Fighter';
-import { EFFECT_COLORS, ITEMS, type ItemStack } from './items';
+import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
 import { KITS, isCustomKit, kitById, type KitId } from './kits';
 import { loadCustomKits } from './customKits';
 import { B } from './Blocks';
@@ -156,7 +156,7 @@ export class Game {
     // MSAA on a 2× screen draws 4× the samples for edges you can barely see: Auto skips it there.
     const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && (window.devicePixelRatio || 1) < 2);
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword' | 'end_crystal' | 'netherite_axe' | 'mace') =>
+    const packIcon = (id: ItemId) =>
       itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
@@ -166,6 +166,8 @@ export class Game {
     // 1.8 Sword: the diamond sword with an enchantment glint; custom kits: a chest.
     kitIcons.sword18 = itemIcon({ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }) ?? makeKitIcon('sword');
     kitIcons.custom = makeKitIcon('custom');
+    kitIcons.cart = itemIcon({ id: 'tnt_minecart', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.dia_smp = itemIcon({ id: 'diamond_chestplate', count: 1 }) ?? makeKitIcon('axe');
     this.hud = new HUD(uiRoot, this.mods);
     this.specHud = new SpectatorHud(uiRoot);
     this.drillHud = new DrillHud(uiRoot);

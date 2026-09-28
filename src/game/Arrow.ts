@@ -2,7 +2,8 @@ import * as C from '../core/constants';
 import { V3, rayAABB, type AABB } from '../core/math';
 import { hurt, shieldFaces } from './combat';
 import { applyKnockback, type Fighter } from './Fighter';
-import { isSolid, type RayHit } from './Blocks';
+import { B, isSolid, type RayHit } from './Blocks';
+import { hurtCart, type TntCart } from './TntCart';
 import { detonateCrystal } from './crystals';
 import type { EndCrystal } from './EndCrystal';
 import { POTIONS, type PotionId } from './items';
@@ -34,6 +35,8 @@ export class Arrow {
   potion: PotionId | null = null;
   /** Multishot's side arrows can't be picked up. */
   pickup = true;
+  /** Burning (Flame, or shot through fire): sets what it hits alight and TNT minecarts off. */
+  fireTicks = 0;
   /** The block it is stuck in; if that block is broken the arrow falls again. */
   private stuck = { x: 0, y: 0, z: 0 };
   /** Ticks since it stuck (for despawn and the pickup delay). */
@@ -145,6 +148,25 @@ export class Arrow {
       detonateCrystal(world, crystal, this.owner);
       return;
     }
+    // TNT minecarts: a burning arrow sets one off at once, a cold one breaks it.
+    let cart: TntCart | null = null;
+    if (speed > 1e-6 && world.carts.length) {
+      for (const c of world.carts) {
+        if (c.removed) continue;
+        const t = rayAABB(this.pos, tmpDir, c.aabbInto(tmpBox));
+        if (t >= 0 && t / speed <= travel) {
+          travel = t / speed;
+          cart = c;
+          victim = null;
+        }
+      }
+    }
+    if (cart) {
+      this.pos.set(this.pos.x + v.x * travel, this.pos.y + v.y * travel, this.pos.z + v.z * travel);
+      this.removed = true;
+      hurtCart(world, cart, this.owner, this.fireTicks > 0 ? speed : null);
+      return;
+    }
     if (victim) {
       this.pos.set(this.pos.x + v.x * travel, this.pos.y + v.y * travel, this.pos.z + v.z * travel);
       this.hitEntity(victim, speed, world);
@@ -160,6 +182,11 @@ export class Arrow {
       return;
     }
     this.pos.set(this.pos.x + v.x, this.pos.y + v.y, this.pos.z + v.z);
+    // Through fire (or lava) it catches; through water it goes out.
+    const cell = world.blocks.count ? world.blocks.get(Math.floor(this.pos.x), Math.floor(this.pos.y), Math.floor(this.pos.z)) : B.AIR;
+    if (cell === B.FIRE || cell === B.LAVA) this.fireTicks = Math.max(this.fireTicks, 100);
+    else if (cell === B.WATER) this.fireTicks = 0;
+    else if (this.fireTicks > 0) this.fireTicks--;
     v.x *= C.ARROW_DRAG;
     v.y *= C.ARROW_DRAG;
     v.z *= C.ARROW_DRAG;
@@ -187,6 +214,8 @@ export class Arrow {
       this.bounce();
       return;
     }
+    // AbstractArrow.onHitEntity: a burning arrow sets them on fire for 5 s.
+    if (this.fireTicks > 0 && !target.dead) target.ignite(100);
     if (this.potion) {
       const p = POTIONS[this.potion];
       if (p.effect !== 'instant_health') target.addEffect(p.effect, p.amplifier, Math.max(1, Math.floor(p.duration / 8)));

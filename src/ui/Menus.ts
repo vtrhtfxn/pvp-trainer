@@ -45,7 +45,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits';
+type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers';
 
 export interface ResultData {
   won: boolean;
@@ -122,6 +122,7 @@ export class Menus {
       versus: h('div', { class: 'screen versus' }),
       trainer: h('div', { class: 'screen trainer' }),
       kits: h('div', { class: 'screen kit-editor' }),
+      subtiers: h('div', { class: 'screen subtiers' }),
     };
     this.kitEditor = new KitEditor(this.screens.kits, customKits, {
       onUiSound: () => this.cb.onUiSound(),
@@ -159,6 +160,7 @@ export class Menus {
     if (name === 'versus') this.renderVersus();
     if (name === 'trainer') this.renderTrainer();
     if (name === 'kits') this.kitEditor.render();
+    if (name === 'subtiers') this.renderSubtiers();
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -194,7 +196,7 @@ export class Menus {
 
     panel.append(h('div', { class: 'section-title' }, 'Game mode'));
     const grid = h('div', { class: 'kit-grid' });
-    for (const kit of KITS) {
+    for (const kit of KITS.filter((k) => !k.subtier)) {
       const icon = this.kitIcons[kit.icon];
       const iconEl = h('canvas', { class: 'kit-icon', width: '16', height: '16' });
       if (icon) {
@@ -281,8 +283,9 @@ export class Menus {
     panel.append(
       h(
         'div',
-        { class: 'btn-row three' },
+        { class: 'btn-row four' },
         this.button('Trainer', () => this.show('trainer'), 'trainer-btn'),
+        this.button('Subtiers', () => this.show('subtiers'), 'subtier-btn'),
         this.button('Bot vs Bot', () => this.show('versus')),
         this.button('Multiplayer', () => this.show('multiplayer'), 'online'),
       ),
@@ -353,6 +356,7 @@ export class Menus {
     const kit = kitById(this.settings.kit);
     const d = DIFFICULTIES[this.settings.difficulty];
     const cardId = kit.custom ? CUSTOM_CARD : kit.id;
+    this.screens.main.querySelector('.subtier-btn')?.classList.toggle('selected', !!kit.subtier);
     this.screens.main.querySelectorAll<HTMLElement>('.kit-card').forEach((c) => {
       c.classList.toggle('selected', c.dataset.kit === cardId);
     });
@@ -1027,6 +1031,61 @@ export class Menus {
     root.append(panel);
   }
 
+  // ------------------------------------------------------------------ Subtiers
+
+  private renderSubtiers() {
+    const root = this.screens.subtiers;
+    root.replaceChildren();
+    const s = this.settings;
+    const subs = KITS.filter((k) => k.subtier);
+    if (!kitById(s.kit).subtier) {
+      s.kit = subs[0].id;
+      saveSettings(s);
+    }
+    const kit = kitById(s.kit);
+    const panel = h('div', { class: 'menu-panel' });
+    panel.append(h('div', { class: 'screen-title' }, 'Subtiers'));
+    panel.append(h('div', { class: 'tiers-sub' }, 'Side kits from the tier lists, with their own tier ladder and their own place in My Tiers.'));
+    const grid = h('div', { class: 'kit-grid subtier-grid' });
+    for (const k of subs) {
+      const card = h('button', { class: `kit-card${k.id === kit.id ? ' selected' : ''}`, title: k.summary }, this.iconEl(k.icon), h('span', { class: 'kit-name' }, k.name));
+      card.addEventListener('click', () => {
+        this.cb.onUiSound();
+        s.kit = k.id;
+        saveSettings(s);
+        this.renderSubtiers();
+      });
+      grid.append(card);
+    }
+    panel.append(grid);
+    panel.append(h('div', { class: 'kit-info' }, h('div', { class: 'kit-summary' }, kit.summary), h('ul', {}, ...kit.contents.map((c) => h('li', {}, c)))));
+
+    panel.append(h('div', { class: 'section-title' }, 'Bot tier'));
+    const row = h('div', { class: 'diff-row' });
+    for (const id of DIFFICULTY_ORDER) {
+      const d = DIFFICULTIES[id];
+      const b = h('button', { class: `${id === 'practice' ? 'diff-btn diff-practice' : 'diff-btn'}${s.difficulty === id ? ' selected' : ''}` }, d.name);
+      b.style.setProperty('--diff', d.color);
+      b.addEventListener('click', () => {
+        this.cb.onUiSound();
+        s.difficulty = id;
+        saveSettings(s);
+        this.renderSubtiers();
+      });
+      row.append(b);
+    }
+    panel.append(row);
+    const d = DIFFICULTIES[s.difficulty];
+    const desc = h('div', { class: 'diff-desc' }, d.tagline);
+    desc.style.color = d.color;
+    panel.append(desc);
+    const held = this.cb.myTiers()[kit.id];
+    panel.append(h('div', { class: 'tiers-sub' }, `Your ${kit.name} tier: ${held ? DIFFICULTIES[held].name : 'Unranked'} · First to ${s.firstTo} (change it on the title screen)`));
+    panel.append(this.button('Start Duel', () => this.cb.onStart(), 'big'));
+    panel.append(h('div', { class: 'btn-row' }, this.button('Watch Bot vs Bot', () => this.show('versus')), this.button('Back', () => this.show('main'))));
+    root.append(panel);
+  }
+
   // ------------------------------------------------------------------ My Tiers
 
   private renderTiers() {
@@ -1040,7 +1099,9 @@ export class Menus {
       h('div', { class: 'tiers-sub' }, 'Win a series (First to, on the title screen) against a tier bot to earn that tier in that kit. Your best tier in each kit counts.'),
     );
     const list = h('div', { class: 'tiers-list' });
-    for (const kit of KITS) {
+    const ordered = [...KITS.filter((k) => !k.subtier), ...KITS.filter((k) => k.subtier)];
+    for (const kit of ordered) {
+      if (kit === ordered.find((k) => k.subtier)) list.append(h('div', { class: 'tiers-section' }, 'Subtiers'));
       const iconEl = h('canvas', { width: '16', height: '16' });
       const icon = this.kitIcons[kit.icon];
       if (icon) {

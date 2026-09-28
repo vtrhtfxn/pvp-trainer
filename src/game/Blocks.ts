@@ -24,6 +24,9 @@ export const B = {
   GRASS: 12,
   DIRT: 13,
   /** Floor and walls: solid, unbreakable, never stored. */
+  OAK_LOG: 14,
+  /** Flat and walk-through; its axis (0 north–south, 1 east–west) is kept in `amount`. */
+  RAIL: 15,
   BEDROCK: 255,
 } as const;
 export type FluidId = typeof B.WATER | typeof B.LAVA;
@@ -41,7 +44,9 @@ export type BlockName =
   | 'ender_chest'
   | 'fire'
   | 'grass_block'
-  | 'dirt';
+  | 'dirt'
+  | 'oak_log'
+  | 'rail';
 
 export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.PLANKS]: 'oak_planks',
@@ -57,6 +62,8 @@ export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.FIRE]: 'fire',
   [B.GRASS]: 'grass_block',
   [B.DIRT]: 'dirt',
+  [B.OAK_LOG]: 'oak_log',
+  [B.RAIL]: 'rail',
 };
 
 export interface BlockProps {
@@ -67,7 +74,7 @@ export interface BlockProps {
   /** Drops nothing unless mined with that tool (requiresCorrectToolForDrops). */
   needsTool: boolean;
   /** Item it drops (null: nothing). */
-  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | null;
+  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | 'oak_log' | 'rail' | null;
 }
 
 /**
@@ -82,6 +89,10 @@ export function blastResistance(id: number): number {
       return 0;
     case B.GLOWSTONE:
       return 0.3;
+    case B.RAIL:
+      return 0.7;
+    case B.OAK_LOG:
+      return 2;
     case B.DIRT:
       return 0.5;
     case B.GRASS:
@@ -120,11 +131,14 @@ export const BLOCK_PROPS: Record<number, BlockProps> = {
   // The kit has no shovel: the ground is dug by hand (grass 0.9 s, dirt 0.75 s).
   [B.GRASS]: { hardness: 0.6, tool: null, needsTool: false, drop: null },
   [B.DIRT]: { hardness: 0.5, tool: null, needsTool: false, drop: null },
+  [B.OAK_LOG]: { hardness: 2, tool: 'axe', needsTool: false, drop: 'oak_log' },
+  [B.RAIL]: { hardness: 0.7, tool: 'pickaxe', needsTool: false, drop: 'rail' },
 };
 
 export function isSolid(id: number): boolean {
   return (
     id === B.PLANKS ||
+    id === B.OAK_LOG ||
     id === B.COBBLESTONE ||
     id === B.OBSIDIAN ||
     id === B.STONE ||
@@ -280,13 +294,18 @@ export class Blocks {
     if (before === B.AIR && id !== B.AIR) this.count++;
     else if (before !== B.AIR && id === B.AIR) this.count--;
     this.id[i] = id;
-    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE ? amount : 0;
+    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL ? amount : 0;
     this.flags[i] = isFluid(id) ? (source ? 1 : 0) | (falling ? 2 : 0) : 0;
     this.version++;
     this.markDirty(x, z);
     this.changeLog?.add(i);
     // Wake up this cell's fluid and any fluid next to it.
     this.scheduleAround(x, y, z);
+    // Rails and fire need something solid under them.
+    if (!isSolid(id) && this.inside(x, y + 1, z)) {
+      const above = this.id[this.index(x, y + 1, z)];
+      if (above === B.RAIL || above === B.FIRE) this.set(x, y + 1, z, B.AIR);
+    }
   }
 
   /**
@@ -330,6 +349,11 @@ export class Blocks {
   }
 
   /** Respawn anchor charge, 0–4. */
+  /** A rail's axis: 0 north–south (along Z), 1 east–west (along X). */
+  railAxis(x: number, y: number, z: number): number {
+    return this.get(x, y, z) === B.RAIL ? this.amount[this.index(x, y, z)] & 1 : 0;
+  }
+
   anchorCharge(x: number, y: number, z: number): number {
     return this.get(x, y, z) === B.RESPAWN_ANCHOR ? this.amount[this.index(x, y, z)] : 0;
   }
@@ -751,7 +775,9 @@ export class Blocks {
     for (let i = 0; i < 256; i++) {
       const id = this.get(x, y, z);
       const hit =
-        isSolid(id) || (mode !== 'collider' && id === B.COBWEB) || (mode === 'source' && isFluid(id) && this.isSource(x, y, z));
+        isSolid(id) ||
+        (mode !== 'collider' && (id === B.COBWEB || id === B.RAIL)) ||
+        (mode === 'source' && isFluid(id) && this.isSource(x, y, z));
       if (hit) {
         out.t = t;
         out.x = x;

@@ -1,5 +1,5 @@
 import { performAttack, pushApart, rayDistanceToTarget } from '../game/combat';
-import { attackCrystal, crosshairCrystal } from '../game/crystals';
+import { hitNearerEntity } from '../game/crystals';
 import { Fighter, SLOT_COUNT, type FighterEvent } from '../game/Fighter';
 import { ITEMS } from '../game/items';
 import { kitById, type KitDef, type KitId } from '../game/kits';
@@ -355,11 +355,8 @@ export class Duel {
         f.yaw = yaw;
         f.pitch = pitch;
       };
-      const cr = crosshairCrystal(f);
-      const t = rayDistanceToTarget(f, other);
-      if (cr && (t < 0 || cr.t < t)) {
+      if (hitNearerEntity(f, rayDistanceToTarget(f, other))) {
         restore();
-        attackCrystal(f, cr.crystal);
         continue;
       }
       if (!mined && f.tickMining(true, true)) {
@@ -484,6 +481,7 @@ export class Duel {
       a: w.arrows.map((e) => [this.idOf(e), r3(e.pos.x), r3(e.pos.y), r3(e.pos.z), r3(e.yaw), r3(e.pitch), e.potion ?? '']),
       t: w.thrown.map((e) => [this.idOf(e), e.kind, e.potion ?? '', r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)]),
       c: w.crystals.filter((c) => !c.removed).map((c) => [this.idOf(c), c.x, c.y, c.z]),
+      k: w.carts.filter((c) => !c.removed).map((c) => [this.idOf(c), r3(c.pos.x), r3(c.pos.y), r3(c.pos.z), c.axis, c.primed ? 1 : 0]),
       it: w.items.map((e) => [this.idOf(e), e.stack.id, e.stack.count, r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)]),
       o: w.orbs.map((e) => [this.idOf(e), e.value, r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)]),
     };

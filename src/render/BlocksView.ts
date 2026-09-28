@@ -48,6 +48,8 @@ function faceTexture(id: number, kind: 'top' | 'bottom' | 'side', blocks: Blocks
   switch (id) {
     case B.PLANKS:
       return 'oak_planks';
+    case B.OAK_LOG:
+      return kind === 'side' ? 'oak_log' : 'oak_log_top';
     case B.COBBLESTONE:
       return 'cobblestone';
     case B.OBSIDIAN:
@@ -134,6 +136,7 @@ export class BlocksView {
   private readonly chunks = new Map<number, ChunkMeshes>();
   private readonly solidMats = new Map<string, THREE.MeshBasicMaterial>();
   private readonly webMat: THREE.MeshBasicMaterial;
+  private readonly railMat: THREE.MeshBasicMaterial;
   private readonly waterMat: THREE.MeshBasicMaterial;
   private readonly lavaMat: THREE.MeshBasicMaterial;
   private readonly lavaTex: THREE.Texture | null;
@@ -146,6 +149,7 @@ export class BlocksView {
   readonly outline: THREE.LineSegments;
 
   constructor() {
+    this.railMat = litMaterial(new THREE.MeshBasicMaterial({ map: packTexture('block/rail'), alphaTest: 0.1, side: THREE.DoubleSide, vertexColors: true }));
     this.webMat = litMaterial(new THREE.MeshBasicMaterial({ map: packTexture('block/cobweb'), alphaTest: 0.1, side: THREE.DoubleSide, vertexColors: true }));
     this.waterMat = litMaterial(new THREE.MeshBasicMaterial({ map: waterTexture(), transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, vertexColors: true }));
     this.lavaTex = stripTexture('block/lava_still', LAVA_FRAMES);
@@ -190,6 +194,7 @@ export class BlocksView {
     const z0 = cz * CHUNK - blocks.half;
     const solids = new Map<string, Buf>();
     const web = buf();
+    const rails = buf();
     const water = buf();
     const lava = buf();
     const fire = buf();
@@ -224,6 +229,7 @@ export class BlocksView {
               this.quad(b, x, y, z, f.c, f.shade, 1);
             }
           } else if (id === B.COBWEB) this.cross(web, x, y, z, 0.15);
+          else if (id === B.RAIL) this.rail(rails, x, y, z, blocks.railAxis(x, y, z));
           else if (id === B.FIRE) this.cross(fire, x, y, z, 0);
           else if (isFluid(id)) this.fluid(id === B.WATER ? water : lava, blocks, x, y, z, id);
         }
@@ -239,6 +245,7 @@ export class BlocksView {
     };
     for (const [name, b] of solids) if (b.idx.length) add(toGeo(b), this.solidMat(name));
     if (web.idx.length) add(toGeo(web), this.webMat);
+    if (rails.idx.length) add(toGeo(rails), this.railMat);
     if (fire.idx.length) add(toGeo(fire), this.fireMat, 4);
     if (lava.idx.length) add(toGeo(lava), this.lavaMat);
     if (water.idx.length) add(toGeo(water), this.waterMat, 2);
@@ -260,6 +267,25 @@ export class BlocksView {
       b.pos.push(x + cx, y + cy * top, z + cz);
       b.uv.push(UV[i][0], cy === 1 && top < 1 && c[0][1] !== c[2][1] ? top : UV[i][1]);
       b.col.push(l, l, l);
+    }
+    b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+
+  /** A rail: a flat quad 1/16 above the ground, its texture turned to the rail's axis. */
+  private rail(b: Buf, x: number, y: number, z: number, axis: number) {
+    const base = b.pos.length / 3;
+    const h = 1 / 16;
+    const c: [number, number][] = [
+      [0, 1],
+      [1, 1],
+      [1, 0],
+      [0, 0],
+    ];
+    for (let i = 0; i < 4; i++) {
+      b.pos.push(x + c[i][0], y + h, z + c[i][1]);
+      const uv = UV[(i + axis) % 4];
+      b.uv.push(uv[0], uv[1]);
+      b.col.push(1, 1, 1);
     }
     b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }

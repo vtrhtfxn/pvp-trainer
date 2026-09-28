@@ -10,7 +10,7 @@
 
 import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -65,6 +65,8 @@ const ENCHANT_KEYS: readonly (keyof Enchants)[] = [
   'density',
   'breach',
   'windBurst',
+  'depthStrider',
+  'flame',
 ];
 
 export function toSlot(s: ItemStack | null): Slot {
@@ -235,6 +237,8 @@ export interface NetEntities {
   a: (number | string)[][];
   t: (number | string)[][];
   c: number[][];
+  /** TNT minecarts [id, x, y, z, rail axis, lit (1)]. */
+  k?: number[][];
   it: (number | string)[][];
   o: number[][];
 }

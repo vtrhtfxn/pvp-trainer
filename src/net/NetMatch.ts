@@ -3,6 +3,7 @@ import { Rng } from '../core/rng';
 import { Arrow } from '../game/Arrow';
 import { pushApart } from '../game/combat';
 import { DroppedItem } from '../game/DroppedItem';
+import { TntCart } from '../game/TntCart';
 import { EndCrystal } from '../game/EndCrystal';
 import { Fighter, SLOT_COUNT, type FighterEvent } from '../game/Fighter';
 import { ITEMS, type ItemId, type PotionId } from '../game/items';
@@ -331,6 +332,12 @@ export class NetMatch {
       const cr = r.obj as unknown as EndCrystal;
       cr.age++;
       return cr;
+    });
+    w.carts = (ents.k ?? []).map((k) => {
+      const c = upd(`k${k[0]}`, num(k[1]), num(k[2]), num(k[3]), () => new TntCart(0, 0, 0, null));
+      c.axis = num(k[4]) ? 1 : 0;
+      c.fuse = num(k[5]) ? 1 : -1;
+      return c;
     });
     w.items = ents.it.map((it) => {
       const id = String(it[1]) as ItemId;
