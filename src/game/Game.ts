@@ -46,8 +46,12 @@ function blockSound(block: number): 'wood' | 'stone' | 'web' {
   return block === B.PLANKS ? 'wood' : block === B.COBWEB ? 'web' : 'stone';
 }
 import { Match } from './Match';
+import { Spectate } from './Spectate';
+import { SpectatorHud } from '../ui/SpectatorHud';
+import { DrillHud } from '../ui/DrillHud';
+import { DrillRun, drillById, loadDrillProgress, recordDrill } from '../trainer/drills';
 
-type State = 'menu' | 'playing' | 'paused' | 'results';
+type State = 'menu' | 'playing' | 'paused' | 'results' | 'spectating';
 /** Game drives either the offline Match or its online stand-in; they share a surface. */
 type AnyMatch = Match | NetMatch;
 
@@ -60,6 +64,14 @@ export class Game {
   private state: State = 'menu';
   private match: AnyMatch;
   private demoBrain: BotBrain;
+  /** Bot vs Bot: the fight being watched. */
+  private spec: Spectate | null = null;
+  private readonly specHud: SpectatorHud;
+  /** Trainer: the drill being played (and the last one, for Try again). */
+  private drill: DrillRun | null = null;
+  private lastDrill: string | null = null;
+  private readonly drillHud: DrillHud;
+  private readonly drillProgress = loadDrillProgress();
   private readonly view: SceneRenderer;
   private readonly hud: HUD;
   private readonly menus: Menus;
@@ -148,6 +160,8 @@ export class Game {
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
     this.hud = new HUD(uiRoot, this.mods);
+    this.specHud = new SpectatorHud(uiRoot);
+    this.drillHud = new DrillHud(uiRoot);
     this.modHud = new ModHud(uiRoot, this.mods);
     this.damage = new DamageIndicators(uiRoot);
     this.host = this.makeHost();
@@ -169,10 +183,13 @@ export class Game {
     this.inventory.preview.appendChild(this.previewCanvas);
     this.menus = new Menus(uiRoot, settings, this.records, kitIcons, {
       onStart: () => this.startDuel(),
+      onSpectate: (kit, a, b) => this.startSpectate(kit, a, b),
+      onDrill: (id) => this.startDrill(id),
+      drillProgress: () => this.drillProgress,
       myTiers: () => this.myTiers,
       onResume: () => this.resume(),
       onRestart: () => {
-        if (!this.online) this.startDuel();
+        if (!this.online) this.restartCurrent();
       },
       onQuit: () => this.toMenu(),
       onSettingsChanged: () => this.applySettings(),
@@ -233,7 +250,7 @@ export class Game {
         if (this.netMatch) {
           this.netMatch.requestRematch();
           this.hud.showCenter('Waiting for rematch…', 'toast', 60);
-        } else this.startDuel();
+        } else this.restartCurrent();
       },
       onPointerLockChange: (locked) => {
         if (!locked && this.state === 'playing' && !this.inventory.open && !this.chat.open) this.pause();
@@ -244,6 +261,10 @@ export class Game {
       if (this.state === 'playing' && !this.input.locked && !this.inventory.open && !this.chat.open) void this.input.lock();
     });
     window.addEventListener('keydown', (e) => {
+      if (this.state === 'spectating') {
+        this.spectateKey(e);
+        return;
+      }
       if (e.key !== 'Escape') return;
       if (this.hudEditor.style.display !== 'none') this.closeHudEditor();
       else if (this.market.open) this.closeMarket();
@@ -618,6 +639,11 @@ export class Game {
   }
 
   private toMenu() {
+    this.spec = null;
+    this.drill = null;
+    this.lastDrill = null;
+    this.drillHud.hide();
+    this.specHud.hide();
     this.series = null;
     this.inventory.hide();
     this.state = 'menu';
@@ -642,18 +668,20 @@ export class Game {
   }
 
   /** `nextRound`: the next round of the running "first to" series (otherwise a new series). */
-  private startDuel(nextRound = false) {
+  private startDuel(nextRound = false, drillId: string | null = null) {
     this.sound.unlock();
     this.inventory.hide();
     this.netMatch = null;
     this.net.close();
-    const kit = kitById(this.settings.kit);
-    const profile = DIFFICULTIES[this.settings.difficulty];
+    const drillDef = drillId ? drillById(drillId) ?? null : null;
+    this.lastDrill = drillDef ? drillDef.id : null;
+    const kit = kitById(drillDef ? drillDef.kit : this.settings.kit);
+    const profile = DIFFICULTIES[drillDef ? drillDef.profile ?? 'practice' : this.settings.difficulty];
     const s = this.series;
     if (!nextRound || !s || s.kit !== kit.id || s.tier !== profile.id) {
       this.series = newSeries(kit.id, profile.id, this.settings.firstTo);
     }
-    this.hud.setSeries(this.series!.target > 1 ? this.seriesScore() : null);
+    this.hud.setSeries(!drillDef && this.series!.target > 1 ? this.seriesScore() : null);
     this.match = new Match(kit, profile);
     // A new duel keeps what commands set up (rules, reach, game modes, time…) but not the rest.
     this.state = 'playing';
@@ -676,7 +704,121 @@ export class Game {
     this.state = 'playing';
     this.input.enabled = true;
     this.input.closeGuard = true;
+    this.drill = drillDef ? new DrillRun(drillDef, this.match as Match) : null;
+    if (this.drill) this.drillHud.show(this.drill);
+    else this.drillHud.hide();
     void this.input.lock();
+  }
+
+  /** R, Restart and Try again: the same drill again, or a new duel. */
+  private restartCurrent() {
+    if (this.lastDrill) this.startDrill(this.lastDrill);
+    else this.startDuel();
+  }
+
+  // ------------------------------------------------------------------ trainer
+
+  private startDrill(id: string) {
+    this.startDuel(false, id);
+  }
+
+  /** Called every tick of a drill, after the match ticked and before its events are handled. */
+  private tickDrill(run: DrillRun) {
+    const m = this.match as Match;
+    run.update();
+    // Someone died anyway (a /kill, a huge blast): a fresh match, the drill carries on.
+    if (m.phase === 'ended' && !run.result) {
+      const next = new Match(m.kit, m.profile);
+      this.match = next;
+      this.applySession(true);
+      this.hud.resetRound(next.player);
+      run.attach(next);
+      run.say('Round reset');
+      return;
+    }
+    if (run.result) this.finishDrill(run);
+  }
+
+  private finishDrill(run: DrillRun) {
+    const r = run.result!;
+    const newBest = recordDrill(this.drillProgress, run.def.id, r);
+    this.drill = null;
+    this.drillHud.hide();
+    this.state = 'results';
+    this.chat.hide();
+    this.input.enabled = false;
+    this.input.unlock();
+    this.sound.jingle(r.passed);
+    this.menus.showDrillResult(run.def, r, newBest, () => this.startDrill(run.def.id));
+  }
+
+  // ------------------------------------------------------------------ bot vs bot
+
+  /** Watch two tier bots fight, round after round (Bot vs Bot on the title screen). */
+  private startSpectate(kitId: KitId, a: DifficultyId, b: DifficultyId) {
+    this.sound.unlock();
+    this.inventory.hide();
+    this.netMatch = null;
+    this.net.close();
+    this.series = null;
+    this.spec = new Spectate(kitById(kitId), DIFFICULTIES[a], DIFFICULTIES[b]);
+    this.match = this.spec.match;
+    this.state = 'spectating';
+    this.chat.hide();
+    this.menus.hideAll();
+    this.hud.setVisible(false);
+    this.specHud.show();
+    this.view.particles.clear();
+    this.damage.clear();
+    this.sound.muted = false;
+    this.acc = 0;
+    this.input.enabled = false;
+    this.input.closeGuard = false;
+    this.input.unlock();
+  }
+
+  private tickSpectate(spec: Spectate) {
+    const replaced = spec.tick();
+    if (replaced) {
+      this.match = spec.match;
+      this.view.particles.clear();
+      this.damage.clear();
+      return;
+    }
+    const m = spec.match;
+    this.handleEvents(m.player, false);
+    this.handleEvents(m.bot, false);
+    this.handleWorldEvents(m.world);
+    for (const f of [m.player, m.bot]) {
+      if (f.dead && f.deathTime === 20) this.view.particles.poof(f.pos.x, f.pos.y, f.pos.z);
+    }
+    const r = spec.lastResult;
+    if (r) {
+      spec.lastResult = null;
+      const name = r.winner === 'a' ? spec.nameA : spec.nameB;
+      const color = r.winner === 'a' ? spec.a.color : spec.b.color;
+      this.specHud.announce(r.timeout ? `${name} wins on health` : `${name} wins!`, color);
+      this.sound.jingle(true);
+    }
+  }
+
+  private spectateKey(e: KeyboardEvent) {
+    const spec = this.spec;
+    if (!spec || e.repeat) return;
+    const cams = { Digit1: 'orbit', Digit2: 'followA', Digit3: 'followB', Digit4: 'povA', Digit5: 'povB' } as const;
+    if (e.code in cams) spec.cam = cams[e.code as keyof typeof cams];
+    else if (e.code === 'KeyV' || e.code === 'F5') spec.cycleCam(e.shiftKey ? -1 : 1);
+    else if (e.code === 'BracketLeft' || e.code === 'Minus') spec.changeSpeed(-1);
+    else if (e.code === 'BracketRight' || e.code === 'Equal') spec.changeSpeed(1);
+    else if (e.code === 'Space') spec.paused = !spec.paused;
+    else if (e.code === 'KeyR') {
+      spec.newRound();
+      this.match = spec.match;
+      this.view.particles.clear();
+    } else if (e.code === 'Escape') this.toMenu();
+    else return;
+    e.preventDefault();
+    this.sound.ui();
   }
 
   // ------------------------------------------------------------------ online
@@ -993,11 +1135,13 @@ export class Game {
     // Online: the server keeps ticking whether or not we opened the pause menu, so we have to
     // keep simulating and reporting our position — we just stop taking input.
     const menuStill = this.state === 'menu' && !this.settings.menuBackground;
+    const spec = this.state === 'spectating' ? this.spec : null;
     const ticking =
-      !menuStill && (this.state === 'playing' || this.state === 'menu' || this.state === 'results' || (this.online && this.state === 'paused'));
+      !menuStill &&
+      (this.state === 'playing' || this.state === 'menu' || this.state === 'results' || (this.online && this.state === 'paused') || (!!spec && !spec.paused));
     // /tick rate only changes offline duels; online and the title screen always run at 20.
-    const offlineDuel = !!this.cmdMatch;
-    const tickMs = offlineDuel ? 1000 / this.session.tickRate : TICK_MS;
+    const offlineDuel = !!this.cmdMatch && !spec;
+    const tickMs = spec ? TICK_MS / spec.speed : offlineDuel ? 1000 / this.session.tickRate : TICK_MS;
     if (ticking) {
       const budget = performance.now() + TICK_BUDGET_MS;
       if (this.sprinting && offlineDuel && playing) {
@@ -1028,15 +1172,29 @@ export class Game {
     this.renderAlpha = alpha;
 
     this.updateWeather(dt, offlineDuel);
-    this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;
     const tag = this.tag;
-    tag.name = m.bot.name;
-    tag.color = m.profile.color;
-    tag.status = this.state === 'menu' ? '' : m.brain.label;
-    this.view.render(p, m.bot, alpha, this.time, dt, s, tag);
+    if (spec) {
+      // Watching: the camera belongs to whichever fighter it follows (A is the match's player).
+      const onB = spec.cam === 'followB' || spec.cam === 'povB';
+      this.view.cameraMode = spec.cam === 'orbit' ? 'orbit' : spec.cam.startsWith('pov') ? 'first' : 'third';
+      const [cp, cb] = onB ? [m.bot, m.player] : [m.player, m.bot];
+      tag.name = cb.name;
+      tag.color = onB ? spec.a.color : spec.b.color;
+      tag.status = spec.label(onB ? 'a' : 'b');
+      this.view.render(cp, cb, alpha, this.time, dt, s, tag);
+      this.specHud.update(spec, dt);
+      const cam = this.view.camera.position;
+      Object.assign(this.sound.listener, { x: cam.x, y: cam.y, z: cam.z, yaw: onB ? m.bot.yaw : p.yaw });
+    } else {
+      this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;
+      tag.name = m.bot.name;
+      tag.color = m.profile.color;
+      tag.status = this.state === 'menu' ? '' : m.brain.label;
+      this.view.render(p, m.bot, alpha, this.time, dt, s, tag);
+    }
     if (this.mods.on('damageindicator')) this.damage.update(this.view.camera, dt);
 
-    const inDuel = this.state !== 'menu';
+    const inDuel = this.state !== 'menu' && this.state !== 'spectating';
     if (inDuel) {
       this.hud.update(p, m.bot, s, {
         aimingAtBot: rayDistanceToTarget(p, m.bot) >= 0,
@@ -1048,6 +1206,7 @@ export class Game {
         firstPerson: this.view.cameraMode === 'first' && !this.view.extras.freelook,
       });
     }
+    if (this.drill && inDuel) this.drillHud.update(this.drill);
     this.chat.root.style.display = inDuel ? '' : 'none';
     if (inDuel) this.chat.update(performance.now());
     this.updateWidgets(p);
@@ -1059,6 +1218,7 @@ export class Game {
       }
     }
     this.clickHint.style.display = this.state === 'playing' && !this.input.locked && !this.inventory.open && !this.chat.open ? '' : 'none';
+    if (spec) return;
     const eye = p.eyePos();
     const l = this.sound.listener;
     l.x = eye.x;
@@ -1151,6 +1311,10 @@ export class Game {
       this.tickOnline(this.netMatch);
       return;
     }
+    if (this.state === 'spectating' && this.spec) {
+      this.tickSpectate(this.spec);
+      return;
+    }
     if (this.state === 'menu') {
       if (m.phase === 'fight') this.demoBrain.tick();
       m.useHeld = this.demoBrain.useHeld;
@@ -1169,6 +1333,15 @@ export class Game {
     m.tick();
     this.view.firstPerson.tick(m.player);
     this.hud.tick(m.player);
+    if (this.drill && this.state === 'playing') {
+      this.tickDrill(this.drill);
+      if (this.state !== 'playing' || this.match !== m) {
+        this.handleEvents(m.player, true);
+        this.handleEvents(m.bot, true);
+        this.handleWorldEvents(m.world);
+        return;
+      }
+    }
 
     if (m.phase === 'countdown') {
       const n = m.countdownSeconds;
@@ -1189,7 +1362,7 @@ export class Game {
     for (const f of [m.player, m.bot]) {
       if (f.dead && f.deathTime === 20) this.view.particles.poof(f.pos.x, f.pos.y, f.pos.z);
     }
-    if (m.phase === 'ended' && this.state === 'playing') {
+    if (m.phase === 'ended' && this.state === 'playing' && !this.drill) {
       if (this.resultTimer < 0) {
         // Immediate respawn skips the results screen, so don't linger either.
         this.resultTimer = this.session.rules.doImmediateRespawn ? 22 : 30;
