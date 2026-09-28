@@ -164,6 +164,7 @@ export class FirstPersonView {
       drawTicks: kind === 'bow' || kind === 'crossbow' ? p.useTicks() + a : null,
       chargeTicks: C.CROSSBOW_CHARGE_TICKS,
       crossbowCharged: stack.id === 'crossbow' && !!stack.charged,
+      swordBlock: kind === 'sword_block',
     });
     if (this.opts.scale !== 1) m.multiply(tmp.makeScale(this.opts.scale, this.opts.scale, this.opts.scale));
   }

@@ -87,7 +87,7 @@ export const HARMFUL_EFFECTS: ReadonlySet<EffectId> = new Set([
 ]);
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip';
+export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip' | 'sword_block';
 
 /** Mining tool classes (the mineable/* block tags). */
 export type ToolKind = 'axe' | 'pickaxe' | 'sword';
@@ -418,6 +418,21 @@ export function defOf(stack: ItemStack | null | undefined): ItemDef {
 /** Sharpness adds 0.5 * level + 0.5 damage in Java Edition (Sharpness V = +3). */
 export function sharpnessBonus(level: number): number {
   return level > 0 ? 0.5 * level + 0.5 : 0;
+}
+
+/** 1.8 Sharpness: 1.25 damage per level (Sharpness V = +6.25). */
+export function legacySharpnessBonus(level: number): number {
+  return level > 0 ? 1.25 * level : 0;
+}
+
+/**
+ * attack_damage while held in 1.8 (with the base 1): swords were 1 higher (diamond 8), axes were
+ * 3 + material (diamond 7). Everything else hit as it does now.
+ */
+export function legacyAttackDamage(def: ItemDef): number {
+  if (def.tool === 'sword') return def.attackDamage + 1;
+  if (def.tool === 'axe') return def.id === 'netherite_axe' ? 8 : def.id === 'diamond_axe' ? 7 : Math.min(def.attackDamage, 6);
+  return def.attackDamage;
 }
 
 export function isEnchanted(stack: ItemStack | null | undefined): boolean {

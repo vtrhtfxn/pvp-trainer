@@ -82,6 +82,8 @@ export class World {
   damageMultiplier = 1;
   /** mcpvp.club "stuns": an axe disabling a shield clears the defender's hurt immunity. */
   shieldStuns = false;
+  /** 1.8 combat rules (the 1.8 Sword kit): see KitDef.legacyCombat. */
+  legacyCombat = false;
   rules: GameRules = defaultGameRules();
   /** Level.dayTime in ticks: 0 sunrise, 6000 noon, 13000 dusk, 18000 midnight (24000 a day). */
   dayTime = 6000;

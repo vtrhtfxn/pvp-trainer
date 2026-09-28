@@ -12,10 +12,19 @@ export interface ArmorStats {
   knockbackResistance: number;
   /** explosion_knockback_resistance: Blast Protection adds 0.15 per level, stacking (1.21). */
   explosionKnockbackResistance: number;
+  /**
+   * 1.8 EPFs (EnchantmentProtection.calcModifierDamage): floor((6 + level²) × type / 3) per piece,
+   * type 0.75 for Protection, 1.5 for Blast Protection (explosions), 2.5 for Feather Falling.
+   */
+  legacyEpf: number;
+  legacyBlastEpf: number;
+  legacyFallEpf: number;
 }
 
-export type KitId = 'sword' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace';
-export type KitIcon = 'sword' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace';
+export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace';
+/** Built-in kits, and kits players made in the kit editor (`custom:<id>`). */
+export type KitId = BuiltinKitId | `custom:${string}`;
+export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom';
 
 /** Everything a fighter spawns with. */
 export interface Loadout {
@@ -52,11 +61,29 @@ export interface KitDef extends Loadout {
    * fight. Saturation still runs down, so natural regeneration slows to vanilla's 1 HP / 4 s.
    */
   noHunger?: boolean;
+  /**
+   * 1.8 combat: no attack cooldown (every click is a full hit), 1.8 damage, Sharpness, crits,
+   * armor and Protection, sword blocking instead of shields, and 1.8 knockback and hitboxes.
+   */
+  legacyCombat?: boolean;
+  /** Made in the kit editor. */
+  custom?: boolean;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
 export function armorStatsOf(pieces: readonly (ItemStack | null)[]): ArmorStats {
-  const out: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, blastEpf: 0, fallEpf: 0, knockbackResistance: 0, explosionKnockbackResistance: 0 };
+  const out: ArmorStats = {
+    points: 0,
+    toughness: 0,
+    protectionEpf: 0,
+    blastEpf: 0,
+    fallEpf: 0,
+    knockbackResistance: 0,
+    explosionKnockbackResistance: 0,
+    legacyEpf: 0,
+    legacyBlastEpf: 0,
+    legacyFallEpf: 0,
+  };
   for (const s of pieces) {
     const a = s ? ITEMS[s.id].armor : undefined;
     if (!s || !a) continue;
@@ -67,8 +94,15 @@ export function armorStatsOf(pieces: readonly (ItemStack | null)[]): ArmorStats 
     out.blastEpf += 2 * (s.ench?.blastProtection ?? 0);
     out.fallEpf += 3 * (s.ench?.featherFalling ?? 0);
     out.explosionKnockbackResistance += 0.15 * (s.ench?.blastProtection ?? 0);
+    out.legacyEpf += legacyEpf(s.ench?.protection ?? 0, 0.75);
+    out.legacyBlastEpf += legacyEpf(s.ench?.blastProtection ?? 0, 1.5);
+    out.legacyFallEpf += legacyEpf(s.ench?.featherFalling ?? 0, 2.5);
   }
   return out;
+}
+
+function legacyEpf(level: number, type: number): number {
+  return level > 0 ? Math.floor(((6 + level * level) * type) / 3) : 0;
 }
 
 function diamondArmor(protection: number): (ItemStack | null)[] {
@@ -321,6 +355,25 @@ export const KITS: KitDef[] = [
     noHunger: true,
   },
   {
+    id: 'sword18',
+    name: '1.8 Sword',
+    icon: 'sword18',
+    available: true,
+    summary: 'Old combat: no cooldown, click fast, block-hit, W-tap and S-tap to keep your combo.',
+    contents: [
+      'Diamond Sword — Sharpness V (right click to block)',
+      'Full Diamond Armor — Protection IV',
+      '1.8 rules: no attack cooldown, sprint crits, 1.8 knockback',
+      'Hunger off: you can always sprint',
+    ],
+    hotbar: [{ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }],
+    armor: diamondArmor(4),
+    offhand: null,
+    armorLabel: 'Diamond · Prot IV',
+    noHunger: true,
+    legacyCombat: true,
+  },
+  {
     id: 'axe',
     name: 'Axe',
     icon: 'axe',
@@ -445,6 +498,22 @@ export const KITS: KitDef[] = [
   },
 ];
 
+/** Kits made in the kit editor, registered by the UI when they are loaded or saved. */
+const customKits = new Map<string, KitDef>();
+
+export function registerCustomKits(kits: readonly KitDef[]) {
+  customKits.clear();
+  for (const k of kits) customKits.set(k.id, k);
+}
+
+export function customKitList(): KitDef[] {
+  return [...customKits.values()];
+}
+
+export function isCustomKit(id: string): id is `custom:${string}` {
+  return id.startsWith('custom:');
+}
+
 export function kitById(id: KitId): KitDef {
-  return KITS.find((k) => k.id === id) ?? KITS[0];
+  return KITS.find((k) => k.id === id) ?? customKits.get(id) ?? KITS[0];
 }

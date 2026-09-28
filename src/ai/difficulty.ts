@@ -63,6 +63,19 @@ export interface BotProfile {
   crystal: CrystalSkill;
   /** Wind charges, elytra and mace smashes for the Mace kit. */
   mace: MaceSkill;
+  /** Clicking and sprint resets for 1.8 combat. */
+  legacy: LegacySkill;
+}
+
+export interface LegacySkill {
+  /** Average clicks per second while the opponent is in reach. */
+  cps: number;
+  /** After a sprint hit, share of sprint resets done as a block-hit (the rest are W/S-taps). */
+  blockHit: number;
+  /** Ticks a block-hit holds right click. */
+  blockTicks: [number, number];
+  /** Blocks for a moment when it gets hit and can't hit back yet (0 = never). */
+  blockOnHurt: number;
 }
 
 export interface MaceSkill {
@@ -228,6 +241,7 @@ const BASIC: Skills = {
     anchors: false, iframeTiming: false, breakTheirs: false, pearls: 0, surround: false, crossbow: false, mine: false,
   },
   mace: { launch: 0.25, steer: 0.4, elytra: false, pickMace: false, defend: 0, smashDepth: 0 },
+  legacy: { cps: 5, blockHit: 0, blockTicks: [3, 5], blockOnHurt: 0 },
 };
 
 /** Skill 2 (from LT2 up): starts to space and W-tap; anchors, pearls, water and a crossbow come in. */
@@ -270,6 +284,7 @@ const DECENT: Skills = {
     anchors: true, iframeTiming: false, breakTheirs: false, pearls: 1, surround: false, crossbow: false, mine: false,
   },
   mace: { launch: 0.55, steer: 0.6, elytra: false, pickMace: true, defend: 1, smashDepth: 0.3 },
+  legacy: { cps: 7, blockHit: 0.15, blockTicks: [3, 5], blockOnHurt: 0 },
 };
 
 /** Skill 4 = HT2: times its hits, sometimes W-taps and crits; uses the crossbow and hotbar totems. */
@@ -314,6 +329,7 @@ const GOOD: Skills = {
     anchors: true, iframeTiming: false, breakTheirs: true, pearls: 1, surround: false, crossbow: true, mine: false,
   },
   mace: { launch: 0.8, steer: 0.75, elytra: true, pickMace: true, defend: 1, smashDepth: 0.6 },
+  legacy: { cps: 8.5, blockHit: 0.3, blockTicks: [2, 4], blockOnHurt: 0.1 },
 };
 
 /** Skill 6 = LT1: W-taps, jump-resets, crits, attribute swaps, surrounds and digs — every item. */
@@ -358,6 +374,7 @@ const STRONG: Skills = {
     anchors: true, iframeTiming: true, breakTheirs: true, pearls: 2, surround: true, crossbow: true, mine: true,
   },
   mace: { launch: 0.9, steer: 0.88, elytra: true, pickMace: true, defend: 2, smashDepth: 1 },
+  legacy: { cps: 10, blockHit: 0.45, blockTicks: [2, 3], blockOnHurt: 0.2 },
 };
 
 /** Skill 8 (between LT1 and HT1): tier-tester level — near-perfect timing and spacing. */
@@ -391,6 +408,7 @@ const ELITE: Skills = {
   uhc: { lava: 0.72, lavaPickup: true, web: 0.52, water: true, pillar: true, mine: true, headHP: 11.5, aimSettle: 2 },
   crystal: { ...STRONG.crystal, clickGap: 2, aimSettle: 2, comboGap: 5, thinkTicks: 3, selfWeight: 1 },
   mace: { launch: 0.92, steer: 0.9, elytra: true, pickMace: true, defend: 2, smashDepth: 1.1 },
+  legacy: { cps: 11, blockHit: 0.5, blockTicks: [2, 3], blockOnHurt: 0.25 },
 };
 
 /**
@@ -425,6 +443,7 @@ const BEST: Skills = {
   uhc: { lava: 0.75, lavaPickup: true, web: 0.55, water: true, pillar: true, mine: true, headHP: 12, aimSettle: 2 },
   crystal: { ...ELITE.crystal, clickGap: 1, aimSettle: 2, comboGap: 4, thinkTicks: 2, selfWeight: 1.1 },
   mace: { launch: 0.95, steer: 0.93, elytra: true, pickMace: true, defend: 2, smashDepth: 1.2 },
+  legacy: { cps: 12, blockHit: 0.55, blockTicks: [1, 3], blockOnHurt: 0.3 },
 };
 
 /**
@@ -517,6 +536,7 @@ export const DIFFICULTIES = {
     uhc: { ...BASIC.uhc, lava: 0, water: true, mine: true, headHP: 8 },
     crystal: { ...BASIC.crystal, clickGap: 10, aimSettle: 8, comboGap: 40, thinkTicks: 10, selfWeight: 1, minDamage: 99 },
     mace: { ...BASIC.mace, launch: 0 },
+    legacy: { ...BASIC.legacy },
   },
   ...Object.fromEntries(TIERS.map((t) => [t.id, { ...skillsAt(TIER_SKILL[t.id]), ...t, passive: false }])),
 } as Record<DifficultyId, BotProfile>;

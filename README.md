@@ -254,6 +254,8 @@ when they do not, which is what keeps it playable on integrated graphics.
 | Mode | Status |
 | --- | --- |
 | **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV) · no golden apples, hunger off (you can always sprint) | ✅ Playable |
+| **1.8 Sword** — the Sword kit under 1.8 combat rules (see below) | ✅ Playable |
+| **Custom** — any kit you build in the kit editor (see below) | ✅ Playable (vs bot, Bot vs Bot) |
 | **Axe** — Diamond Axe, Diamond Sword, Crossbow, Bow, 6 Arrows, Shield (off hand), Diamond armor (unenchanted) | ✅ Playable (vs bot) |
 | **NethPot** — Netherite Sword (Sharpness V, Fire Aspect II, Unbreaking III, Mending), Netherite armor (Protection IV, Unbreaking III, Mending), 3 totems (one in the off hand), 64 golden apples, 3× Strength II, 3× Speed II, 3× Fire Resistance (8:00), 21× Splash Healing II, 2 stacks of Bottles o' Enchanting | ✅ Playable (vs bot) |
 | **Diamond Pot** — Diamond Sword (Sharpness V), Diamond armor (Protection IV, Unbreaking III), 26× Splash Healing II, 3× Strength II, 3× Speed II, 3× Regeneration (all 1:30), 5 steak (off hand); all damage +33% | ✅ Playable (vs bot) |
@@ -262,7 +264,53 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
 | **Mace** — Netherite armor (Protection IV, Unbreaking III), Elytra, Mace (Density V, Wind Burst III), Mace (Breach IV), Netherite Sword and Axe (Sharpness V), Shield, 2 totems (one in the off hand), 128 wind charges, 64 ender pearls, 128 golden apples, 13× Strength II and 8× Speed II splash (as laid out in the reference inventory) | ✅ Playable (vs bot) |
 
-The arena is 80 × 80 blocks (walls 16 high). Every kit also works online (see Multiplayer).
+The arena is 80 × 80 blocks (walls 16 high). Every built-in kit also works online (see Multiplayer).
+
+### 1.8 Sword
+
+The same items as Sword, fought with the old (1.8.9) combat rules — the ones Hypixel-style sword
+duels still use:
+
+| | 1.8 | 1.9+ (every other kit) |
+| --- | --- | --- |
+| Attack cooldown | none: every click that lands is a full hit (hurt immunity still spaces hits 0.5 s apart), so click speed matters | charge meter |
+| Diamond sword | 8 damage, Sharpness +1.25 per level (Sharp V = 14.25) | 7, Sharpness +0.5 per level + 0.5 |
+| Crits | ×1.5 on the weapon damage (before Sharpness), **sprinting allowed** | not while sprinting, and only near full charge |
+| Right click | blocks with the sword: hits deal (1 + damage) ÷ 2, you move at 20% and **your sprint stops** | shield (if you have one) |
+| Knockback | halves the victim's motion, pushes 0.4 away and 0.4 up — in the air too; a sprint hit adds 0.5 along your facing and 0.1 up | airborne victims get no vertical knockback |
+| Armor | 4% less per armor point, no toughness | toughness lets big hits through |
+| Protection | EPF 5 per Prot IV piece, rolled between half and all of it each hit (Prot IV set: 40–80%) | a flat 4% per level |
+| Hitbox | 0.8 × 2.0 (1.8 grew every hitbox by 0.1) | 0.66 × 1.96 |
+| Regeneration | 1 HP every 4 s when fed (no saturation boost) | fast regen with saturation |
+
+Like 1.8, the server only learns your sprint changed when your client's sprint really stops and
+starts again, so after a sprint hit you need a **sprint reset** for the next hit to knock back: a
+W-tap, an S-tap or a **block-hit** (a quick right click with the sword). The HUD's "Next hit" line
+tells you whether your sprint is back. The 1.8 bot clicks at 5 (LT5) to 12 (HT1) CPS, keeps about
+two blocks away, and mixes W/S-taps with block-hits; the better tiers also block for a moment when
+they are comboed out of reach.
+
+Numbers come from the 1.8.9 game code (EntityPlayer.attackTargetEntityWithCurrentItem, ItemSword,
+EnchantmentDamage, EnchantmentProtection, EntityLivingBase.knockBack/applyArmorCalculations);
+`tests/legacy.test.ts` checks them.
+
+### Custom kits
+
+Click **Custom** on the title screen to open the **kit editor** (the first time) or pick between your
+kits (Edit / + New under the kit description). In the editor:
+
+- The slots are laid out like the inventory: armor and off hand, the 27 inventory slots and the hotbar.
+  Pick a slot, then click any item in the palette (search it by name); right-click a slot to empty it.
+- The picked slot shows its count (up to the item's stack size), its **enchantments** (only the ones
+  that item can take, up to their vanilla levels) and, for splash potions and tipped arrows, the potion.
+- Kit rules: natural regeneration on/off (off = UHC-style), and hunger off.
+- Start from scratch, duplicate a kit, or copy any built-in kit and change it. Up to 24 kits.
+- Everything saves by itself (in the browser, or the desktop app). **Play vs bot** starts a duel at
+  the tier picked on the title screen.
+
+The bot plays whatever the kit holds (its best weapon, shield, pots, gapples, crystals …). Custom
+kits work in duels and Bot vs Bot; online rooms use Sword instead, and custom kits don't earn tiers
+(you could make them as easy as you like).
 
 ### Bot tiers
 
@@ -311,7 +359,7 @@ per drill is saved.
 | UHC | Water bucket clutch |
 
 The technique list comes from Minecraft Wiki mechanics, PvP guides and tier-list communities; 1.8-only
-tricks (block-hitting) and macros are left out. Each drill's page explains the steps and the mechanic
+tricks (block-hitting — play the 1.8 Sword kit for those) and macros are left out. Each drill's page explains the steps and the mechanic
 behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and checks it can be passed
 (and that the wrong technique is called out).
 
@@ -336,7 +384,8 @@ hold that tier in that kit. Your points are the sum over all kits:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | 2 | 3 | 4 | 6 | 10 | 20 | 30 | 45 | 60 |
 
-Practice, online duels and series changed by commands don't earn tiers. Tiers are saved in the
+Practice, custom kits, online duels and series changed by commands don't earn tiers. 1.8 Sword has its
+own tier, like any other kit. Tiers are saved in the
 browser (or the desktop app), like your records.
 
 **Practice** moves, strafes, chases and eats golden apples like LT5, but never swings — you take no
@@ -627,11 +676,11 @@ src/core      constants (all vanilla values), math, rng
 src/game      Fighter (movement/inventory/items/effects/durability/mining), combat, Arrow, Thrown (potions, XP bottles),
               XpOrb (mending), Blocks (placed blocks, collision, raycasts, water/lava flow), DroppedItem,
               Explosion, EndCrystal, crystals (placing, hitting, anchors),
-              Match (tick order), Game (glue), kits, items
+              Match (tick order), Game (glue), kits, customKits (kit editor data), items
 src/ai        BotBrain + difficulty profiles
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
               first-person hands, item meshes from the resource pack, arrows, particles
-src/ui        HUD, chat, Marketplace, inventory screen, menus, settings, pixel-art sprites
+src/ui        HUD, chat, Marketplace, inventory screen, menus, kit editor, settings, pixel-art sprites
 src/commands  Brigadier-style dispatcher, argument types (selectors, coordinates, items with components),
               the built-in commands
 src/mods      the Marketplace's mods: registry + settings, HUD widgets, damage indicator, AppleSkin maths

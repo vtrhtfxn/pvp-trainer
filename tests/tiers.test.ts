@@ -80,7 +80,7 @@ describe('tier ladder', () => {
 
   // The low steps are small on purpose, so a single step can go either way between two bots:
   // a few tiers up must win.
-  const kits: KitId[] = ['sword', 'axe', 'neth_pot', 'diamond_pot', 'uhc', 'crystal', 'smp', 'mace'];
+  const kits: KitId[] = ['sword', 'sword18', 'axe', 'neth_pot', 'diamond_pot', 'uhc', 'crystal', 'smp', 'mace'];
   for (const kit of kits) {
     it(`${kit}: a few tiers up wins`, () => {
       for (const [lo, hi] of [

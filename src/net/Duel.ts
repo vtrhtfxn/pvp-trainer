@@ -99,6 +99,7 @@ export class Duel {
     this.world = new World(undefined, this.kit.floorDepth ?? 0);
     this.world.damageMultiplier = this.kit.damageMultiplier ?? 1;
     this.world.shieldStuns = !!this.kit.shieldStuns;
+    this.world.legacyCombat = !!this.kit.legacyCombat;
     this.world.rng = new Rng((Math.random() * 2 ** 30) | 0);
     this.world.blocks.changeLog = new Set();
     this.fighters = [new Fighter('player', names[0], this.world), new Fighter('bot', names[1], this.world)];

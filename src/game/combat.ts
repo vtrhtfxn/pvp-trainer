@@ -2,7 +2,7 @@ import * as C from '../core/constants';
 import { V3, rayAABB, type AABB } from '../core/math';
 import { applyKnockback, type Fighter } from './Fighter';
 import type { RayHit } from './Blocks';
-import { defOf, sharpnessBonus } from './items';
+import { defOf, legacySharpnessBonus, sharpnessBonus } from './items';
 import { windExplosion } from './Explosion';
 
 /**
@@ -30,6 +30,23 @@ export function canSmash(f: Fighter): boolean {
   return f.heldStack()?.id === 'mace' && f.fallDistance > C.SMASH_MIN_FALL && !f.fallFlying;
 }
 
+/** 1.8 armor (EntityLivingBase.applyArmorCalculations): 4% less per armor point, no toughness. */
+export function legacyDamageAfterArmor(damage: number, armor: number): number {
+  return (damage * (25 - Math.min(armor, 25))) / 25;
+}
+
+/**
+ * 1.8 Protection (EntityLivingBase.applyPotionDamageCalculations): the EPF total, capped at 25, is
+ * rolled between half and all of itself, capped at 20, then takes 4% per point. `roll` is a
+ * 0..1 random number.
+ */
+export function legacyDamageAfterProtection(damage: number, epf: number, roll: number): number {
+  let i = Math.min(Math.max(Math.floor(epf), 0), 25);
+  if (i <= 0) return damage;
+  i = ((i + 1) >> 1) + Math.floor(roll * ((i >> 1) + 1));
+  return (damage * (25 - Math.min(i, 20))) / 25;
+}
+
 /** Damage after Protection enchantments (CombatRules.getDamageAfterMagicAbsorb). */
 export function damageAfterProtection(damage: number, epf: number): number {
   const f = Math.min(Math.max(epf, 0), 20);
@@ -47,12 +64,15 @@ const rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
  */
 export const HITBOX_GROW_XZ = 0.03;
 export const HITBOX_GROW_Y = 0.08;
+/** 1.8: Entity.getCollisionBorderSize() grew every hitbox by 0.1 on each side (0.8 × 2.0). */
+export const LEGACY_HITBOX_GROW = 0.1;
 
 /** The box a swing is tested against, shifted by (dx, dy, dz) from the target's position. */
 function attackBox(target: Fighter, dx = 0, dy = 0, dz = 0, slack = 0): AABB {
   target.aabbInto(tmpBox);
-  const gx = HITBOX_GROW_XZ + slack;
-  const gy = HITBOX_GROW_Y + slack;
+  const legacy = target.world.legacyCombat;
+  const gx = (legacy ? LEGACY_HITBOX_GROW : HITBOX_GROW_XZ) + slack;
+  const gy = (legacy ? LEGACY_HITBOX_GROW : HITBOX_GROW_Y) + slack;
   tmpBox.minX += dx - gx;
   tmpBox.maxX += dx + gx;
   tmpBox.minZ += dz - gx;
@@ -173,16 +193,26 @@ export function hurt(
   }
 
   let dmg = applied;
+  const legacy = target.world.legacyCombat;
+  // 1.8 EntityPlayer.damageEntity: a blocking sword halves what gets through (+1), before armor.
+  // Fire, falls and magic are unblockable.
+  if (legacy && target.swordBlocking() && !fire && (kind === 'generic' || kind === 'explosion')) {
+    dmg = (1 + dmg) * 0.5;
+    target.stats.blocked++;
+  }
   if (!bypassArmor) {
-    target.damageArmor(applied);
-    dmg = damageAfterArmor(applied, target.armor.points, target.armor.toughness, breach);
+    target.damageArmor(dmg);
+    dmg = legacy ? legacyDamageAfterArmor(dmg, target.armor.points) : damageAfterArmor(dmg, target.armor.points, target.armor.toughness, breach);
   }
   // LivingEntity.getDamageAfterMagicAbsorb: Resistance takes 20% per level (V and up: all of it),
   // then Protection enchantments.
   const res = target.effects.get('resistance');
   if (res && kind !== 'kill') dmg = Math.max(0, dmg * (1 - 0.2 * (res.amplifier + 1)));
   const a = target.armor;
-  if (kind !== 'kill') dmg = damageAfterProtection(dmg, a.protectionEpf + (kind === 'explosion' ? a.blastEpf : kind === 'fall' ? a.fallEpf : 0));
+  if (kind !== 'kill' && legacy) {
+    const epf = a.legacyEpf + (kind === 'explosion' ? a.legacyBlastEpf : kind === 'fall' ? a.legacyFallEpf : 0);
+    dmg = legacyDamageAfterProtection(dmg, epf, target.world.rng.next());
+  } else if (kind !== 'kill') dmg = damageAfterProtection(dmg, a.protectionEpf + (kind === 'explosion' ? a.blastEpf : kind === 'fall' ? a.fallEpf : 0));
   const absorbed = Math.min(target.absorption, dmg);
   target.absorption -= absorbed;
   const toHealth = dmg - absorbed;
@@ -231,6 +261,7 @@ export interface AttackOutcome {
 export function performAttack(attacker: Fighter, target: Fighter, picked?: number): AttackOutcome {
   const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0, blocked: false, disabled: false, swap: false };
   if (attacker.dead || attacker.usingItem || attacker.gameMode === 'spectator') return miss;
+  if (attacker.world.legacyCombat) return performLegacyAttack(attacker, target, picked, miss);
   attacker.stats.swings++;
   let reach = picked ?? rayDistanceToTarget(attacker, target);
   // A picked hit must still be plausible now (a tick later, a knockback or a teleport away).
@@ -381,6 +412,109 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
     swap,
   });
   return { hit: true, reach, crit, sprint, scale, damage: res.dealt, blocked: false, disabled: false, swap };
+}
+
+/**
+ * A 1.8 left click (EntityPlayer.attackTargetEntityWithCurrentItem). No cooldown: every click
+ * that finds the target is a full hit. Crits need only a fall (sprinting is fine) and multiply
+ * the weapon damage before Sharpness is added. Knockback: the victim's motion is halved and
+ * pushed 0.4 away and 0.4 up (in the air too), then a sprint or Knockback hit adds 0.5 per level
+ * along the attacker's facing and 0.1 up, and the attacker slows to 60% and stops sprinting.
+ */
+function performLegacyAttack(attacker: Fighter, target: Fighter, picked: number | undefined, miss: AttackOutcome): AttackOutcome {
+  attacker.stats.swings++;
+  let reach = picked ?? rayDistanceToTarget(attacker, target);
+  if (picked !== undefined && reach >= 0 && (target.dead || Math.hypot(attacker.pos.x - target.pos.x, attacker.pos.y - target.pos.y, attacker.pos.z - target.pos.z) > attacker.entityReach() + 2)) reach = -1;
+  attacker.swing();
+  if (reach < 0) {
+    attacker.events.push({ type: 'miss' });
+    return miss;
+  }
+  const weapon = attacker.heldStack();
+  let base = attacker.legacyAttackDamage();
+  const ench = legacySharpnessBonus(weapon?.ench?.sharpness ?? 0);
+  let kbLevel = (weapon?.ench?.knockback ?? 0) + attacker.attrs.attack_knockback;
+  const sprint = attacker.serverSprinting;
+  if (sprint) kbLevel++;
+  const crit =
+    attacker.fallDistance > 0 && !attacker.onGround && !attacker.inWater && !attacker.effects.has('blindness') && base > 0;
+  if (crit) base *= C.CRIT_MULTIPLIER;
+  const total = base + ench;
+
+  const kbVel = target.serverVel.clone();
+  const res = hurt(target, total, attacker, crit);
+  if (!res.damaged) {
+    attacker.events.push({ type: 'noDamage', target });
+    return { ...miss, reach, scale: 1 };
+  }
+  if (weapon) {
+    const cost = defOf(weapon).hitCost ?? 0;
+    const fa = weapon.ench?.fireAspect ?? 0;
+    if (fa > 0 && !target.dead) target.ignite(fa * C.FIRE_ASPECT_TICKS_PER_LEVEL);
+    if (cost) attacker.damageItem(attacker.selected, cost);
+  }
+  const resist = 1 - target.armor.knockbackResistance;
+  let knocked = false;
+  if (res.fullHit) {
+    // EntityLivingBase.knockBack(0.4): no airborne exception in 1.8.
+    let dx = attacker.pos.x - target.pos.x;
+    let dz = attacker.pos.z - target.pos.z;
+    let len = Math.hypot(dx, dz);
+    if (len < 1e-4) {
+      dx = (Math.random() - Math.random()) * 0.01;
+      dz = (Math.random() - Math.random()) * 0.01;
+      len = Math.hypot(dx, dz) || 1;
+    }
+    if (resist > 0) {
+      const f = C.BASE_KNOCKBACK;
+      kbVel.x = kbVel.x / 2 - (dx / len) * f;
+      kbVel.y = Math.min(C.MAX_KNOCKBACK_Y, kbVel.y / 2 + f);
+      kbVel.z = kbVel.z / 2 - (dz / len) * f;
+      knocked = true;
+    }
+  }
+  if (kbLevel > 0) {
+    // Entity.addVelocity(-sin(yaw) · level · 0.5, 0.1, cos(yaw) · level · 0.5): along our look.
+    kbVel.x += -Math.sin(attacker.yaw) * kbLevel * 0.5;
+    kbVel.y += 0.1;
+    kbVel.z += -Math.cos(attacker.yaw) * kbLevel * 0.5;
+    knocked = true;
+    attacker.vel.x *= C.SPRINT_HIT_SLOWDOWN;
+    attacker.vel.z *= C.SPRINT_HIT_SLOWDOWN;
+    attacker.serverVel.x *= C.SPRINT_HIT_SLOWDOWN;
+    attacker.serverVel.z *= C.SPRINT_HIT_SLOWDOWN;
+    attacker.sprinting = false;
+    attacker.serverSprinting = false;
+  }
+  if (knocked) {
+    target.vel.set(kbVel.x, kbVel.y, kbVel.z);
+    target.serverVel.set(kbVel.x, kbVel.y, kbVel.z);
+  }
+
+  attacker.causeExhaustion(C.EXHAUSTION_ATTACK);
+  const s = attacker.stats;
+  s.hits++;
+  if (crit) s.crits++;
+  if (sprint) s.sprintHits++;
+  s.damageDealt += res.dealt;
+  s.combo++;
+  s.maxCombo = Math.max(s.maxCombo, s.combo);
+  s.reachSum += reach;
+  s.maxReach = Math.max(s.maxReach, reach);
+  attacker.events.push({
+    type: 'attack',
+    target,
+    crit,
+    sprint,
+    strong: true,
+    enchanted: ench > 0,
+    scale: 1,
+    damage: res.dealt,
+    reach,
+    fullHit: res.fullHit,
+    swap: false,
+  });
+  return { hit: true, reach, crit, sprint, scale: 1, damage: res.dealt, blocked: false, disabled: false, swap: false };
 }
 
 /**

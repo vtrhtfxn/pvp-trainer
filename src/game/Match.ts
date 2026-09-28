@@ -58,6 +58,7 @@ export class Match {
     this.world.fighters.push(this.player, this.bot);
     this.world.damageMultiplier = kit.damageMultiplier ?? 1;
     this.world.shieldStuns = !!kit.shieldStuns;
+    this.world.legacyCombat = !!kit.legacyCombat;
     this.world.rng = new Rng(this.rng.int(0, 2 ** 30));
     this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () => {
       // Like the player's clicks: an end crystal nearer than the opponent takes the hit.

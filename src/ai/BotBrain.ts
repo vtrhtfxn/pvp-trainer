@@ -203,6 +203,10 @@ export class BotBrain {
   /** This round it throws Strength and Speed on itself. */
   private buffs = true;
 
+  // ---- 1.8
+  /** Ticks left holding right click with the sword (a block-hit, or a block while comboed). */
+  private blockTimer = 0;
+
   // ---- Crystal
   private crystalKit = false;
   private cplan: CrystalPlan | null = null;
@@ -226,7 +230,7 @@ export class BotBrain {
     if (this.uhcLabel) return this.uhcLabel;
     if (this.state === 'retreat') return 'Retreating';
     if (this.state === 'eat') return this.bot.usingItem ? 'Eating' : 'Healing';
-    if (this.bot.raisingShield()) return 'Blocking';
+    if (this.bot.raisingShield() || this.bot.swordBlocking()) return 'Blocking';
     if (this.ranged !== 'none') return this.ranged === 'loadCrossbow' ? 'Loading' : 'Aiming';
     return this.profile.passive ? 'Passive' : 'Fighting';
   }
@@ -267,7 +271,9 @@ export class BotBrain {
     this.potKit = b.countItem('splash_potion') > 0;
     // Low tiers mostly fight a pot round without Strength and Speed (see NethSkill.buffChance).
     this.buffs = !this.potKit || this.rng.chance(this.profile.neth.buffChance);
-    this.weapon = b.countItem('netherite_sword') > 0 ? 'netherite_sword' : 'diamond_sword';
+    // Its best melee weapon (custom kits may bring only an axe or a mace).
+    const melee: ItemId[] = ['netherite_sword', 'diamond_sword', 'netherite_axe', 'diamond_axe', 'mace'];
+    this.weapon = melee.find((id) => b.countItem(id) > 0) ?? 'diamond_sword';
     this.comboStyle = this.potKit && b.countItem('totem_of_undying') === 0;
     this.runTimer = 0;
     this.eatId = null;
@@ -301,6 +307,7 @@ export class BotBrain {
     this.crystalCooldown = 0;
     this.thinkTimer = 0;
     this.surroundCooldown = 0;
+    this.blockTimer = 0;
   }
 
   tick() {
@@ -358,6 +365,14 @@ export class BotBrain {
     if (this.potKit) {
       this.potLabel = '';
       this.engagePot(per, dist, trueDist, justHurt, input);
+      b.input = input;
+      return;
+    }
+    if (this.world.legacyCombat && !this.uhcKit) {
+      this.updateState(trueDist);
+      if (this.state === 'engage') this.legacyEngage(per, dist, justHurt, input);
+      else if (this.state === 'retreat') this.retreat(per, trueDist, input);
+      else this.eat(per, trueDist, input);
       b.input = input;
       return;
     }
@@ -628,6 +643,96 @@ export class BotBrain {
         if (r.sprint && rng.chance(P.wtapChance)) {
           this.wtapTimer = rng.int(P.wtapTicks[0], P.wtapTicks[1]);
           this.stapNow = rng.chance(P.stapChance);
+        }
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ 1.8 combat
+
+  /**
+   * 1.8 sword fighting: no cooldown, so it clicks at its CPS whenever you are in reach and lets
+   * hurt immunity decide which clicks count. After a sprint hit it resets its sprint so the next
+   * hit knocks you back again — a W-tap, an S-tap or a block-hit — and it jump-resets your hits.
+   */
+  private legacyEngage(per: Perceived, dist: number, justHurt: boolean, input: MoveInput) {
+    const b = this.bot;
+    const T = this.target;
+    const P = this.profile;
+    const L = P.legacy;
+    const rng = this.rng;
+    this.equip(this.weapon);
+    this.aimAt(per.x, per.y + (per.onGround ? 1.3 : 0.9), per.z);
+
+    if (--this.strafeTimer <= 0) {
+      this.strafeDir = rng.chance(P.strafeChance) ? (rng.chance(0.5) ? 1 : -1) : 0;
+      this.strafeTimer = rng.int(P.strafeSwitch[0], P.strafeSwitch[1]);
+    }
+    let strafe = this.strafeDir;
+    if (this.world.wallDistance(b.pos.x, b.pos.z) < 3) strafe = this.roomySide();
+    input.forward = 1;
+    input.sprint = true;
+    input.strafe = dist < 5 ? strafe : 0;
+
+    // Right click held: a block-hit (a few ticks) or blocking while it is being comboed.
+    if (this.blockTimer > 0) {
+      this.blockTimer--;
+      if (!b.usingItem) b.startUsingItem(true);
+      if (this.blockTimer === 0) b.releaseUsingItem();
+      if (justHurt && b.onGround && rng.chance(P.jumpResetChance)) input.jump = true;
+      return; // no attacking while the sword is up
+    }
+    if (b.usingItem) b.releaseUsingItem();
+
+    // Don't run into them: inside a block and a half its (delayed) aim can't keep up, and letting
+    // go of W there is a free sprint reset. Better players hold the edge of their reach.
+    if (dist < 1.6 || (dist < P.spacing && rng.chance(P.spacingDiscipline))) input.forward = 0;
+    if (this.wtapTimer > 0) {
+      this.wtapTimer--;
+      input.forward = this.stapNow ? -1 : 0;
+    }
+    if (this.escapeTimer > 0) {
+      this.escapeTimer--;
+      if (P.comboEscape === 'shold' && this.escapeTimer > 8) {
+        input.forward = -1;
+        input.sprint = false;
+      }
+      if (!input.strafe) input.strafe = strafe || (rng.chance(0.5) ? 1 : -1);
+    }
+    if (P.chaseSprintJump && b.sprinting && b.onGround && dist > 5.5) input.jump = true;
+
+    const jr = this.escapeTimer > 0 && P.comboEscape === 'jumpreset' ? Math.min(1, P.jumpResetChance + 0.3) : P.jumpResetChance;
+    if (justHurt && b.onGround && rng.chance(jr)) {
+      input.jump = true;
+      input.forward = 1;
+      input.sprint = true;
+    }
+    if (P.passive) return;
+
+    // Out of reach while being hit: put the sword up for a moment to halve the next one.
+    if (justHurt && L.blockOnHurt > 0 && dist > this.maxReach && rng.chance(L.blockOnHurt)) {
+      this.blockTimer = rng.int(L.blockTicks[0], L.blockTicks[1]) + 2;
+      return;
+    }
+    // Jump crits (sprinting doesn't stop a 1.8 crit), now and then when close.
+    if (--this.critCheckTimer <= 0) {
+      this.critCheckTimer = 16;
+      if (dist < 3.2 && b.onGround && rng.chance(P.critChance * 0.5)) input.jump = true;
+    }
+
+    const reach = rayDistanceToTarget(b, T);
+    const inReach = reach >= 0 && reach <= this.maxReach;
+    if ((inReach || dist < 4) && rng.chance(Math.min(1, L.cps / 20))) {
+      const r = this.doAttack();
+      if (r.hit) {
+        this.hitsTaken = 0;
+        this.escapeTimer = 0;
+        if (r.sprint && rng.chance(P.wtapChance)) {
+          if (rng.chance(L.blockHit)) this.blockTimer = rng.int(L.blockTicks[0], L.blockTicks[1]);
+          else {
+            this.wtapTimer = rng.int(P.wtapTicks[0], P.wtapTicks[1]);
+            this.stapNow = rng.chance(P.stapChance);
+          }
         }
       }
     }

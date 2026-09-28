@@ -104,6 +104,7 @@ export class NetMatch {
   ) {
     this.kit = kitById(kitId);
     this.world = new World(undefined, this.kit.floorDepth ?? 0);
+    this.world.legacyCombat = !!this.kit.legacyCombat;
     this.player = new Fighter('player', 'You', this.world);
     this.bot = new Fighter('bot', 'Opponent', this.world);
     this.world.fighters.push(this.player, this.bot);

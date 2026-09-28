@@ -1,6 +1,8 @@
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../ai/difficulty';
 import type { FighterStats } from '../game/Fighter';
-import { KITS, kitById, type KitId } from '../game/kits';
+import { KITS, customKitList, isCustomKit, kitById, type KitDef, type KitId } from '../game/kits';
+import type { CustomKitData } from '../game/customKits';
+import { KitEditor } from './KitEditor';
 import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Action } from '../input/keybinds';
 import type { Sprite } from './sprites';
 import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
@@ -30,6 +32,9 @@ export interface MenuCallbacks {
   myTiers(): MyTiers;
 }
 
+/** Title-screen card that stands for all custom kits. */
+const CUSTOM_CARD = 'custom';
+
 type SettingsTab = 'video' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
 const TAB_LABELS: Record<SettingsTab, string> = {
   video: 'Video',
@@ -40,7 +45,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer';
+type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits';
 
 export interface ResultData {
   won: boolean;
@@ -96,6 +101,7 @@ export class Menus {
   /** The key-bind button waiting for a key, if any. */
   private binding: { action: Action; btn: HTMLButtonElement } | null = null;
   private controlsTable!: HTMLDivElement;
+  private readonly kitEditor: KitEditor;
 
   constructor(
     parent: HTMLElement,
@@ -103,6 +109,7 @@ export class Menus {
     private records: Records,
     private readonly kitIcons: Record<string, Sprite>,
     private readonly cb: MenuCallbacks,
+    customKits: CustomKitData[] = [],
   ) {
     this.screens = {
       main: this.buildMain(),
@@ -114,7 +121,17 @@ export class Menus {
       tiers: h('div', { class: 'screen tiers' }),
       versus: h('div', { class: 'screen versus' }),
       trainer: h('div', { class: 'screen trainer' }),
+      kits: h('div', { class: 'screen kit-editor' }),
     };
+    this.kitEditor = new KitEditor(this.screens.kits, customKits, {
+      onUiSound: () => this.cb.onUiSound(),
+      onBack: () => this.show('main'),
+      onPlay: (id) => {
+        this.settings.kit = id;
+        saveSettings(this.settings);
+        this.cb.onStart();
+      },
+    });
     for (const s of Object.values(this.screens)) {
       s.style.display = 'none';
       parent.appendChild(s);
@@ -141,6 +158,7 @@ export class Menus {
     if (name === 'tiers') this.renderTiers();
     if (name === 'versus') this.renderVersus();
     if (name === 'trainer') this.renderTrainer();
+    if (name === 'kits') this.kitEditor.render();
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -170,7 +188,7 @@ export class Menus {
       { class: 'logo' },
       h('div', { class: 'logo-top' }, 'PVP'),
       h('div', { class: 'logo-bottom' }, 'TRAINER'),
-      h('div', { class: 'splash' }, '1.9+ combat!'),
+      h('div', { class: 'splash' }, 'Now with 1.8 PvP!'),
     );
     panel.append(logo);
 
@@ -200,6 +218,25 @@ export class Menus {
       });
       grid.append(card);
     }
+    // One card for every kit you made; the kit info below picks between them.
+    const customCard = h(
+      'button',
+      { class: 'kit-card', 'data-kit': CUSTOM_CARD, title: 'Build your own kits: any items, enchantments and potions.' },
+      this.iconEl('custom'),
+      h('span', { class: 'kit-name' }, 'Custom'),
+    );
+    customCard.addEventListener('click', () => {
+      this.cb.onUiSound();
+      const kits = customKitList();
+      if (!kits.length) {
+        this.openKitEditor('new');
+        return;
+      }
+      if (!isCustomKit(this.settings.kit) || !kits.some((k) => k.id === this.settings.kit)) this.settings.kit = kits[0].id;
+      saveSettings(this.settings);
+      this.refreshMain();
+    });
+    grid.append(customCard);
     panel.append(grid);
     this.kitInfo = h('div', { class: 'kit-info' });
     panel.append(this.kitInfo);
@@ -278,20 +315,55 @@ export class Menus {
     return root;
   }
 
+  private iconEl(key: string): HTMLCanvasElement {
+    const el = h('canvas', { class: 'kit-icon', width: '16', height: '16' });
+    const icon = this.kitIcons[key];
+    if (icon) {
+      const ctx = el.getContext('2d')!;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(icon, 0, 0, 16, 16);
+    }
+    return el;
+  }
+
+  /** Opens the kit editor on a custom kit (or 'new' for a fresh one). */
+  openKitEditor(id?: string) {
+    this.show('kits');
+    this.kitEditor.open(id);
+  }
+
+  /** The chips under a custom kit: switch kit, edit it, or make another. */
+  private customKitInfo(kit: KitDef): HTMLElement {
+    const row = h('div', { class: 'custom-kit-row' });
+    for (const k of customKitList()) {
+      const b = this.button(k.name, () => {
+        this.settings.kit = k.id;
+        saveSettings(this.settings);
+        this.refreshMain();
+      }, `custom-chip${k.id === kit.id ? ' selected' : ''}`);
+      row.append(b);
+    }
+    row.append(this.button('Edit', () => this.openKitEditor(kit.id), 'custom-chip edit'));
+    row.append(this.button('+ New', () => this.openKitEditor('new'), 'custom-chip edit'));
+    return row;
+  }
+
   refreshMain(records?: Records) {
     if (records) this.records = records;
     const kit = kitById(this.settings.kit);
     const d = DIFFICULTIES[this.settings.difficulty];
+    const cardId = kit.custom ? CUSTOM_CARD : kit.id;
     this.screens.main.querySelectorAll<HTMLElement>('.kit-card').forEach((c) => {
-      c.classList.toggle('selected', c.dataset.kit === kit.id);
+      c.classList.toggle('selected', c.dataset.kit === cardId);
     });
     this.screens.main.querySelectorAll<HTMLElement>('.diff-btn').forEach((b) => {
       b.classList.toggle('selected', b.dataset.diff === d.id);
     });
     this.kitInfo.replaceChildren(
-      h('div', { class: 'kit-summary' }, kit.summary),
+      h('div', { class: 'kit-summary' }, kit.custom ? `${kit.name} — your own kit (offline: bots and Bot vs Bot; earns no tier).` : kit.summary),
       h('ul', {}, ...kit.contents.map((c) => h('li', {}, c))),
     );
+    if (kit.custom) this.kitInfo.append(this.customKitInfo(kit));
     this.diffDesc.textContent = d.tagline;
     const ft = this.settings.firstTo;
     this.ftValue.textContent = ft === 1 ? 'FT1 — single duel' : `FT${ft} — first to ${ft} wins`;
@@ -913,7 +985,7 @@ export class Menus {
 
     panel.append(h('div', { class: 'section-title' }, 'Kit'));
     const kits = h('div', { class: 'versus-kits' });
-    for (const kit of KITS) {
+    for (const kit of [...KITS, ...customKitList()]) {
       const b = this.button(kit.name, () => {
         s.kit = kit.id as KitId;
         saveSettings(s);

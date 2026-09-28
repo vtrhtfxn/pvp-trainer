@@ -64,6 +64,13 @@ function nextHit(p: Fighter, target: Fighter): { text: string; cls: string } {
     return { text: `SMASH +${smashBonus(p.fallDistance, e.density ?? 0).toFixed(0)} · ${p.fallDistance.toFixed(1)} blocks`, cls: 'kb' };
   }
   if (p.fallFlying) return { text: 'gliding · swap to the chestplate, then smash', cls: 'mid' };
+  if (p.world.legacyCombat) {
+    // 1.8: sprint knockback and crits stack, and there is no charge to wait for.
+    const crit = p.fallDistance > 0 && !p.onGround;
+    if (p.serverSprinting) return { text: crit ? 'SPRINT KB + CRIT' : 'SPRINT KB', cls: 'kb' };
+    if (crit) return { text: 'CRIT', cls: 'ok' };
+    return { text: p.sprinting ? 'sprint not sent yet · W-tap' : 'no sprint · W-tap or block-hit', cls: 'mid' };
+  }
   if (charge <= STRONG_ATTACK_SCALE) return { text: `charging ${Math.round(charge * 100)}%`, cls: 'no' };
   if (p.serverSprinting) return { text: 'SPRINT KB', cls: 'kb' };
   if (p.fallDistance > 0 && !p.onGround) return { text: 'CRIT', cls: 'ok' };
@@ -339,7 +346,8 @@ export class HUD {
 
     // ---- crosshair + attack indicator (Gui.renderCrosshair)
     const charge = player.attackStrengthScale(0);
-    const fullAndAiming = info.aimingAtBot && charge >= 1 && player.attackDelay() > 5;
+    // 1.8 had no attack indicator (and no cooldown to show).
+    const fullAndAiming = info.aimingAtBot && charge >= 1 && player.attackDelay() > 5 && !player.world.legacyCombat;
     this.attackFull.style.display = fullAndAiming ? 'block' : 'none';
     this.attackBar.style.display = !fullAndAiming && charge < 1 ? 'block' : 'none';
     this.attackFill.style.width = `${Math.min(100, (Math.floor(charge * 17) / 16) * 100)}%`;

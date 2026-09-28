@@ -229,7 +229,7 @@ body {
 
 .kit-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
 }
 .kit-card {
@@ -2022,6 +2022,262 @@ body.custom-crosshair .crosshair {
   .trainer-list,
   .trainer-detail {
     max-height: none;
+  }
+}
+
+/* ---- Custom kits on the title screen */
+.custom-kit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  max-height: 58px;
+  overflow-y: auto;
+}
+.custom-chip {
+  width: auto;
+  padding: 2px 8px;
+  font-size: 13px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-chip.selected {
+  background: #4f7a3a;
+  outline: 2px solid #b6ff8f;
+  outline-offset: -2px;
+}
+.custom-chip.edit {
+  color: #ffffa0;
+}
+
+/* ---- Kit editor */
+.ke-panel {
+  width: min(1060px, 100%);
+}
+.ke-cols {
+  display: grid;
+  grid-template-columns: 190px auto minmax(260px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.ke-kits {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(64vh, 600px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.ke-kits .trainer-group {
+  margin-top: 0;
+}
+.ke-kits .mc-btn {
+  font-size: 14px;
+  padding: 6px 8px;
+}
+.ke-kits .trainer-drill {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+.ke-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ke-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #ccc;
+}
+.ke-name,
+.ke-search,
+.ke-num,
+.ke-select {
+  font-family: var(--font);
+  font-size: 15px;
+  color: #fff;
+  background: #111;
+  border: 2px solid #555;
+  padding: 3px 6px;
+}
+.ke-name {
+  flex: 1;
+  min-width: 0;
+}
+.ke-caption {
+  font-size: 12px;
+  color: #aaa;
+  margin-top: 4px;
+}
+.ke-row {
+  display: flex;
+  gap: 2px;
+}
+.ke-gap {
+  width: 14px;
+}
+.ke-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 40px);
+  gap: 2px;
+}
+.ke-slot {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  padding: 3px;
+  background: #8b8b8b;
+  border: 2px solid;
+  border-color: #373737 #fff #fff #373737;
+  cursor: pointer;
+}
+.ke-slot:hover {
+  background: #a5a5a5;
+}
+.ke-slot.selected {
+  outline: 2px solid #ffffa0;
+  outline-offset: -1px;
+  background: #b5b58b;
+}
+.ke-slot.empty .ke-icon {
+  opacity: 0.6;
+}
+.ke-icon {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
+.ke-count {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-size: 14px;
+  color: #fff;
+  text-shadow: 1px 1px 0 #3f3f3f;
+  pointer-events: none;
+}
+.ke-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  font-size: 14px;
+}
+.ke-rules label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.ke-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ke-detail {
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #000;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+.ke-detail-title {
+  color: #ffffa0;
+  font-size: 16px;
+}
+.ke-hint {
+  color: #aaa;
+}
+.ke-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ke-line > span {
+  min-width: 52px;
+  color: #ccc;
+}
+.ke-num {
+  width: 70px;
+}
+.ke-mini {
+  padding: 3px 8px;
+  font-size: 13px;
+}
+.ke-ench {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+}
+.ke-ench label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  color: #ccc;
+}
+.ke-ench .ke-select {
+  font-size: 13px;
+  padding: 1px 2px;
+}
+.ke-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 3px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #000;
+}
+.ke-item {
+  width: 38px;
+  height: 38px;
+  padding: 3px;
+  background: #8b8b8b;
+  border: 2px solid;
+  border-color: #373737 #fff #fff #373737;
+  cursor: pointer;
+}
+.ke-item:hover {
+  background: #c6c6c6;
+}
+.ke-item.dim {
+  opacity: 0.35;
+}
+.ke-note {
+  color: #ff9f9f;
+  text-align: center;
+}
+.mc-btn.danger {
+  color: #ff8080;
+}
+@media (max-width: 960px) {
+  .ke-cols {
+    grid-template-columns: 1fr;
+  }
+  .ke-kits {
+    max-height: 180px;
+  }
+}
+@media (max-width: 440px) {
+  .ke-grid {
+    grid-template-columns: repeat(9, 1fr);
+  }
+  .ke-slot {
+    width: auto;
+    height: auto;
+    aspect-ratio: 1;
   }
 }
 

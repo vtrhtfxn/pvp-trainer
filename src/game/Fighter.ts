@@ -1,7 +1,7 @@
 import * as C from '../core/constants';
 import { V3, clamp, forwardX, forwardZ, lookDir, rayAABB, wrapAngle, type AABB } from '../core/math';
 import { Arrow } from './Arrow';
-import { FIST, INSTANT_EFFECTS, ITEMS, cloneStack, defOf, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
+import { FIST, INSTANT_EFFECTS, ITEMS, cloneStack, defOf, legacyAttackDamage, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
 import { ATTRIBUTES, defaultAttributes, type AttributeId, type Attributes, type GameMode } from './attributes';
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
 import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks';
@@ -192,7 +192,8 @@ export class FoodData {
       else if (!this.locked) this.level = Math.max(this.level - 1, 0);
     }
     const hurt = f.health > 0 && f.health < f.maxHealth;
-    if (naturalRegen && this.saturation > 0 && hurt && this.level >= 20) {
+    // The fast saturation regen came in 1.11; 1.8 only had the slow one.
+    if (naturalRegen && this.saturation > 0 && hurt && this.level >= 20 && !f.world.legacyCombat) {
       // "Saturation boost": fast regen while hunger is full.
       if (++this.tickTimer >= 10) {
         const amount = Math.min(this.saturation, 6);
@@ -386,7 +387,7 @@ export class Fighter {
   mineProgress = 0;
   private destroyDelay = 0;
 
-  armor: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, blastEpf: 0, fallEpf: 0, knockbackResistance: 0, explosionKnockbackResistance: 0 };
+  armor: ArmorStats = armorStatsOf([]);
 
   // Animation state
   walkDist = 0;
@@ -618,7 +619,13 @@ export class Fighter {
   }
   /** What the item being used does, or 'none'. */
   useKind(): UseKind {
-    return this.usingItem && this.useId ? ITEMS[this.useId].use : 'none';
+    if (!this.usingItem || !this.useId) return 'none';
+    const def = ITEMS[this.useId];
+    return def.use === 'none' && def.tool === 'sword' ? 'sword_block' : def.use;
+  }
+  /** 1.8 sword blocking: incoming hits deal (1 + damage) / 2, from the first tick. */
+  swordBlocking(): boolean {
+    return this.useKind() === 'sword_block';
   }
   /** Ticks the current item has been in use. */
   useTicks(): number {
@@ -645,6 +652,8 @@ export class Fighter {
   }
   /** Player.getAttackStrengthScale — 0..1 cooldown progress. */
   attackStrengthScale(partial: number): number {
+    // 1.8 has no attack cooldown: every click is a full-strength hit.
+    if (this.world.legacyCombat) return 1;
     return clamp((this.attackStrengthTicker + partial) / this.attackDelay(), 0, 1);
   }
   /** movement_speed: sprinting ×1.3 and Speed ×(1 + 0.2 per level) are separate multipliers. */
@@ -655,6 +664,18 @@ export class Fighter {
     const sl = this.effects.get('slowness');
     if (sl) v *= Math.max(0, 1 - 0.15 * (sl.amplifier + 1));
     return v;
+  }
+  /**
+   * 1.8 attack damage: the held item's 1.8 damage, Strength ×(1 + 1.3 per level), Weakness −0.5
+   * per level (the 1.8 potion attribute modifiers).
+   */
+  legacyAttackDamage(): number {
+    const st = this.effects.get('strength');
+    const wk = this.effects.get('weakness');
+    let v = this.attrs.attack_damage + (legacyAttackDamage(this.heldDef()) - C.FIST_DAMAGE);
+    if (st) v *= 1 + 1.3 * (st.amplifier + 1);
+    if (wk) v -= 0.5 * (wk.amplifier + 1);
+    return Math.max(0, v);
   }
   /** attack_damage attribute: the attribute item's damage plus Strength's +3 per level. */
   attackDamage(): number {
@@ -1272,6 +1293,11 @@ export class Fighter {
       case 'throw':
         this.throwItem(s, hand);
         return true;
+      case 'none':
+        // 1.8: a sword in the main hand blocks (ItemSword.onItemRightClick, EnumAction.BLOCK).
+        if (!this.world.legacyCombat || def.tool !== 'sword' || hand !== 'main') return false;
+        this.beginUse(hand, s.id, C.USE_FOREVER);
+        return true;
       default:
         return false;
     }
@@ -1615,8 +1641,11 @@ export class Fighter {
       else this.sprinting = true;
     }
     if (!this.sprinting && canStart && this.input.sprint) this.sprinting = true;
-    // Eating does not cancel an existing sprint (lets you sprint-jump away while healing).
-    if (this.sprinting && (fwd <= 1e-5 || !foodOk || this.horizontalCollision || sneak || this.dead)) {
+    // Eating does not cancel an existing sprint (lets you sprint-jump away while healing). In 1.8
+    // it did: using an item cut the input to 20%, under the 0.8 a sprint needs — which is why a
+    // block-hit resets your sprint.
+    const legacyStop = this.world.legacyCombat && fwd < 0.8;
+    if (this.sprinting && (fwd <= 1e-5 || legacyStop || !foodOk || this.horizontalCollision || sneak || this.dead)) {
       this.sprinting = false;
     }
     this.hadEnoughImpulse = enough;

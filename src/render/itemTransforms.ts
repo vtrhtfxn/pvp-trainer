@@ -109,6 +109,8 @@ export interface FirstPersonPose {
   drawTicks: number | null;
   /** Crossbow charge time (ticks). */
   chargeTicks: number;
+  /** 1.8: this sword is blocking. */
+  swordBlock?: boolean;
   /** A loaded crossbow held in the main hand is aimed down the sights. */
   crossbowCharged: boolean;
 }
@@ -168,6 +170,13 @@ export function firstPersonItemMatrix(out: THREE.Matrix4, pose: FirstPersonPose)
     out.multiply(tmp.makeRotationY(i * 10 * DEG));
   } else if (pose.kind === 'shield_blocking') {
     armTransform(out, i, pose.equipProgress);
+  } else if (pose.swordBlock) {
+    // The 1.8 sword block (ItemRenderer.doBlockTransformations), in 1.9+ hand space.
+    armTransform(out, i, pose.equipProgress);
+    out.multiply(tmp.makeTranslation(i * -0.14142136, 0.08, 0.14142136));
+    out.multiply(tmp.makeRotationX(-102.25 * DEG));
+    out.multiply(tmp.makeRotationY(i * 13.365 * DEG));
+    out.multiply(tmp.makeRotationZ(i * 78.05 * DEG));
   } else {
     const s = pose.swingProgress;
     const f5 = -0.4 * Math.sin(Math.sqrt(s) * Math.PI);
