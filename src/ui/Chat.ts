@@ -33,7 +33,12 @@ const VISIBLE_MS = 10_000; // vanilla: 200 ticks
 const FADE_MS = 1_000;
 
 function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+/** Only real colours reach the style attribute (#rgb / #rrggbb or a plain colour name). */
+function safeColor(c: string | undefined): string {
+  return c && /^(#[0-9a-f]{3}|#[0-9a-f]{6}|[a-z]{3,20})$/i.test(c) ? c : '';
 }
 
 /**
@@ -110,8 +115,9 @@ export class Chat {
     // Text sits in its own span so text and background opacity can differ (Options → Chat).
     el.innerHTML = '<span class="chat-text">' + line
       .map((p) => {
-        const style = [p.c ? `color:${p.c}` : '', p.b ? 'font-weight:700' : '', p.i ? 'font-style:italic' : '', p.u ? 'text-decoration:underline' : ''].filter(Boolean).join(';');
-        return style ? `<span style="${style}">${esc(p.t)}</span>` : esc(p.t);
+        const color = safeColor(p.c);
+        const style = [color ? `color:${color}` : '', p.b ? 'font-weight:700' : '', p.i ? 'font-style:italic' : '', p.u ? 'text-decoration:underline' : ''].filter(Boolean).join(';');
+        return style ? `<span style="${style}">${esc(String(p.t))}</span>` : esc(String(p.t));
       })
       .join('') + '</span>';
     this.log.appendChild(el);

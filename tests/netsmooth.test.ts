@@ -86,6 +86,37 @@ describe('lag compensation by what the attacker saw', () => {
     expect(swing(d, 6)).toBe('attack');
   });
 
+  const aimAt = (d: Duel, x: number, z: number) => {
+    const f = d.fighters[0];
+    return { yaw: Math.atan2(-(x - f.pos.x), -(z - f.pos.z)), pitch: 0 };
+  };
+  const claimSwing = (d: Duel, view: number, claim: { p: number; yaw: number; pitch: number }) => {
+    d.fighters[0].attackStrengthTicker = 100;
+    // The server-side aim is stale (from the last move packet); the claim carries the click's.
+    d.fighters[0].yaw = claim.yaw + 1;
+    d.queueAttack(0, view, claim);
+    d.tick();
+    return d.takeEvents().find((e) => e.e.type === 'attack' || e.e.type === 'miss')?.e.type;
+  };
+
+  it('a hit on screen counts, judged with the aim at the click', () => {
+    const { d } = strafe();
+    // Drawn a third of a tick before move 6, a bit off the logged spot (smoothing).
+    const x = -1.4 + 0.28 * 5.67 + 0.15;
+    expect(claimSwing(d, 5.67, { p: 1.9, ...aimAt(d, x, 0) })).toBe('attack');
+  });
+
+  it('a click that missed on screen is a miss, even where the server would have hit', () => {
+    const { d } = strafe();
+    expect(claimSwing(d, 6, { p: -1, ...aimAt(d, -1.4 + 0.28 * 6, 0) })).toBe('miss');
+  });
+
+  it('a claimed hit far off the logged position is not trusted', () => {
+    const { d } = strafe();
+    // Aim a block and a half beside where the runner was at that tick.
+    expect(claimSwing(d, 6, { p: 1.9, ...aimAt(d, -1.4 + 0.28 * 6 + 1.5, 0) })).toBe('miss');
+  });
+
   it('the same swing without the rewind (claiming to see the present) misses', () => {
     const { d } = strafe();
     aim(d, -1.4 + 0.28 * 6, 0);

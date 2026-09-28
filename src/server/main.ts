@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Duel } from '../net/Duel';
 import { KITS, type KitId } from '../game/kits';
-import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
+import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, cleanChat, cleanName, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
 import { attachWebSocket, type WsConnection } from './ws';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -36,6 +36,13 @@ const GAME_CANDIDATES = [
 const rooms = new Map<string, Room>();
 const CHAT_BURST = 5;
 const CHAT_REFILL_MS = 1500;
+/** Connections and rooms one server takes: plenty for a LAN, and a cap on what a flood can use. */
+const MAX_CLIENTS = 64;
+const MAX_ROOMS = 32;
+/** Messages a client may send per second (moves and clicks run at ~20–40); the rest are dropped. */
+const MSG_RATE = 150;
+const MSG_BURST = 300;
+const clients = new Set<Client>();
 
 class Client {
   room: Room | null = null;
@@ -47,6 +54,9 @@ class Client {
   /** Chat flood guard: up to CHAT_BURST lines, refilled at one per CHAT_REFILL_MS. */
   private chatTokens = CHAT_BURST;
   private chatAt = Date.now();
+  /** Message flood guard (every message type). */
+  private msgTokens = MSG_BURST;
+  private msgAt = Date.now();
 
   constructor(readonly ws: WsConnection) {}
 
@@ -62,6 +72,16 @@ class Client {
     this.pingId++;
     this.pingSentAt = Date.now();
     this.send({ t: 'ping', id: this.pingId });
+  }
+
+  /** True if this client may send another message now. */
+  takeMsgToken(): boolean {
+    const now = Date.now();
+    this.msgTokens = Math.min(MSG_BURST, this.msgTokens + ((now - this.msgAt) / 1000) * MSG_RATE);
+    this.msgAt = now;
+    if (this.msgTokens < 1) return false;
+    this.msgTokens--;
+    return true;
   }
 
   /** True if this client may send another chat line now. */
@@ -219,18 +239,26 @@ function handle(client: Client, msg: ClientMsg) {
   switch (msg.t) {
     case 'join': {
       if (msg.v !== PROTOCOL_VERSION) {
+        const theirs = Number(msg.v);
         client.send({
           t: 'error',
-          message: `Version mismatch — the host is running a different build (server v${PROTOCOL_VERSION}, you v${msg.v}). Reload the page.`,
+          message: `Version mismatch — the host is running a different build (server v${PROTOCOL_VERSION}, you v${Number.isFinite(theirs) ? theirs : '?'}). Reload the page.`,
         });
         return;
       }
       if (client.room) return;
-      client.name = String(msg.name || 'Player').slice(0, 16) || 'Player';
+      client.name = cleanName(msg.name);
       let code = normalizeRoom(String(msg.room || ''));
       let room: Room;
-      if (code) {
-        room = rooms.get(code) ?? new Room(code);
+      const existing = code ? rooms.get(code) : undefined;
+      if (!existing && rooms.size >= MAX_ROOMS) {
+        client.send({ t: 'error', message: 'This server has too many rooms open right now. Try again in a minute.' });
+        return;
+      }
+      if (existing) {
+        room = existing;
+      } else if (code) {
+        room = new Room(code);
         rooms.set(code, room);
       } else {
         do code = roomCode();
@@ -246,6 +274,7 @@ function handle(client: Client, msg: ClientMsg) {
       const seat = room.freeSeat();
       if (seat < 0) {
         client.send({ t: 'error', message: `Room ${room.code} is full — it already has two fighters.` });
+        if (room.players.length === 0) rooms.delete(room.code);
         return;
       }
       room.seats[seat] = client;
@@ -281,10 +310,7 @@ function handle(client: Client, msg: ClientMsg) {
       const room = client.room;
       if (!room) return;
       // Printable text only, trimmed to vanilla's limit.
-      const text = String(msg.text ?? '')
-        .replace(/[\u0000-\u001f\u007f]/g, '')
-        .trim()
-        .slice(0, CHAT_MAX);
+      const text = cleanChat(msg.text, CHAT_MAX);
       const kind = msg.kind === 'say' || msg.kind === 'me' ? msg.kind : 'chat';
       if (!text) return;
       if (!client.takeChatToken()) {
@@ -329,15 +355,22 @@ const server = createServer((req, res) => {
 });
 
 attachWebSocket(server, '/ws', (ws) => {
+  if (clients.size >= MAX_CLIENTS) {
+    ws.send(JSON.stringify({ t: 'error', message: 'This server is full right now. Try again in a minute.' } satisfies ServerMsg));
+    ws.close(1013);
+    return;
+  }
   const client = new Client(ws);
+  clients.add(client);
   ws.onMessage = (text) => {
+    if (!client.takeMsgToken()) return;
     let msg: ClientMsg;
     try {
       msg = JSON.parse(text) as ClientMsg;
     } catch {
       return;
     }
-    if (msg && typeof msg.t === 'string') {
+    if (msg && typeof msg === 'object' && typeof msg.t === 'string') {
       try {
         handle(client, msg);
       } catch (err) {
@@ -346,6 +379,7 @@ attachWebSocket(server, '/ws', (ws) => {
     }
   };
   ws.onClose = () => {
+    clients.delete(client);
     if (client.room) {
       log(`${client.name} left room ${client.room.code}`);
       client.room.leave(client);

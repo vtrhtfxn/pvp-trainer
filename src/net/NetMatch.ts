@@ -120,15 +120,30 @@ export class NetMatch {
     return this.countdown;
   }
 
-  queueClick() {
+  /**
+   * `picked`: what the click hit on screen (renderedPick), drawn `alpha` of the way from the last
+   * tick to this one.
+   */
+  queueClick(picked?: number, alpha = 1) {
     if (this.phase !== 'fight' || this.player.dead) return;
     // Swing locally straight away so the animation is not waiting on the round trip; the server
     // still decides whether anything was hit.
     this.player.swing();
     this.player.resetAttackStrength();
-    // Tell the server which of the opponent's moments we were looking at, so the swing is
-    // tested against exactly that (lag compensation).
-    this.net.send(this.hasRemote ? { t: 'attack', v: Math.round(this.playQ * 100) / 100 } : { t: 'attack' });
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    if (!this.hasRemote) {
+      this.net.send({ t: 'attack' });
+      return;
+    }
+    // Tell the server exactly which of the opponent's moments was drawn (playQ is where they are
+    // at this tick; the frame showed them `1 - alpha` of a tick before that), what the click hit
+    // there and with what aim, so the swing is judged on the screen we saw.
+    const v = r2(this.playQ - (1 - Math.min(1, Math.max(0, alpha))));
+    if (picked === undefined || !Number.isFinite(picked)) {
+      this.net.send({ t: 'attack', v });
+      return;
+    }
+    this.net.send({ t: 'attack', v, p: picked < 0 ? -1 : r2(picked), yaw: Math.round(this.player.yaw * 1e4) / 1e4, pitch: Math.round(this.player.pitch * 1e4) / 1e4 });
   }
 
   queueSlot(i: number) {
