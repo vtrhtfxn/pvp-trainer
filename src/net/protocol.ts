@@ -41,7 +41,7 @@ export const MAX_REWIND_TICKS = 10;
  * crossbow charge (1) and the potion of the loaded arrow. Trailing defaults are dropped.
  */
 export type Slot =
-  | readonly [id: string, count: number, ench?: Record<string, number> | 0, damage?: number, potion?: string, charged?: number, chargedPotion?: string]
+  | readonly [id: string, count: number, ench?: Record<string, number> | 0, damage?: number, potion?: string, charged?: number, chargedPotion?: string, stored?: number]
   | null;
 
 /** Every enchantment an item can carry (the keys of Enchants). */
@@ -73,7 +73,7 @@ export function toSlot(s: ItemStack | null): Slot {
   if (!s) return null;
   const out: (string | number | Record<string, number>)[] = [s.id, s.count];
   const ench = s.ench && Object.keys(s.ench).length ? { ...s.ench } : 0;
-  const tail = [ench, s.damage ?? 0, s.potion ?? '', s.charged ? 1 : 0, s.chargedPotion ?? ''];
+  const tail = [ench, s.damage ?? 0, s.potion ?? '', s.charged ? 1 : 0, s.chargedPotion ?? '', s.stored ?? 0];
   let last = tail.length;
   while (last > 0 && !tail[last - 1]) last--;
   for (let k = 0; k < last; k++) out.push(tail[k] as string | number | Record<string, number>);
@@ -99,6 +99,8 @@ export function fromSlot(slot: Slot | undefined): ItemStack | null {
   if (typeof slot[4] === 'string' && Object.hasOwn(POTIONS, slot[4])) out.potion = slot[4] as PotionId;
   if (slot[5]) out.charged = true;
   if (typeof slot[6] === 'string' && Object.hasOwn(POTIONS, slot[6])) out.chargedPotion = slot[6] as PotionId;
+  const stored = Number(slot[7]) | 0;
+  if (id === 'red_shulker_box' && stored > 0) out.stored = Math.min(27, stored);
   return out;
 }
 

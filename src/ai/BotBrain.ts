@@ -74,7 +74,9 @@ type CrystalPlan =
    * it, then a Flame arrow into it (drawn for `draw` ticks) — or just the arrow, at a cart that
    * is already there.
    */
-  | { kind: 'cart'; phase: 'rail' | 'cart' | 'shoot'; x: number; y: number; z: number; cart: TntCart | null; timer: number; wait: number; draw: number };
+  | { kind: 'cart'; phase: 'rail' | 'cart' | 'shoot'; x: number; y: number; z: number; cart: TntCart | null; timer: number; wait: number; draw: number }
+  /** Out of carts: put a shulker box of them down beside us (x, y, z) and open it. */
+  | { kind: 'shulker'; phase: 'place' | 'open'; x: number; y: number; z: number; timer: number; wait: number };
 
 /** An open inventory: a delay, then slot swaps (number key / F over a slot) one by one. */
 interface InvPlan {
@@ -302,7 +304,7 @@ export class BotBrain {
     this.uhcLabel = '';
     this.selfHelpCooldown = 0;
     this.crystalKit = b.countItem('end_crystal') > 0;
-    this.cartKit = b.countItem('tnt_minecart') > 0 && b.countItem('rail') > 0;
+    this.cartKit = b.countItem('tnt_minecart') + b.countItem('red_shulker_box') > 0 && b.countItem('rail') > 0;
     this.maceKit = b.countItem('mace') > 0;
     this.glide = null;
     this.launchCooldown = 40;
@@ -1964,7 +1966,8 @@ export class BotBrain {
       }
     }
     if (bestCart) return { kind: 'cart', phase: 'shoot', x: 0, y: 0, z: 0, cart: bestCart, timer: 0, wait: 0, draw: this.cartDraw() };
-    if (b.countItem('tnt_minecart') === 0 || b.countItem('rail') === 0) return null;
+    if (b.countItem('tnt_minecart') === 0) return this.pickShulkerPlan(per);
+    if (b.countItem('rail') === 0) return null;
     const tx = Math.floor(per.x);
     const ty = Math.floor(per.y + 0.01);
     const tz = Math.floor(per.z);
@@ -1993,6 +1996,84 @@ export class BotBrain {
     if (!best) return null;
     const onRail = blocks.get(best[0], best[1], best[2]) === B.RAIL;
     return { kind: 'cart', phase: onRail ? 'cart' : 'rail', x: best[0], y: best[1], z: best[2], cart: null, timer: 0, wait: 0, draw: this.cartDraw() };
+  }
+
+  /**
+   * No carts left: a shulker box of them goes down on an open cell beside us, on the side away
+   * from them, while they are not right on top of us.
+   */
+  private pickShulkerPlan(per: Perceived): CrystalPlan | null {
+    const b = this.bot;
+    const blocks = this.world.blocks;
+    if (b.slotOf('red_shulker_box') < 0) return null;
+    if (Math.hypot(per.x - b.pos.x, per.z - b.pos.z) < 5) return null;
+    const bx = Math.floor(b.pos.x);
+    const by = Math.floor(b.pos.y + 0.01);
+    const bz = Math.floor(b.pos.z);
+    let best: [number, number, number] | null = null;
+    let bestD = -Infinity;
+    for (const [dx, dz] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ]) {
+      const x = bx + dx;
+      const z = bz + dz;
+      if (blocks.get(x, by, z) !== B.AIR || !isSolidBlock(blocks.get(x, by - 1, z))) continue;
+      if (this.cellHasFighter(x, by, z)) continue;
+      if (!this.facePoint(x, by - 1, z, 0, 1, 0)) continue;
+      const away = Math.hypot(x + 0.5 - per.x, z + 0.5 - per.z);
+      if (away > bestD) {
+        bestD = away;
+        best = [x, by, z];
+      }
+    }
+    return best ? { kind: 'shulker', phase: 'place', x: best[0], y: best[1], z: best[2], timer: 0, wait: 0 } : null;
+  }
+
+  private runShulker(plan: CrystalPlan & { kind: 'shulker' }, input: MoveInput, end: (ok: boolean) => false): boolean {
+    const b = this.bot;
+    const K = this.profile.crystal;
+    const blocks = this.world.blocks;
+    this.potLabel = 'Restocking carts';
+    if (plan.wait > 0) plan.wait--;
+    input.forward = input.strafe = 0;
+    input.sprint = false;
+    if (plan.timer > 40) return end(false);
+    if (plan.phase === 'place') {
+      if (blocks.get(plan.x, plan.y, plan.z) === B.SHULKER) {
+        plan.phase = 'open';
+        plan.timer = 0;
+        plan.wait = K.clickGap;
+        this.settle = 0;
+        return true;
+      }
+      if (blocks.get(plan.x, plan.y, plan.z) !== B.AIR || !this.equip('red_shulker_box')) return end(false);
+      const p = this.facePoint(plan.x, plan.y - 1, plan.z, 0, 1, 0);
+      if (!p) return plan.timer > 6 ? end(false) : true;
+      this.aimPoint(p[0], p[1], p[2]);
+      if (plan.wait > 0 || this.settle < K.aimSettle) return true;
+      const hit = b.crosshairBlock(b.blockReach(), true);
+      if (hit && hit.x === plan.x && hit.y === plan.y - 1 && hit.z === plan.z && hit.ny === 1) b.startUsingItem(true);
+      return true;
+    }
+    if (blocks.get(plan.x, plan.y, plan.z) !== B.SHULKER) return end(false);
+    const p = this.anyFacePoint(plan.x, plan.y, plan.z);
+    if (!p) return plan.timer > 6 ? end(false) : true;
+    this.aimPoint(p[0], p[1], p[2]);
+    // Opening the box and shift-clicking the carts out takes a moment.
+    if (plan.wait > 0 || this.settle < K.aimSettle + 4) return true;
+    const hit = b.crosshairBlock(b.blockReach(), true);
+    if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
+      b.startUsingItem(true);
+      return end(b.countItem('tnt_minecart') > 0);
+    }
+    return true;
   }
 
   /** One tick of a cart combo. */
@@ -2166,7 +2247,7 @@ export class BotBrain {
     const moves = this.restockMoves(0);
     const taken = new Set(moves.map((m) => m[1]));
     const essentials: ItemId[] = this.cartKit
-      ? [this.weapon, 'tnt_minecart', 'rail', 'bow', 'golden_apple', 'totem_of_undying', 'ender_pearl']
+      ? [this.weapon, 'tnt_minecart', 'rail', 'bow', 'golden_apple', 'totem_of_undying', 'ender_pearl', ...(b.countItem('tnt_minecart') === 0 ? (['red_shulker_box'] as ItemId[]) : [])]
       : [this.weapon, 'end_crystal', 'obsidian', 'golden_apple', 'totem_of_undying', 'ender_pearl'];
     const K = this.profile.crystal;
     if (K.anchors) essentials.push('respawn_anchor', 'glowstone');
@@ -2435,6 +2516,7 @@ export class BotBrain {
 
     if (plan.kind === 'surround') return this.runSurround(plan, input, end);
     if (plan.kind === 'cart') return this.runCart(plan, per, dist, input, end);
+    if (plan.kind === 'shulker') return this.runShulker(plan, input, end);
 
     this.crystalMove(dist, input);
     if ('wait' in plan && plan.wait > 0) plan.wait--;

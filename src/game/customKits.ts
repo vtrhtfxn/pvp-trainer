@@ -104,6 +104,10 @@ export function cleanStack(raw: unknown): ItemStack | null {
     const p = typeof raw.potion === 'string' && Object.hasOwn(POTIONS, raw.potion) ? (raw.potion as PotionId) : 'healing';
     s.potion = id === 'tipped_arrow' && p === 'healing' ? 'slow_falling' : p;
   }
+  if (id === 'red_shulker_box') {
+    const n = Math.floor(Number(raw.stored));
+    if (Number.isFinite(n) && n > 0) s.stored = Math.min(n, 27);
+  }
   if (isObj(raw.ench)) {
     const allowed = enchantsFor(id);
     const ench: Enchants = {};

@@ -50,6 +50,8 @@ function faceTexture(id: number, kind: 'top' | 'bottom' | 'side', blocks: Blocks
       return 'oak_planks';
     case B.OAK_LOG:
       return kind === 'side' ? 'oak_log' : 'oak_log_top';
+    case B.SHULKER:
+      return kind === 'top' ? 'red_shulker_box_top' : 'red_shulker_box';
     case B.COBBLESTONE:
       return 'cobblestone';
     case B.OBSIDIAN:

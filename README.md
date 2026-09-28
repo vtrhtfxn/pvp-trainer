@@ -273,7 +273,7 @@ The arena is 80 × 80 blocks (walls 16 high). Every built-in kit also works onli
 
 | Subtier | Kit |
 | --- | --- |
-| **Cart** | Netherite armor (Prot IV, Unbreaking III, Mending), Netherite Sword and Axe (Sharp V), Bow (Power V, Flame), 64 arrows, 9 minecarts with TNT, 64 rails, flint and steel, 64 cobwebs, 8 totems (one in the off hand), 183 golden apples, 16 ender pearls, 5× Strength II and 1× Speed II splash · diggable ground |
+| **Cart** | Netherite armor (Prot IV, Unbreaking III, Mending), Netherite Sword and Axe (Sharp V), Bow (Power V, Flame), 64 arrows, 9 minecarts with TNT plus 2 red shulker boxes holding 27 more each (63 carts), 64 rails, flint and steel, 64 cobwebs, 8 totems (one in the off hand), 183 golden apples, 16 ender pearls, 5× Strength II and 1× Speed II splash · diggable ground |
 | **Diamond SMP** | Diamond Sword (Sharp V, Fire Aspect II, Unbreaking III), Diamond Axe (Sharp V, Unbreaking III), Shield (Unbreaking III, Mending), Diamond armor (Prot IV, Unbreaking III, Mending; boots Feather Falling IV + Depth Strider III, leggings Swift Sneak III), 128 golden apples, Netherite Pickaxe (Silk Touch, Efficiency V, Unbreaking III, Mending), 64 oak logs, 48 cobwebs, 4 water buckets, 64 XP bottles, 12 ender pearls, 3 chorus fruit, 1 totem, 15× Strength II, 3× Speed I (8:00) and 3× Fire Resistance (8:00) splash |
 
 What's new for them:
@@ -285,6 +285,9 @@ What's new for them:
   and a plain hit (sword, cold arrow) on a cart at rest just breaks it.
 - **Flame** bows shoot burning arrows; an arrow **shot through fire** catches too (and water puts it
   out). Burning arrows set players alight for 5 s.
+- **Red shulker boxes** hold 27 Minecarts with TNT each. Place one and right-click it to take the carts
+  (they fill your empty slots, hotbar first); break it and it drops with whatever is still inside.
+  The kit editor has a "TNT carts inside" field for them.
 - **Flint and steel** lights fire on the face you click (64 uses).
 - **Chorus fruit** (1.6 s to eat, 1 s cooldown) teleports you to a random safe spot up to 8 blocks away.
 - **Depth Strider** moves water's drag and push a third of the way to land per level (half off the ground).
@@ -293,10 +296,10 @@ What's new for them:
 The Cart bot places a rail by your feet (or next to you where it can see the ground), a cart on it,
 then backs off while drawing its Flame bow and shoots — a quick flick low down the ladder, a fuller
 draw (bigger blast) higher up — and it shoots carts you left near you. It skips a shot that would
-take its last life. The Diamond SMP bot plays the SMP game (shield, axe, pots, pearls, totem).
+take its last life, and when it runs out of carts it steps away, puts a shulker box down beside
+itself and takes the next batch out. The Diamond SMP bot plays the SMP game (shield, axe, pots, pearls, totem).
 
-Unsure about the reference picture: the two red blocks in the Cart inventory are left out (their
-slots are empty), and the bow is taken to have Power V and Flame.
+From the reference picture, the bow is taken to have Power V and Flame.
 
 ### 1.8 Sword
 

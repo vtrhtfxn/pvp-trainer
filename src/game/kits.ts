@@ -392,8 +392,9 @@ function diamondSmpLoadout(): Loadout {
 
 /**
  * The Cart subtier, laid out as in the reference inventory: sword, axe, gapples, webs, a TNT
- * minecart, the Flame bow, pearls and rails in the hotbar; totems, eight more carts, Strength,
- * Speed, arrows, flint and steel and more gapples in the inventory; a totem in the off hand.
+ * minecart, the Flame bow, pearls and rails in the hotbar; totems, eight more carts, two red
+ * shulker boxes full of carts, Strength, Speed, arrows, flint and steel and more gapples in the
+ * inventory; a totem in the off hand.
  */
 function cartLoadout(): Loadout {
   const keep = { unbreaking: 3, mending: 1 };
@@ -404,6 +405,8 @@ function cartLoadout(): Loadout {
   }));
   const T = (): ItemStack => ({ id: 'totem_of_undying', count: 1 });
   const cart = (): ItemStack => ({ id: 'tnt_minecart', count: 1 });
+  // Red shulker boxes, each full of Minecarts with TNT (place one, open it, take the carts).
+  const shulker = (): ItemStack => ({ id: 'red_shulker_box', count: 1, stored: 27 });
   const S = () => pot('strength');
   const hotbar: (ItemStack | null)[] = [
     { id: 'netherite_sword', count: 1, ench: { sharpness: 5, ...keep } },
@@ -419,7 +422,7 @@ function cartLoadout(): Loadout {
   const main: (ItemStack | null)[] = [
     T(), T(), cart(), cart(), cart(), cart(), S(), S(), T(),
     T(), T(), cart(), cart(), cart(), cart(), S(), S(), T(),
-    null, null, { id: 'arrow', count: 64 }, { id: 'flint_and_steel', count: 1, ench: { unbreaking: 3 } },
+    shulker(), shulker(), { id: 'arrow', count: 64 }, { id: 'flint_and_steel', count: 1, ench: { unbreaking: 3 } },
     { id: 'golden_apple', count: 64 }, { id: 'golden_apple', count: 64 }, pot('swiftness'), S(), T(),
   ];
   return { hotbar, main, armor, offhand: T() };
@@ -591,7 +594,8 @@ export const KITS: KitDef[] = [
     contents: [
       'Netherite Armor — Prot IV, Unbreaking III, Mending',
       'Netherite Sword & Axe — Sharp V · Bow — Power V, Flame · 64× Arrow',
-      '9× Minecart with TNT · 64× Rail · Flint and Steel · 64× Cobweb',
+      '9× Minecart with TNT + 2 Red Shulker Boxes with 27 more each (63 carts) · 64× Rail',
+      'Flint and Steel · 64× Cobweb',
       '8× Totem (one in the off hand) · 183× Golden Apple · 16× Ender Pearl',
       '5× Strength II · 1× Speed II (splash) · diggable ground',
     ],

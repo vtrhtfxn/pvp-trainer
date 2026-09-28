@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { BotBrain } from '../src/ai/BotBrain';
+import { DIFFICULTIES } from '../src/ai/difficulty';
+import { Rng } from '../src/core/rng';
+import { performAttack } from '../src/game/combat';
 import { Arrow } from '../src/game/Arrow';
 import { B } from '../src/game/Blocks';
 import { explode } from '../src/game/Explosion';
@@ -143,5 +147,54 @@ describe('Diamond SMP items', () => {
       return z0 - a.pos.z;
     };
     expect(speed(3)).toBeGreaterThan(speed(0) * 1.8);
+  });
+});
+
+describe('Cart shulker boxes', () => {
+  it('holds 27 carts; placed and opened, they fill the empty slots', () => {
+    const k = kitById('cart');
+    const shulkers = k.main!.filter((s) => s?.id === 'red_shulker_box');
+    expect(shulkers).toHaveLength(2);
+    expect(shulkers.every((s) => s!.stored === 27)).toBe(true);
+
+    const { world, a } = setup();
+    a.inventory[6] = { id: 'red_shulker_box', count: 1, stored: 27 };
+    a.selectSlot(6);
+    a.pitch = -0.8;
+    expect(a.startUsingItem(true)).toBe(true);
+    let sz = NaN;
+    for (let z = 8; z > 0; z--) if (world.blocks.get(0, 0, z) === B.SHULKER) sz = z;
+    expect(world.blocks.shulkerCarts(0, 0, sz)).toBe(27);
+    const before = a.countItem('tnt_minecart');
+    const free = a.inventory.slice(0, 36).filter((s) => !s).length;
+    a.rightClickDelay = 0;
+    expect(a.startUsingItem(true)).toBe(true); // clicking the box opens it
+    const took = Math.min(27, free);
+    expect(a.countItem('tnt_minecart')).toBe(before + took);
+    expect(world.blocks.shulkerCarts(0, 0, sz)).toBe(27 - took);
+  });
+
+  it('keeps its carts when broken and over the network', async () => {
+    const { fromSlot, toSlot } = await import('../src/net/protocol');
+    const back = fromSlot(toSlot({ id: 'red_shulker_box', count: 1, stored: 12 }));
+    expect(back?.stored).toBe(12);
+    expect(fromSlot(['red_shulker_box', 1, 0, 0, '', 0, '', 999])?.stored).toBe(27);
+  });
+
+  it('the Cart bot opens a shulker box when it runs out of carts', () => {
+    const { world, a, b } = setup();
+    // Bot side has no loose carts, just the boxes.
+    for (let i = 0; i < 36; i++) if (b.inventory[i]?.id === 'tnt_minecart') b.inventory[i] = null;
+    b.inventory[6] = { id: 'red_shulker_box', count: 1, stored: 27 };
+    const brain = new BotBrain(b, a, world, DIFFICULTIES.ht1, new Rng(3), () => performAttack(b, a));
+    brain.resetRound();
+    a.pos.z = 10; // a gap, but not pearl range
+    for (let i = 0; i < 200 && b.countItem('tnt_minecart') === 0; i++) {
+      brain.tick();
+      b.snapshot();
+      b.tick();
+      world.tickEntities();
+    }
+    expect(b.countItem('tnt_minecart')).toBeGreaterThan(0);
   });
 });

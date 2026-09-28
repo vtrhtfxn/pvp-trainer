@@ -169,6 +169,8 @@ const PACK_BLOCKS: Record<string, { tex: string; tint?: string; overlay?: string
   oak_log_top: { tex: 'block/oak_log_top' },
   oak_leaves: { tex: 'block/oak_leaves', tint: FOLIAGE_TINT },
   oak_planks: { tex: 'block/oak_planks' },
+  red_shulker_box: { tex: 'block/red_shulker_box' },
+  red_shulker_box_top: { tex: 'block/red_shulker_box_top' },
   cobblestone: { tex: 'block/cobblestone' },
   glowstone_block: { tex: 'block/glowstone' },
   bedrock: { tex: 'block/bedrock' },
