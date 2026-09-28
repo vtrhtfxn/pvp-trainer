@@ -221,6 +221,16 @@ export function makeKitIcon(kind: string, sword?: Sprite, apple?: Sprite): Sprit
         p(x, y, '#5a5a5a');
       break;
     }
+    case 'custom': {
+      // A chest: planks, a darker lid line and the latch.
+      for (let y = 2; y < 14; y++)
+        for (let x = 1; x < 15; x++) {
+          const edge = x === 1 || x === 14 || y === 2 || y === 13;
+          p(x, y, edge ? '#3b2410' : y === 6 ? '#5a3a1a' : (x + y) % 5 === 0 ? '#8a5a2b' : '#a8743a');
+        }
+      for (let y = 5; y < 9; y++) for (let x = 7; x < 9; x++) p(x, y, y === 5 ? '#e8e8e8' : '#b0b0b0');
+      break;
+    }
     default: {
       for (let y = 3; y < 13; y++) for (let x = 3; x < 13; x++) p(x, y, '#777');
     }

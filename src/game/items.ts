@@ -40,7 +40,12 @@ export type ItemId =
   | 'mace'
   | 'wind_charge'
   | 'elytra'
-  | 'tipped_arrow';
+  | 'tipped_arrow'
+  | 'oak_log'
+  | 'chorus_fruit'
+  | 'rail'
+  | 'tnt_minecart'
+  | 'flint_and_steel';
 export type EffectId =
   | 'regeneration'
   | 'absorption'
@@ -87,13 +92,13 @@ export const HARMFUL_EFFECTS: ReadonlySet<EffectId> = new Set([
 ]);
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip';
+export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip' | 'sword_block' | 'cart' | 'ignite';
 
 /** Mining tool classes (the mineable/* block tags). */
 export type ToolKind = 'axe' | 'pickaxe' | 'sword';
 
 /** The splash potions NethPot uses (vanilla potion registry names in the comments). */
-export type PotionId = 'strength' | 'swiftness' | 'fire_resistance' | 'healing' | 'regeneration' | 'slow_falling';
+export type PotionId = 'strength' | 'swiftness' | 'long_swiftness' | 'fire_resistance' | 'healing' | 'regeneration' | 'slow_falling';
 
 export interface PotionDef {
   id: PotionId;
@@ -111,6 +116,8 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   strength: { id: 'strength', name: 'Strength', color: 0xffc700, effect: 'strength', amplifier: 1, duration: 1800 },
   // strong_swiftness: Speed II, 1:30
   swiftness: { id: 'swiftness', name: 'Swiftness', color: 0x33ebff, effect: 'speed', amplifier: 1, duration: 1800 },
+  // long_swiftness: Speed I, 8:00
+  long_swiftness: { id: 'long_swiftness', name: 'Swiftness', color: 0x33ebff, effect: 'speed', amplifier: 0, duration: 9600 },
   // long_fire_resistance: Fire Resistance, 8:00
   fire_resistance: { id: 'fire_resistance', name: 'Fire Resistance', color: 0xff9900, effect: 'fire_resistance', amplifier: 0, duration: 9600 },
   // strong_healing: Instant Health II, 8 HP
@@ -262,6 +269,10 @@ export interface Enchants {
   sweepingEdge?: number;
   /** Sneaking speed 30% + 15% per level. */
   swiftSneak?: number;
+  /** Boots: a third per level of the way from water's drag to walking on land. */
+  depthStrider?: number;
+  /** Bow: arrows leave on fire (they set what they hit alight, and TNT minecarts off). */
+  flame?: number;
 }
 
 export interface ItemStack {
@@ -407,6 +418,21 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     // 8 hunger, 12.8 saturation, 1.6 s; only edible when you are hungry.
     food: { nutrition: 8, saturationModifier: 0.8, useTicks: 32, alwaysEdible: false, effects: [] },
   },
+  oak_log: { id: 'oak_log', name: 'Oak Log', maxStack: 64, ...MELEE_FIST, use: 'place', places: 14 },
+  // 4 hunger, 2.4 saturation, always edible; eating it teleports you up to 8 blocks (1 s cooldown).
+  chorus_fruit: {
+    id: 'chorus_fruit',
+    name: 'Chorus Fruit',
+    maxStack: 64,
+    ...MELEE_FIST,
+    use: 'food',
+    food: { nutrition: 4, saturationModifier: 0.3, useTicks: 32, alwaysEdible: true, effects: [] },
+    cooldown: 20,
+  },
+  rail: { id: 'rail', name: 'Rail', maxStack: 64, ...MELEE_FIST, use: 'place', places: 15 },
+  // Placed on a rail; explodes when a burning arrow hits it (the faster the arrow, the bigger).
+  tnt_minecart: { id: 'tnt_minecart', name: 'Minecart with TNT', maxStack: 1, ...MELEE_FIST, use: 'cart' },
+  flint_and_steel: { id: 'flint_and_steel', name: 'Flint and Steel', maxStack: 1, ...MELEE_FIST, use: 'ignite', maxDamage: 64 },
 };
 
 export const FIST: ItemDef = { id: 'arrow', name: 'Hand', maxStack: 0, ...MELEE_FIST, use: 'none' };
@@ -418,6 +444,21 @@ export function defOf(stack: ItemStack | null | undefined): ItemDef {
 /** Sharpness adds 0.5 * level + 0.5 damage in Java Edition (Sharpness V = +3). */
 export function sharpnessBonus(level: number): number {
   return level > 0 ? 0.5 * level + 0.5 : 0;
+}
+
+/** 1.8 Sharpness: 1.25 damage per level (Sharpness V = +6.25). */
+export function legacySharpnessBonus(level: number): number {
+  return level > 0 ? 1.25 * level : 0;
+}
+
+/**
+ * attack_damage while held in 1.8 (with the base 1): swords were 1 higher (diamond 8), axes were
+ * 3 + material (diamond 7). Everything else hit as it does now.
+ */
+export function legacyAttackDamage(def: ItemDef): number {
+  if (def.tool === 'sword') return def.attackDamage + 1;
+  if (def.tool === 'axe') return def.id === 'netherite_axe' ? 8 : def.id === 'diamond_axe' ? 7 : Math.min(def.attackDamage, 6);
+  return def.attackDamage;
 }
 
 export function isEnchanted(stack: ItemStack | null | undefined): boolean {
@@ -484,6 +525,8 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.breach) out.push(`Breach ${roman(e.breach)}`);
   if (e?.windBurst) out.push(`Wind Burst ${roman(e.windBurst)}`);
   if (e?.swiftSneak) out.push(`Swift Sneak ${roman(e.swiftSneak)}`);
+  if (e?.depthStrider) out.push(`Depth Strider ${roman(e.depthStrider)}`);
+  if (e?.flame) out.push('Flame');
   if (e?.efficiency) out.push(`Efficiency ${roman(e.efficiency)}`);
   if (e?.silkTouch) out.push('Silk Touch');
   if (e?.multishot) out.push('Multishot');

@@ -7,6 +7,7 @@ import { Arena, SKY_HORIZON, type SkyState } from './Arena';
 import { ArrowView } from './Arrows';
 import { BlocksView } from './BlocksView';
 import { CrystalView, ExplosionView } from './CrystalView';
+import { CartView } from './CartView';
 import { FireView } from './FireView';
 import { ThrownView } from './ThrownView';
 import type { Assets } from './assets';
@@ -81,6 +82,7 @@ export class SceneRenderer {
   readonly thrown = new ThrownView();
   readonly blocks = new BlocksView();
   readonly crystals = new CrystalView();
+  readonly carts = new CartView();
   readonly explosions = new ExplosionView();
   private readonly playerFire = new FireView();
   private readonly botFire = new FireView();
@@ -160,7 +162,7 @@ export class SceneRenderer {
     this.scene.add(this.nametag.sprite);
     this.scene.add(this.hitboxes.group);
     this.firstPerson = new FirstPersonView(assets, glintMat);
-    this.scene.add(this.arrows.group, this.thrown.group, this.playerFire.group, this.botFire.group, this.blocks.group, this.crystals.group, this.explosions.group);
+    this.scene.add(this.arrows.group, this.thrown.group, this.playerFire.group, this.botFire.group, this.blocks.group, this.crystals.group, this.carts.group, this.explosions.group);
 
     this.previewModel = new PlayerModel(assets, glintMat);
     this.previewModel.shadow.visible = false;
@@ -507,6 +509,7 @@ export class SceneRenderer {
     // Crystal brings its own diggable ground; every other kit stands on the arena's grass.
     this.arena.floor.visible = player.world.blocks.depth === 0;
     this.crystals.update(player.world.crystals, alpha);
+    this.carts.update(player.world.carts, alpha, performance.now() / 1000);
     this.explosions.update(dt);
     this.playerFire.update(player, alpha, this.camera, time, !firstPerson);
     this.botFire.update(bot, alpha, this.camera, time, true);

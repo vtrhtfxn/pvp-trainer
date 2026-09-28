@@ -28,8 +28,9 @@ import { CHAT_MAX, type ChatKind, type ServerMsg } from '../net/protocol';
 import type { AttributeId } from './attributes';
 import { performAttack, rayDistanceToTarget, renderedPick } from './combat';
 import type { Fighter, FighterEvent } from './Fighter';
-import { EFFECT_COLORS, ITEMS, type ItemStack } from './items';
-import { KITS, kitById, type KitId } from './kits';
+import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
+import { KITS, isCustomKit, kitById, type KitId } from './kits';
+import { loadCustomKits } from './customKits';
 import { B } from './Blocks';
 import type { World } from './World';
 
@@ -143,6 +144,9 @@ export class Game {
     private readonly settings: Settings,
   ) {
     this.records = loadRecords();
+    // Kits made in the kit editor; a saved selection whose kit is gone goes back to Sword.
+    const customKits = loadCustomKits();
+    if (isCustomKit(settings.kit) && !customKits.some((k) => k.id === settings.kit)) settings.kit = 'sword';
     this.net = new NetClient({
       onStatus: (status, detail) => this.onNetStatus(status, detail),
       onMessage: (msg) => this.onNetMessage(msg),
@@ -152,13 +156,18 @@ export class Game {
     // MSAA on a 2× screen draws 4× the samples for edges you can barely see: Auto skips it there.
     const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && (window.devicePixelRatio || 1) < 2);
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
-    const packIcon = (id: 'diamond_sword' | 'diamond_axe' | 'golden_apple' | 'golden_head' | 'splash_potion' | 'netherite_sword' | 'end_crystal' | 'netherite_axe' | 'mace') =>
+    const packIcon = (id: ItemId) =>
       itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
     for (const kit of KITS) {
       const fromPack = kit.icon === 'sword' ? packIcon('diamond_sword') : kit.icon === 'axe' ? packIcon('diamond_axe') : kit.icon === 'uhc' ? packIcon('golden_head') : kit.icon === 'neth_potion' ? packIcon('netherite_sword') : kit.icon === 'potion' ? packIcon('splash_potion') : kit.icon === 'crystal' ? packIcon('end_crystal') : kit.icon === 'smp' ? packIcon('netherite_axe') : kit.icon === 'mace' ? packIcon('mace') : undefined;
       kitIcons[kit.icon] = fromPack ?? makeKitIcon(kit.icon);
     }
+    // 1.8 Sword: the diamond sword with an enchantment glint; custom kits: a chest.
+    kitIcons.sword18 = itemIcon({ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }) ?? makeKitIcon('sword');
+    kitIcons.custom = makeKitIcon('custom');
+    kitIcons.cart = itemIcon({ id: 'tnt_minecart', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.dia_smp = itemIcon({ id: 'diamond_chestplate', count: 1 }) ?? makeKitIcon('axe');
     this.hud = new HUD(uiRoot, this.mods);
     this.specHud = new SpectatorHud(uiRoot);
     this.drillHud = new DrillHud(uiRoot);
@@ -201,7 +210,7 @@ export class Game {
       onLeaveOnline: () => this.leaveOnline(),
       onMarketplace: () => this.openMarket(),
       installedMods: () => this.mods.installedCount,
-    });
+    }, customKits);
     this.market = new Marketplace(uiRoot, this.mods, {
       onClose: () => this.closeMarket(),
       onEditHud: () => this.openHudEditor(),
@@ -832,7 +841,8 @@ export class Game {
     this.sound.unlock();
     this.leaveOnline(false);
     // Hosting a room uses the kit selected in the main menu; joining uses the room's.
-    this.net.connect(url, room, name, this.settings.kit);
+    // Custom kits only live in this browser, so an online room uses Sword instead.
+    this.net.connect(url, room, name, isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit);
   }
 
   leaveOnline(toMenu = true) {

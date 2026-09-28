@@ -158,6 +158,10 @@ export function explode(world: World, cx: number, cy: number, cz: number, power:
       chain.push(c);
     }
   }
+  // TNT minecarts in the blast light with a short fuse (a chain reaction).
+  for (const c of world.carts) {
+    if (!c.removed && Math.hypot(c.pos.x - cx, c.pos.y - cy, c.pos.z - cz) / diameter <= 1) c.ignite(world);
+  }
   // Dropped items in the blast are destroyed.
   for (const it of world.items) if (Math.hypot(it.pos.x - cx, it.pos.y - cy, it.pos.z - cz) < diameter * 0.75) it.removed = true;
 

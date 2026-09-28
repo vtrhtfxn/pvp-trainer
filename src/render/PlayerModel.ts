@@ -211,7 +211,7 @@ export class PlayerModel {
     if (!s) return 'empty';
     if (f.usingItem && f.useHand === hand) {
       const k = f.useKind();
-      if (k === 'shield') return 'block';
+      if (k === 'shield' || k === 'sword_block') return 'block';
       if (k === 'bow') return 'bow';
       if (k === 'crossbow') return 'crossbow_charge';
     } else if (s.id === 'crossbow' && s.charged && !f.swinging) return 'crossbow_hold';

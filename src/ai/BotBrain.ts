@@ -4,9 +4,10 @@ import type { Rng } from '../core/rng';
 import { rayDistanceToTarget, shieldFaces, type AttackOutcome } from '../game/combat';
 import { B, isSolid as isSolidBlock, type RayHit } from '../game/Blocks';
 import { SLOT_ARMOR, SLOT_OFFHAND, type Fighter, type MoveInput } from '../game/Fighter';
-import { ITEMS, durabilityFraction, type ItemId, type PotionId } from '../game/items';
+import { ITEMS, POTIONS, durabilityFraction, type ItemId, type PotionId } from '../game/items';
 import type { World } from '../game/World';
 import type { EndCrystal } from '../game/EndCrystal';
+import { CART_BASE_POWER, canPlaceCart, type TntCart } from '../game/TntCart';
 import { explosionDamageTo } from '../game/Explosion';
 import { damageAfterArmor, damageAfterProtection, smashBonus } from '../game/combat';
 import { ANCHOR_POWER, CRYSTAL_POWER, attackCrystal, canPlaceCrystal, crosshairCrystal } from '../game/crystals';
@@ -67,7 +68,13 @@ type CrystalPlan =
   | { kind: 'mine'; x: number; y: number; z: number; timer: number; started: boolean; wait: number }
   /** Wall ourselves in: step to the middle of the block, then a block on each side. */
   | { kind: 'surround'; phase: 'center' | 'place'; timer: number; wait: number }
-  | { kind: 'pearl'; yaw: number; pitch: number; timer: number };
+  | { kind: 'pearl'; yaw: number; pitch: number; timer: number }
+  /**
+   * Cart combo: a rail on the ground by them (clicking the top of (x, y-1, z)), a TNT minecart on
+   * it, then a Flame arrow into it (drawn for `draw` ticks) — or just the arrow, at a cart that
+   * is already there.
+   */
+  | { kind: 'cart'; phase: 'rail' | 'cart' | 'shoot'; x: number; y: number; z: number; cart: TntCart | null; timer: number; wait: number; draw: number };
 
 /** An open inventory: a delay, then slot swaps (number key / F over a slot) one by one. */
 interface InvPlan {
@@ -203,8 +210,14 @@ export class BotBrain {
   /** This round it throws Strength and Speed on itself. */
   private buffs = true;
 
-  // ---- Crystal
+  // ---- 1.8
+  /** Ticks left holding right click with the sword (a block-hit, or a block while comboed). */
+  private blockTimer = 0;
+
+  // ---- Crystal (and Cart, which runs through the same plans)
   private crystalKit = false;
+  /** TNT minecarts, rails and a Flame bow. */
+  private cartKit = false;
   private cplan: CrystalPlan | null = null;
   private crystalCooldown = 0;
   private thinkTimer = 0;
@@ -226,7 +239,7 @@ export class BotBrain {
     if (this.uhcLabel) return this.uhcLabel;
     if (this.state === 'retreat') return 'Retreating';
     if (this.state === 'eat') return this.bot.usingItem ? 'Eating' : 'Healing';
-    if (this.bot.raisingShield()) return 'Blocking';
+    if (this.bot.raisingShield() || this.bot.swordBlocking()) return 'Blocking';
     if (this.ranged !== 'none') return this.ranged === 'loadCrossbow' ? 'Loading' : 'Aiming';
     return this.profile.passive ? 'Passive' : 'Fighting';
   }
@@ -267,7 +280,9 @@ export class BotBrain {
     this.potKit = b.countItem('splash_potion') > 0;
     // Low tiers mostly fight a pot round without Strength and Speed (see NethSkill.buffChance).
     this.buffs = !this.potKit || this.rng.chance(this.profile.neth.buffChance);
-    this.weapon = b.countItem('netherite_sword') > 0 ? 'netherite_sword' : 'diamond_sword';
+    // Its best melee weapon (custom kits may bring only an axe or a mace).
+    const melee: ItemId[] = ['netherite_sword', 'diamond_sword', 'netherite_axe', 'diamond_axe', 'mace'];
+    this.weapon = melee.find((id) => b.countItem(id) > 0) ?? 'diamond_sword';
     this.comboStyle = this.potKit && b.countItem('totem_of_undying') === 0;
     this.runTimer = 0;
     this.eatId = null;
@@ -287,6 +302,7 @@ export class BotBrain {
     this.uhcLabel = '';
     this.selfHelpCooldown = 0;
     this.crystalKit = b.countItem('end_crystal') > 0;
+    this.cartKit = b.countItem('tnt_minecart') > 0 && b.countItem('rail') > 0;
     this.maceKit = b.countItem('mace') > 0;
     this.glide = null;
     this.launchCooldown = 40;
@@ -301,6 +317,7 @@ export class BotBrain {
     this.crystalCooldown = 0;
     this.thinkTimer = 0;
     this.surroundCooldown = 0;
+    this.blockTimer = 0;
   }
 
   tick() {
@@ -338,7 +355,7 @@ export class BotBrain {
       b.input = input;
       return;
     }
-    if (this.crystalKit) {
+    if (this.crystalKit || this.cartKit) {
       this.potLabel = '';
       this.crystalStep(per, dist, trueDist, justHurt, input);
       this.avoidLava(input);
@@ -358,6 +375,14 @@ export class BotBrain {
     if (this.potKit) {
       this.potLabel = '';
       this.engagePot(per, dist, trueDist, justHurt, input);
+      b.input = input;
+      return;
+    }
+    if (this.world.legacyCombat && !this.uhcKit) {
+      this.updateState(trueDist);
+      if (this.state === 'engage') this.legacyEngage(per, dist, justHurt, input);
+      else if (this.state === 'retreat') this.retreat(per, trueDist, input);
+      else this.eat(per, trueDist, input);
       b.input = input;
       return;
     }
@@ -628,6 +653,96 @@ export class BotBrain {
         if (r.sprint && rng.chance(P.wtapChance)) {
           this.wtapTimer = rng.int(P.wtapTicks[0], P.wtapTicks[1]);
           this.stapNow = rng.chance(P.stapChance);
+        }
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ 1.8 combat
+
+  /**
+   * 1.8 sword fighting: no cooldown, so it clicks at its CPS whenever you are in reach and lets
+   * hurt immunity decide which clicks count. After a sprint hit it resets its sprint so the next
+   * hit knocks you back again — a W-tap, an S-tap or a block-hit — and it jump-resets your hits.
+   */
+  private legacyEngage(per: Perceived, dist: number, justHurt: boolean, input: MoveInput) {
+    const b = this.bot;
+    const T = this.target;
+    const P = this.profile;
+    const L = P.legacy;
+    const rng = this.rng;
+    this.equip(this.weapon);
+    this.aimAt(per.x, per.y + (per.onGround ? 1.3 : 0.9), per.z);
+
+    if (--this.strafeTimer <= 0) {
+      this.strafeDir = rng.chance(P.strafeChance) ? (rng.chance(0.5) ? 1 : -1) : 0;
+      this.strafeTimer = rng.int(P.strafeSwitch[0], P.strafeSwitch[1]);
+    }
+    let strafe = this.strafeDir;
+    if (this.world.wallDistance(b.pos.x, b.pos.z) < 3) strafe = this.roomySide();
+    input.forward = 1;
+    input.sprint = true;
+    input.strafe = dist < 5 ? strafe : 0;
+
+    // Right click held: a block-hit (a few ticks) or blocking while it is being comboed.
+    if (this.blockTimer > 0) {
+      this.blockTimer--;
+      if (!b.usingItem) b.startUsingItem(true);
+      if (this.blockTimer === 0) b.releaseUsingItem();
+      if (justHurt && b.onGround && rng.chance(P.jumpResetChance)) input.jump = true;
+      return; // no attacking while the sword is up
+    }
+    if (b.usingItem) b.releaseUsingItem();
+
+    // Don't run into them: inside a block and a half its (delayed) aim can't keep up, and letting
+    // go of W there is a free sprint reset. Better players hold the edge of their reach.
+    if (dist < 1.6 || (dist < P.spacing && rng.chance(P.spacingDiscipline))) input.forward = 0;
+    if (this.wtapTimer > 0) {
+      this.wtapTimer--;
+      input.forward = this.stapNow ? -1 : 0;
+    }
+    if (this.escapeTimer > 0) {
+      this.escapeTimer--;
+      if (P.comboEscape === 'shold' && this.escapeTimer > 8) {
+        input.forward = -1;
+        input.sprint = false;
+      }
+      if (!input.strafe) input.strafe = strafe || (rng.chance(0.5) ? 1 : -1);
+    }
+    if (P.chaseSprintJump && b.sprinting && b.onGround && dist > 5.5) input.jump = true;
+
+    const jr = this.escapeTimer > 0 && P.comboEscape === 'jumpreset' ? Math.min(1, P.jumpResetChance + 0.3) : P.jumpResetChance;
+    if (justHurt && b.onGround && rng.chance(jr)) {
+      input.jump = true;
+      input.forward = 1;
+      input.sprint = true;
+    }
+    if (P.passive) return;
+
+    // Out of reach while being hit: put the sword up for a moment to halve the next one.
+    if (justHurt && L.blockOnHurt > 0 && dist > this.maxReach && rng.chance(L.blockOnHurt)) {
+      this.blockTimer = rng.int(L.blockTicks[0], L.blockTicks[1]) + 2;
+      return;
+    }
+    // Jump crits (sprinting doesn't stop a 1.8 crit), now and then when close.
+    if (--this.critCheckTimer <= 0) {
+      this.critCheckTimer = 16;
+      if (dist < 3.2 && b.onGround && rng.chance(P.critChance * 0.5)) input.jump = true;
+    }
+
+    const reach = rayDistanceToTarget(b, T);
+    const inReach = reach >= 0 && reach <= this.maxReach;
+    if ((inReach || dist < 4) && rng.chance(Math.min(1, L.cps / 20))) {
+      const r = this.doAttack();
+      if (r.hit) {
+        this.hitsTaken = 0;
+        this.escapeTimer = 0;
+        if (r.sprint && rng.chance(P.wtapChance)) {
+          if (rng.chance(L.blockHit)) this.blockTimer = rng.int(L.blockTicks[0], L.blockTicks[1]);
+          else {
+            this.wtapTimer = rng.int(P.wtapTicks[0], P.wtapTicks[1]);
+            this.stapNow = rng.chance(P.stapChance);
+          }
         }
       }
     }
@@ -1079,7 +1194,7 @@ export class BotBrain {
     const burns = (theirSword?.ench?.fireAspect ?? 0) > 0 || b.onFire;
     if (buffOk && burns && low('fire_resistance') && has('fire_resistance')) return { what: 'fire_resistance', left: 1 };
     if (buffOk && this.buffs && !this.profile.passive && low('strength') && has('strength')) return { what: 'strength', left: 1 };
-    if (buffOk && this.buffs && low('speed') && has('swiftness')) return { what: 'swiftness', left: 1 };
+    if (buffOk && this.buffs && low('speed') && (has('swiftness') || has('long_swiftness'))) return { what: has('swiftness') ? 'swiftness' : 'long_swiftness', left: 1 };
     if (buffOk && low('regeneration') && has('regeneration')) return { what: 'regeneration', left: 1 };
     // Mending: in bursts whenever a knockback opens a gap.
     if (N.mendAt > 0 && trueDist > 4.5 && b.countItem('experience_bottle') > 0) {
@@ -1193,7 +1308,7 @@ export class BotBrain {
     if (heals >= 2) for (let i = 8; i >= 0; i--) if (b.inventory[i]?.potion === 'healing') return i;
     for (let i = 8; i >= 0; i--) {
       const p = b.inventory[i]?.potion;
-      if (p && p !== 'healing' && b.effects.has(p === 'swiftness' ? 'speed' : p)) return i;
+      if (p && p !== 'healing' && b.effects.has(POTIONS[p].effect)) return i;
     }
     for (let i = 8; i >= 0; i--) if (b.inventory[i]?.id === 'splash_potion') return i;
     // The Crystal and Mace hotbars are full: a utility slot takes turns.
@@ -1361,6 +1476,7 @@ export class BotBrain {
     };
     want('splash_potion', 'strength');
     want('splash_potion', 'swiftness');
+    want('splash_potion', 'long_swiftness');
     want('splash_potion', 'fire_resistance');
     want('golden_apple');
     want('ender_pearl');
@@ -1797,7 +1913,7 @@ export class BotBrain {
     // A new combo.
     if (!P.passive && this.crystalCooldown === 0 && --this.thinkTimer <= 0) {
       this.thinkTimer = K.thinkTicks;
-      const plan = this.pickCrystalPlan(per);
+      const plan = this.cartKit && !this.crystalKit ? this.pickCartPlan(per) : this.pickCrystalPlan(per);
       if (plan) {
         this.cplan = plan;
         this.settle = 0;
@@ -1811,6 +1927,150 @@ export class BotBrain {
       input.forward = input.strafe = 0;
       input.jump = false;
     } else if (b.horizontalCollision && b.onGround) input.jump = true; // out of craters (and surrounds)
+  }
+
+  // ------------------------------------------------------------ Cart
+
+  /** The blast we plan around: power 4 plus about half of the arrow's bonus. */
+  private static readonly CART_POWER = CART_BASE_POWER + 1.5;
+
+  /** Ticks we draw the bow for a cart shot: a quick flick low down the ladder, fuller higher up. */
+  private cartDraw(): number {
+    const K = this.profile.crystal;
+    return Math.max(4, 14 - K.comboGap / 3 - (K.anchors ? 2 : 0));
+  }
+
+  /**
+   * A cart combo worth doing: shoot a cart already by them, or rail + cart on the best open
+   * floor cell next to them (their own cell when we can see its floor past their legs).
+   */
+  private pickCartPlan(per: Perceived): CrystalPlan | null {
+    const b = this.bot;
+    const blocks = this.world.blocks;
+    const canShoot = b.countItem('bow') > 0 && b.hasAmmo();
+    if (!canShoot) return null;
+    const power = BotBrain.CART_POWER;
+    // A cart already there (ours or theirs) that hurts them more than us.
+    let bestCart: TntCart | null = null;
+    let bestScore = 0;
+    for (const c of this.world.carts) {
+      if (c.removed) continue;
+      const d = Math.hypot(c.pos.x - b.pos.x, c.pos.z - b.pos.z);
+      if (d > 16) continue;
+      const sc = this.blastScore(c.pos.x, c.pos.y + 0.35, c.pos.z, power, per);
+      if (sc !== null && sc > bestScore) {
+        bestScore = sc;
+        bestCart = c;
+      }
+    }
+    if (bestCart) return { kind: 'cart', phase: 'shoot', x: 0, y: 0, z: 0, cart: bestCart, timer: 0, wait: 0, draw: this.cartDraw() };
+    if (b.countItem('tnt_minecart') === 0 || b.countItem('rail') === 0) return null;
+    const tx = Math.floor(per.x);
+    const ty = Math.floor(per.y + 0.01);
+    const tz = Math.floor(per.z);
+    let best: [number, number, number] | null = null;
+    let bestS = -Infinity;
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++) {
+        const x = tx + dx;
+        const z = tz + dz;
+        for (const y of [ty, ty - 1]) {
+          const id = blocks.get(x, y, z);
+          if (id !== B.AIR && id !== B.RAIL) continue;
+          if (!isSolidBlock(blocks.get(x, y - 1, z))) continue;
+          if (id === B.AIR && !this.facePoint(x, y - 1, z, 0, 1, 0)) continue;
+          if (id === B.RAIL && !canPlaceCart(this.world, x, y, z)) continue;
+          const sc = this.blastScore(x + 0.5, y + 0.35, z + 0.5, power, per);
+          if (sc === null) continue;
+          const s = sc - 0.5 * Math.hypot(dx, dz);
+          if (s > bestS) {
+            bestS = s;
+            best = [x, y, z];
+          }
+          break;
+        }
+      }
+    if (!best) return null;
+    const onRail = blocks.get(best[0], best[1], best[2]) === B.RAIL;
+    return { kind: 'cart', phase: onRail ? 'cart' : 'rail', x: best[0], y: best[1], z: best[2], cart: null, timer: 0, wait: 0, draw: this.cartDraw() };
+  }
+
+  /** One tick of a cart combo. */
+  private runCart(plan: CrystalPlan & { kind: 'cart' }, per: Perceived, dist: number, input: MoveInput, end: (ok: boolean) => false): boolean {
+    const b = this.bot;
+    const K = this.profile.crystal;
+    const blocks = this.world.blocks;
+    this.potLabel = 'Cart';
+    if (plan.wait > 0) plan.wait--;
+    if (plan.phase === 'rail') {
+      if (plan.timer > 20 || !this.equip('rail')) return end(false);
+      if (blocks.get(plan.x, plan.y, plan.z) === B.RAIL) {
+        plan.phase = 'cart';
+        plan.timer = 0;
+        plan.wait = K.clickGap;
+        this.settle = 0;
+        return true;
+      }
+      if (blocks.get(plan.x, plan.y, plan.z) !== B.AIR) return end(false);
+      this.crystalMove(dist, input);
+      const p = this.facePoint(plan.x, plan.y - 1, plan.z, 0, 1, 0);
+      if (!p) return plan.timer > 6 ? end(false) : true;
+      this.aimPoint(p[0], p[1], p[2]);
+      if (plan.wait > 0 || this.settle < K.aimSettle) return true;
+      const hit = b.crosshairBlock(b.blockReach(), true);
+      if (hit && hit.x === plan.x && hit.y === plan.y - 1 && hit.z === plan.z && hit.ny === 1) b.startUsingItem(true);
+      return true;
+    }
+    if (plan.phase === 'cart') {
+      if (plan.timer > 20 || blocks.get(plan.x, plan.y, plan.z) !== B.RAIL || !this.equip('tnt_minecart')) return end(false);
+      this.crystalMove(dist, input);
+      this.aimPoint(plan.x + 0.5, plan.y + 0.06, plan.z + 0.5);
+      if (plan.wait > 0 || this.settle < K.aimSettle) return true;
+      const hit = b.crosshairBlock(b.blockReach(), true);
+      if (hit && hit.x === plan.x && hit.y === plan.y && hit.z === plan.z) {
+        const n = this.world.carts.length;
+        if (b.startUsingItem(true) && this.world.carts.length > n) {
+          plan.cart = this.world.carts[this.world.carts.length - 1];
+          plan.phase = 'shoot';
+          plan.timer = 0;
+          plan.wait = K.clickGap;
+          this.settle = 0;
+        }
+      }
+      return true;
+    }
+    // Shoot: back off while drawing, then loose the burning arrow into the cart.
+    const c = plan.cart;
+    if (!c || c.removed) return end(true);
+    if (plan.timer > 40 || !this.equip('bow') || !b.hasAmmo()) {
+      if (b.usingItem) b.stopUsingItem();
+      return end(false);
+    }
+    const cd = Math.hypot(c.pos.x - b.pos.x, c.pos.z - b.pos.z);
+    input.forward = cd < 4.5 ? -1 : 0;
+    input.sprint = false;
+    input.strafe = this.world.wallDistance(b.pos.x, b.pos.z) < 3 ? this.roomySide() : this.strafeDir;
+    // Aim a touch above the cart's middle; the arrow falls a little on the way.
+    const drop = cd * cd * 0.004;
+    this.aimPoint(c.pos.x, c.pos.y + 0.35 + drop, c.pos.z);
+    if (plan.wait > 0) return true;
+    if (!b.usingItem) {
+      b.startUsingItem(true);
+      return true;
+    }
+    const drawn = b.useTicks();
+    const ready = drawn >= plan.draw && this.settle >= K.aimSettle;
+    if (ready) {
+      // Not while it would take our last life with it.
+      const sc = this.blastScore(c.pos.x, c.pos.y + 0.35, c.pos.z, BotBrain.CART_POWER, per);
+      if (sc === null && plan.timer < 30) return true;
+      b.releaseUsingItem();
+      plan.phase = 'shoot';
+      plan.cart = c;
+      // Give the arrow a moment; if it missed, the next plan shoots again.
+      return end(true);
+    }
+    return true;
   }
 
   /** A loaded crossbow and them out of crystal range, or time to load it while they are far. */
@@ -1905,7 +2165,9 @@ export class BotBrain {
     const b = this.bot;
     const moves = this.restockMoves(0);
     const taken = new Set(moves.map((m) => m[1]));
-    const essentials: ItemId[] = [this.weapon, 'end_crystal', 'obsidian', 'golden_apple', 'totem_of_undying', 'ender_pearl'];
+    const essentials: ItemId[] = this.cartKit
+      ? [this.weapon, 'tnt_minecart', 'rail', 'bow', 'golden_apple', 'totem_of_undying', 'ender_pearl']
+      : [this.weapon, 'end_crystal', 'obsidian', 'golden_apple', 'totem_of_undying', 'ender_pearl'];
     const K = this.profile.crystal;
     if (K.anchors) essentials.push('respawn_anchor', 'glowstone');
     if (K.crossbow) essentials.push('crossbow');
@@ -2154,7 +2416,8 @@ export class BotBrain {
       if (b.mining) b.tickMining(false, false);
       return false;
     };
-    if (b.usingItem) b.stopUsingItem();
+    // A bow being drawn for a cart shot stays drawn; anything else in use is dropped.
+    if (b.usingItem && !(plan.kind === 'cart' && plan.phase === 'shoot' && b.useKind() === 'bow')) b.stopUsingItem();
     this.eating = false;
 
     if (plan.kind === 'pearl') {
@@ -2171,6 +2434,7 @@ export class BotBrain {
     }
 
     if (plan.kind === 'surround') return this.runSurround(plan, input, end);
+    if (plan.kind === 'cart') return this.runCart(plan, per, dist, input, end);
 
     this.crystalMove(dist, input);
     if ('wait' in plan && plan.wait > 0) plan.wait--;

@@ -12,10 +12,19 @@ export interface ArmorStats {
   knockbackResistance: number;
   /** explosion_knockback_resistance: Blast Protection adds 0.15 per level, stacking (1.21). */
   explosionKnockbackResistance: number;
+  /**
+   * 1.8 EPFs (EnchantmentProtection.calcModifierDamage): floor((6 + level²) × type / 3) per piece,
+   * type 0.75 for Protection, 1.5 for Blast Protection (explosions), 2.5 for Feather Falling.
+   */
+  legacyEpf: number;
+  legacyBlastEpf: number;
+  legacyFallEpf: number;
 }
 
-export type KitId = 'sword' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace';
-export type KitIcon = 'sword' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace';
+export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'cart' | 'dia_smp';
+/** Built-in kits, and kits players made in the kit editor (`custom:<id>`). */
+export type KitId = BuiltinKitId | `custom:${string}`;
+export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp';
 
 /** Everything a fighter spawns with. */
 export interface Loadout {
@@ -52,11 +61,31 @@ export interface KitDef extends Loadout {
    * fight. Saturation still runs down, so natural regeneration slows to vanilla's 1 HP / 4 s.
    */
   noHunger?: boolean;
+  /**
+   * 1.8 combat: no attack cooldown (every click is a full hit), 1.8 damage, Sharpness, crits,
+   * armor and Protection, sword blocking instead of shields, and 1.8 knockback and hitboxes.
+   */
+  legacyCombat?: boolean;
+  /** Made in the kit editor. */
+  custom?: boolean;
+  /** A subtier (Cart, Diamond SMP): listed on the Subtiers page instead of the title screen. */
+  subtier?: boolean;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
 export function armorStatsOf(pieces: readonly (ItemStack | null)[]): ArmorStats {
-  const out: ArmorStats = { points: 0, toughness: 0, protectionEpf: 0, blastEpf: 0, fallEpf: 0, knockbackResistance: 0, explosionKnockbackResistance: 0 };
+  const out: ArmorStats = {
+    points: 0,
+    toughness: 0,
+    protectionEpf: 0,
+    blastEpf: 0,
+    fallEpf: 0,
+    knockbackResistance: 0,
+    explosionKnockbackResistance: 0,
+    legacyEpf: 0,
+    legacyBlastEpf: 0,
+    legacyFallEpf: 0,
+  };
   for (const s of pieces) {
     const a = s ? ITEMS[s.id].armor : undefined;
     if (!s || !a) continue;
@@ -67,8 +96,15 @@ export function armorStatsOf(pieces: readonly (ItemStack | null)[]): ArmorStats 
     out.blastEpf += 2 * (s.ench?.blastProtection ?? 0);
     out.fallEpf += 3 * (s.ench?.featherFalling ?? 0);
     out.explosionKnockbackResistance += 0.15 * (s.ench?.blastProtection ?? 0);
+    out.legacyEpf += legacyEpf(s.ench?.protection ?? 0, 0.75);
+    out.legacyBlastEpf += legacyEpf(s.ench?.blastProtection ?? 0, 1.5);
+    out.legacyFallEpf += legacyEpf(s.ench?.featherFalling ?? 0, 2.5);
   }
   return out;
+}
+
+function legacyEpf(level: number, type: number): number {
+  return level > 0 ? Math.floor(((6 + level * level) * type) / 3) : 0;
 }
 
 function diamondArmor(protection: number): (ItemStack | null)[] {
@@ -306,6 +342,89 @@ function crystalLoadout(): Loadout {
   return { hotbar, main, armor, offhand: totem() };
 }
 
+/**
+ * The Diamond SMP subtier: diamond gear with a shield, webs, water, pearls, chorus fruit, one
+ * totem and splash buffs. Shield in the off hand; every other slot is filled.
+ */
+function diamondSmpLoadout(): Loadout {
+  const keep = { unbreaking: 3, mending: 1 };
+  const armor: ItemStack[] = [
+    { id: 'diamond_helmet', count: 1, ench: { protection: 4, ...keep } },
+    { id: 'diamond_chestplate', count: 1, ench: { protection: 4, ...keep } },
+    { id: 'diamond_leggings', count: 1, ench: { protection: 4, swiftSneak: 3, ...keep } },
+    { id: 'diamond_boots', count: 1, ench: { protection: 4, featherFalling: 4, depthStrider: 3, ...keep } },
+  ];
+  const S = () => pot('strength');
+  const hotbar: ItemStack[] = [
+    { id: 'diamond_sword', count: 1, ench: { sharpness: 5, fireAspect: 2, unbreaking: 3 } },
+    { id: 'diamond_axe', count: 1, ench: { sharpness: 5, unbreaking: 3 } },
+    { id: 'golden_apple', count: 64 },
+    { id: 'ender_pearl', count: 12 },
+    { id: 'water_bucket', count: 1 },
+    { id: 'cobweb', count: 48 },
+    S(),
+    pot('long_swiftness'),
+    { id: 'totem_of_undying', count: 1 },
+  ];
+  const main: ItemStack[] = [
+    { id: 'golden_apple', count: 64 },
+    { id: 'netherite_pickaxe', count: 1, ench: { efficiency: 5, silkTouch: 1, ...keep } },
+    { id: 'oak_log', count: 64 },
+    { id: 'water_bucket', count: 1 },
+    { id: 'water_bucket', count: 1 },
+    { id: 'water_bucket', count: 1 },
+    { id: 'experience_bottle', count: 64 },
+    { id: 'chorus_fruit', count: 3 },
+    pot('fire_resistance'),
+    ...Array.from({ length: 9 }, S),
+    S(),
+    S(),
+    S(),
+    S(),
+    S(),
+    pot('long_swiftness'),
+    pot('long_swiftness'),
+    pot('fire_resistance'),
+    pot('fire_resistance'),
+  ];
+  return { hotbar, main, armor, offhand: { id: 'shield', count: 1, ench: { ...keep } } };
+}
+
+/**
+ * The Cart subtier, laid out as in the reference inventory: sword, axe, gapples, webs, a TNT
+ * minecart, the Flame bow, pearls and rails in the hotbar; totems, eight more carts, Strength,
+ * Speed, arrows, flint and steel and more gapples in the inventory; a totem in the off hand.
+ */
+function cartLoadout(): Loadout {
+  const keep = { unbreaking: 3, mending: 1 };
+  const armor = (['netherite_helmet', 'netherite_chestplate', 'netherite_leggings', 'netherite_boots'] as const).map((id) => ({
+    id,
+    count: 1,
+    ench: { protection: 4, ...keep },
+  }));
+  const T = (): ItemStack => ({ id: 'totem_of_undying', count: 1 });
+  const cart = (): ItemStack => ({ id: 'tnt_minecart', count: 1 });
+  const S = () => pot('strength');
+  const hotbar: (ItemStack | null)[] = [
+    { id: 'netherite_sword', count: 1, ench: { sharpness: 5, ...keep } },
+    { id: 'netherite_axe', count: 1, ench: { sharpness: 5, ...keep } },
+    { id: 'golden_apple', count: 55 },
+    { id: 'cobweb', count: 64 },
+    cart(),
+    { id: 'bow', count: 1, ench: { power: 5, flame: 1, unbreaking: 3 } },
+    null,
+    { id: 'ender_pearl', count: 16 },
+    { id: 'rail', count: 64 },
+  ];
+  const main: (ItemStack | null)[] = [
+    T(), T(), cart(), cart(), cart(), cart(), S(), S(), T(),
+    T(), T(), cart(), cart(), cart(), cart(), S(), S(), T(),
+    null, null, { id: 'arrow', count: 64 }, { id: 'flint_and_steel', count: 1, ench: { unbreaking: 3 } },
+    { id: 'golden_apple', count: 64 }, { id: 'golden_apple', count: 64 }, pot('swiftness'), S(), T(),
+  ];
+  return { hotbar, main, armor, offhand: T() };
+}
+
 export const KITS: KitDef[] = [
   {
     id: 'sword',
@@ -319,6 +438,25 @@ export const KITS: KitDef[] = [
     offhand: null,
     armorLabel: 'Diamond · Prot IV',
     noHunger: true,
+  },
+  {
+    id: 'sword18',
+    name: '1.8 Sword',
+    icon: 'sword18',
+    available: true,
+    summary: 'Old combat: no cooldown, click fast, block-hit, W-tap and S-tap to keep your combo.',
+    contents: [
+      'Diamond Sword — Sharpness V (right click to block)',
+      'Full Diamond Armor — Protection IV',
+      '1.8 rules: no attack cooldown, sprint crits, 1.8 knockback',
+      'Hunger off: you can always sprint',
+    ],
+    hotbar: [{ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }],
+    armor: diamondArmor(4),
+    offhand: null,
+    armorLabel: 'Diamond · Prot IV',
+    noHunger: true,
+    legacyCombat: true,
   },
   {
     id: 'axe',
@@ -443,8 +581,59 @@ export const KITS: KitDef[] = [
     ...maceLoadout(),
     armorLabel: 'Netherite · Prot IV',
   },
+  {
+    id: 'cart',
+    name: 'Cart',
+    icon: 'cart',
+    available: true,
+    subtier: true,
+    summary: 'TNT minecart PvP: rail, cart, then a Flame arrow into it — or fire and a cold arrow through it.',
+    contents: [
+      'Netherite Armor — Prot IV, Unbreaking III, Mending',
+      'Netherite Sword & Axe — Sharp V · Bow — Power V, Flame · 64× Arrow',
+      '9× Minecart with TNT · 64× Rail · Flint and Steel · 64× Cobweb',
+      '8× Totem (one in the off hand) · 183× Golden Apple · 16× Ender Pearl',
+      '5× Strength II · 1× Speed II (splash) · diggable ground',
+    ],
+    ...cartLoadout(),
+    armorLabel: 'Netherite · Prot IV',
+    floorDepth: 4,
+  },
+  {
+    id: 'dia_smp',
+    name: 'Diamond SMP',
+    icon: 'dia_smp',
+    available: true,
+    subtier: true,
+    summary: 'SMP in diamond: shield and axe, webs, water, pearls, chorus fruit and one totem.',
+    contents: [
+      'Diamond Sword — Sharp V, Fire Aspect II, Unbreaking III · Diamond Axe — Sharp V, Unbreaking III',
+      'Shield — Unbreaking III, Mending · Netherite Pickaxe — Silk Touch, Efficiency V, Unbreaking III, Mending',
+      'Diamond Armor — Prot IV, Unbreaking III, Mending (boots Feather Falling IV + Depth Strider III, leggings Swift Sneak III)',
+      '128× Golden Apple · 64× Oak Log · 48× Cobweb · 4× Water Bucket · 64× XP · 12× Ender Pearl · 3× Chorus Fruit · 1× Totem',
+      '15× Strength II · 3× Speed I (8:00) · 3× Fire Resistance (8:00), all splash',
+    ],
+    ...diamondSmpLoadout(),
+    armorLabel: 'Diamond · Prot IV',
+  },
 ];
 
+/** Kits made in the kit editor, registered by the UI when they are loaded or saved. */
+const customKits = new Map<string, KitDef>();
+
+export function registerCustomKits(kits: readonly KitDef[]) {
+  customKits.clear();
+  for (const k of kits) customKits.set(k.id, k);
+}
+
+export function customKitList(): KitDef[] {
+  return [...customKits.values()];
+}
+
+export function isCustomKit(id: string): id is `custom:${string}` {
+  return id.startsWith('custom:');
+}
+
 export function kitById(id: KitId): KitDef {
-  return KITS.find((k) => k.id === id) ?? KITS[0];
+  return KITS.find((k) => k.id === id) ?? customKits.get(id) ?? KITS[0];
 }

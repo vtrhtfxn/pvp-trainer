@@ -1,5 +1,6 @@
 import { PLAYER_WIDTH } from '../core/constants';
 import { Rng } from '../core/rng';
+import type { TntCart } from './TntCart';
 import { Arrow } from './Arrow';
 import { Blocks, isSolid, type CollideResult } from './Blocks';
 import type { DroppedItem } from './DroppedItem';
@@ -20,7 +21,10 @@ export type WorldEvent =
   | { type: 'wind'; x: number; y: number; z: number; power: number }
   | { type: 'crystalPlace'; x: number; y: number; z: number }
   | { type: 'anchorCharge'; x: number; y: number; z: number; charge: number }
-  | { type: 'pearl'; x: number; y: number; z: number };
+  | { type: 'pearl'; x: number; y: number; z: number }
+  | { type: 'cartPlace'; x: number; y: number; z: number }
+  | { type: 'cartPrimed'; x: number; y: number; z: number }
+  | { type: 'cartBreak'; x: number; y: number; z: number };
 
 /**
  * The game rules /gamerule can change that mean something in a duel (vanilla names). Everything
@@ -74,6 +78,7 @@ export class World {
   orbs: XpOrb[] = [];
   items: DroppedItem[] = [];
   crystals: EndCrystal[] = [];
+  carts: TntCart[] = [];
   readonly blocks: Blocks;
   /** Drained by the game each frame; capped so headless simulations never grow it forever. */
   events: WorldEvent[] = [];
@@ -82,6 +87,8 @@ export class World {
   damageMultiplier = 1;
   /** mcpvp.club "stuns": an axe disabling a shield clears the defender's hurt immunity. */
   shieldStuns = false;
+  /** 1.8 combat rules (the 1.8 Sword kit): see KitDef.legacyCombat. */
+  legacyCombat = false;
   rules: GameRules = defaultGameRules();
   /** Level.dayTime in ticks: 0 sunrise, 6000 noon, 13000 dusk, 18000 midnight (24000 a day). */
   dayTime = 6000;
@@ -167,6 +174,11 @@ export class World {
       for (const c of this.crystals) c.age++;
       this.crystals = this.crystals.filter((c) => !c.removed);
     }
+    if (this.carts.length) {
+      // Index loop: a cart's blast can light (not add) others.
+      for (let i = 0; i < this.carts.length; i++) if (!this.carts[i].removed) this.carts[i].tick(this);
+      this.carts = this.carts.filter((c) => !c.removed);
+    }
     if (this.arrows.length) {
       for (const a of this.arrows) a.tick(this);
       this.arrows = this.arrows.filter((a) => !a.removed);
@@ -188,6 +200,7 @@ export class World {
     this.orbs.length = 0;
     this.items.length = 0;
     this.crystals.length = 0;
+    this.carts.length = 0;
     this.events.length = 0;
     this.blocks.clear();
   }

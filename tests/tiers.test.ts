@@ -6,7 +6,7 @@ import { Match } from '../src/game/Match';
 import { performAttack } from '../src/game/combat';
 import { kitById, type KitId } from '../src/game/kits';
 
-/** A duel between two tiers; a timeout goes to whoever is better off. */
+/** A duel between two tiers; a timeout goes to whoever dealt more damage. */
 function duel(kit: KitId, bot: TierId, player: TierId, seed: number): 'bot' | 'player' {
   const m = new Match(kitById(kit), DIFFICULTIES[bot], seed);
   const pb = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES[player], new Rng(seed + 99), () => performAttack(m.player, m.bot));
@@ -22,8 +22,9 @@ function duel(kit: KitId, bot: TierId, player: TierId, seed: number): 'bot' | 'p
     m.bot.events.length = 0;
   }
   if (m.winner) return m.winner.id === 'bot' ? 'bot' : 'player';
-  const score = (f: typeof m.bot) => f.effectiveHealth() + 20 * f.countItem('totem_of_undying');
-  return score(m.bot) >= score(m.player) ? 'bot' : 'player';
+  // Long sustain kits (SMP, Diamond SMP, Cart) often go the distance; a health snapshot at the
+  // bell is a coin flip, the damage each side managed over four minutes is not.
+  return m.bot.stats.damageDealt >= m.player.stats.damageDealt ? 'bot' : 'player';
 }
 
 describe('tier ladder', () => {
@@ -80,7 +81,7 @@ describe('tier ladder', () => {
 
   // The low steps are small on purpose, so a single step can go either way between two bots:
   // a few tiers up must win.
-  const kits: KitId[] = ['sword', 'axe', 'neth_pot', 'diamond_pot', 'uhc', 'crystal', 'smp', 'mace'];
+  const kits: KitId[] = ['sword', 'sword18', 'axe', 'neth_pot', 'diamond_pot', 'uhc', 'crystal', 'smp', 'mace', 'cart', 'dia_smp'];
   for (const kit of kits) {
     it(`${kit}: a few tiers up wins`, () => {
       for (const [lo, hi] of [

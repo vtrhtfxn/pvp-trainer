@@ -162,7 +162,8 @@ export function loadSettings(): Settings {
         if (typeof s[k] !== typeof DEFAULT_SETTINGS[k]) (s as unknown as Record<string, unknown>)[k] = DEFAULT_SETTINGS[k];
       }
       s.firstTo = clampFirstTo(s.firstTo);
-      if (!KITS.some((kit) => kit.id === s.kit)) s.kit = DEFAULT_SETTINGS.kit;
+      // Custom kits are checked again once they have loaded (Game drops one that is gone).
+      if (!KITS.some((kit) => kit.id === s.kit) && !/^custom:[a-z0-9]{1,16}$/.test(s.kit)) s.kit = DEFAULT_SETTINGS.kit;
       for (const k of ['versusA', 'versusB'] as const) if (!(s[k] in DIFFICULTIES) || s[k] === 'practice') s[k] = DEFAULT_SETTINGS[k];
       // Easy / Normal / Hard / Expert became tiers; anything unknown falls back to the default.
       if (!(s.difficulty in DIFFICULTIES)) s.difficulty = LEGACY_DIFFICULTY[s.difficulty] ?? DEFAULT_SETTINGS.difficulty;

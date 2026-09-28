@@ -61,7 +61,8 @@ export function isTier(id: DifficultyId): id is TierId {
 
 /** Winning a series against a tier bot earns that tier in that kit, if it beats the one you have. */
 export function awardTier(tiers: MyTiers, kit: KitId, tier: DifficultyId): boolean {
-  if (!isTier(tier)) return false;
+  // A kit you made yourself can be made as easy as you like, so it earns no tier.
+  if (!isTier(tier) || kit.startsWith('custom:')) return false;
   const cur = tiers[kit];
   if (cur && TIER_POINTS[cur] >= TIER_POINTS[tier]) return false;
   tiers[kit] = tier;
@@ -82,7 +83,7 @@ export function loadMyTiers(): MyTiers {
     if (raw) {
       const out: MyTiers = {};
       for (const [k, v] of Object.entries(JSON.parse(raw) as Record<string, string>)) {
-        if (isTier(v as DifficultyId)) out[k as KitId] = v as TierId;
+        if (isTier(v as DifficultyId) && !k.startsWith('custom:')) out[k as KitId] = v as TierId;
       }
       return out;
     }

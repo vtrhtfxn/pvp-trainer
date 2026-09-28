@@ -2,7 +2,7 @@ import { BotBrain } from '../ai/BotBrain';
 import type { BotProfile } from '../ai/difficulty';
 import { Rng } from '../core/rng';
 import { performAttack, pushApart, rayDistanceToTarget, type AttackOutcome } from './combat';
-import { attackCrystal, crosshairCrystal } from './crystals';
+import { hitNearerEntity } from './crystals';
 import { Fighter } from './Fighter';
 import type { KitDef } from './kits';
 import { World } from './World';
@@ -58,13 +58,11 @@ export class Match {
     this.world.fighters.push(this.player, this.bot);
     this.world.damageMultiplier = kit.damageMultiplier ?? 1;
     this.world.shieldStuns = !!kit.shieldStuns;
+    this.world.legacyCombat = !!kit.legacyCombat;
     this.world.rng = new Rng(this.rng.int(0, 2 ** 30));
     this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () => {
       // Like the player's clicks: an end crystal nearer than the opponent takes the hit.
-      const cr = crosshairCrystal(this.bot);
-      const t = rayDistanceToTarget(this.bot, this.player);
-      if (cr && (t < 0 || cr.t < t)) {
-        attackCrystal(this.bot, cr.crystal);
+      if (hitNearerEntity(this.bot, rayDistanceToTarget(this.bot, this.player))) {
         return { hit: false, reach: -1, crit: false, sprint: false, scale: 1, damage: 0, blocked: false, disabled: false, swap: false };
       }
       return performAttack(this.bot, this.player);
@@ -199,12 +197,7 @@ export class Match {
         const onScreen = Number.isNaN(picked) ? undefined : picked;
         // The crosshair picks whatever is nearest: an end crystal in front of the opponent
         // gets hit (and blows up) instead of them.
-        const cr = crosshairCrystal(p);
-        const botT = onScreen ?? rayDistanceToTarget(p, this.bot);
-        if (cr && (botT < 0 || cr.t < botT)) {
-          attackCrystal(p, cr.crystal);
-          continue;
-        }
+        if (hitNearerEntity(p, onScreen ?? rayDistanceToTarget(p, this.bot))) continue;
         if (!mined && p.tickMining(true, true)) mined = true;
         else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot, onScreen);
       }
