@@ -293,6 +293,36 @@ in every kit.
 
 Old saved difficulties map onto the ladder (Easy → LT5, Normal → LT3, Hard → LT2, Expert → LT1).
 
+### Trainer
+
+**Trainer** on the title screen drills the real 1.9+ techniques, one at a time, against a scripted
+bot that sets each one up. Every attempt gets instant feedback (what went right, or exactly what went
+wrong: "too early — 63% charged", "jumped 1 tick early", "only 55% of the pot"), and your best result
+per drill is saved.
+
+| Group | Drills |
+| --- | --- |
+| Sword basics | Full-charge hits · Sprint hits (W-tap) · Jump crits · Spacing (S-tap) · Crit chain · Combo (vs HT4) · Aim tracking |
+| Defense | Jump reset (same-tick jump; shows the knockback you took) · P-crit (crit on the way down from their knockback) · Hit select (punish right after their swing) |
+| Axe & shield | Shield timing (raise ≥ 5 ticks before the hit) · Shield disable · Attribute swap (sword → axe on the click tick) · Disable → punish |
+| Pot | Potting (≥ 80% strength) · Re-totem (hotbar totem + F, under 1 s) |
+| Crystal | Crystal combo · Hit-crystal · Respawn anchor |
+| Mace | Wind charge smash |
+| UHC | Water bucket clutch |
+
+The technique list comes from Minecraft Wiki mechanics, PvP guides and tier-list communities; 1.8-only
+tricks (block-hitting) and macros are left out. Each drill's page explains the steps and the mechanic
+behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and checks it can be passed
+(and that the wrong technique is called out).
+
+### Bot vs Bot
+
+**Bot vs Bot** lets any tier fight any tier in any kit while you watch — round after round, with both
+health bars, the score and each bot's current plan on screen. `V` or `1`–`5` switch the camera (orbit,
+follow either bot, or through either bot's eyes), `[` `]` change the speed (¼× to 4×), `Space` pauses,
+`R` starts a new round and `Esc` leaves. A round with no kill after 3 minutes goes to whoever has more
+health (and totems) left.
+
 ### First to N and My Tiers
 
 **First to** (title screen, next to the tier picker) turns a duel into a series: you fight the same

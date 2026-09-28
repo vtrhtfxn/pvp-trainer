@@ -20,6 +20,8 @@ export class Match {
   readonly player: Fighter;
   readonly bot: Fighter;
   readonly brain: BotBrain;
+  /** Trainer drills: a scripted bot that runs instead of the bot brain (null = the brain). */
+  botDriver: (() => void) | null = null;
   readonly rng: Rng;
   phase: Phase = 'countdown';
   phaseTicks = 0;
@@ -130,7 +132,8 @@ export class Match {
     if (this.phase === 'fight') {
       this.fightTicks++;
       this.handlePlayerActions();
-      this.brain.tick();
+      if (this.botDriver) this.botDriver();
+      else this.brain.tick();
     } else {
       this.clearQueues();
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };

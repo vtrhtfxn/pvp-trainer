@@ -83,6 +83,9 @@ export interface Settings {
   difficulty: DifficultyId;
   /** Rounds to win against the bot ("first to"); 1 = a single duel. */
   firstTo: number;
+  /** Bot vs Bot: the two tiers last picked. */
+  versusA: DifficultyId;
+  versusB: DifficultyId;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -140,6 +143,8 @@ export const DEFAULT_SETTINGS: Settings = {
   kit: 'sword',
   difficulty: 'ht4',
   firstTo: 1,
+  versusA: 'lt1',
+  versusB: 'ht1',
 };
 
 const KEY = 'pvp-trainer.settings.v1';
@@ -158,6 +163,7 @@ export function loadSettings(): Settings {
       }
       s.firstTo = clampFirstTo(s.firstTo);
       if (!KITS.some((kit) => kit.id === s.kit)) s.kit = DEFAULT_SETTINGS.kit;
+      for (const k of ['versusA', 'versusB'] as const) if (!(s[k] in DIFFICULTIES) || s[k] === 'practice') s[k] = DEFAULT_SETTINGS[k];
       // Easy / Normal / Hard / Expert became tiers; anything unknown falls back to the default.
       if (!(s.difficulty in DIFFICULTIES)) s.difficulty = LEGACY_DIFFICULTY[s.difficulty] ?? DEFAULT_SETTINGS.difficulty;
       return s;

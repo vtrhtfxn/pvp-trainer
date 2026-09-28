@@ -5,9 +5,16 @@ import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Ac
 import type { Sprite } from './sprites';
 import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
 import { MAX_FIRST_TO, TIER_POINTS, clampFirstTo, totalPoints, type MyTiers } from '../game/series';
+import { DRILLS, DRILL_GROUPS, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 
 export interface MenuCallbacks {
   onStart(): void;
+  /** Bot vs Bot: watch tier `a` fight tier `b` in `kit`. */
+  onSpectate(kit: KitId, a: DifficultyId, b: DifficultyId): void;
+  /** Trainer: start a drill. */
+  onDrill(id: string): void;
+  /** Trainer: the best result of each drill. */
+  drillProgress(): Record<string, DrillBest>;
   onResume(): void;
   onRestart(): void;
   onQuit(): void;
@@ -33,7 +40,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers';
+type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer';
 
 export interface ResultData {
   won: boolean;
@@ -105,6 +112,8 @@ export class Menus {
       multiplayer: this.buildMultiplayer(),
       results: h('div', { class: 'screen results' }),
       tiers: h('div', { class: 'screen tiers' }),
+      versus: h('div', { class: 'screen versus' }),
+      trainer: h('div', { class: 'screen trainer' }),
     };
     for (const s of Object.values(this.screens)) {
       s.style.display = 'none';
@@ -130,6 +139,8 @@ export class Menus {
     this.screens[name].style.display = '';
     if (name === 'main') this.refreshMain();
     if (name === 'tiers') this.renderTiers();
+    if (name === 'versus') this.renderVersus();
+    if (name === 'trainer') this.renderTrainer();
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -230,7 +241,15 @@ export class Menus {
     );
 
     panel.append(this.button('Start Duel', () => this.cb.onStart(), 'big'));
-    panel.append(this.button('Multiplayer — fight a friend', () => this.show('multiplayer'), 'big online'));
+    panel.append(
+      h(
+        'div',
+        { class: 'btn-row three' },
+        this.button('Trainer', () => this.show('trainer'), 'trainer-btn'),
+        this.button('Bot vs Bot', () => this.show('versus')),
+        this.button('Multiplayer', () => this.show('multiplayer'), 'online'),
+      ),
+    );
     const market = this.button('Marketplace', () => {
       this.settingsReturn = 'main';
       this.cb.onMarketplace();
@@ -802,6 +821,138 @@ export class Menus {
     this.netRoomEl.textContent = room ? `Room code: ${room}` : '';
     this.netRoomEl.style.display = room ? '' : 'none';
     if (room && this.roomInput && !this.roomInput.value) this.roomInput.value = room;
+  }
+
+  // ------------------------------------------------------------------ Trainer
+
+  private trainerPick = DRILLS[0].id;
+
+  private renderTrainer() {
+    const root = this.screens.trainer;
+    root.replaceChildren();
+    const progress = this.cb.drillProgress();
+    const panel = h('div', { class: 'menu-panel trainer-panel' });
+    const passed = DRILLS.filter((d) => progress[d.id]?.passed).length;
+    panel.append(h('div', { class: 'screen-title' }, 'Trainer'));
+    panel.append(h('div', { class: 'tiers-sub' }, `Drill the real 1.9+ techniques against a bot that sets each one up. ${passed} / ${DRILLS.length} passed.`));
+    const cols = h('div', { class: 'trainer-cols' });
+    const list = h('div', { class: 'trainer-list' });
+    for (const group of DRILL_GROUPS) {
+      const drills = DRILLS.filter((d) => d.group === group);
+      if (!drills.length) continue;
+      list.append(h('div', { class: 'trainer-group' }, group));
+      for (const d of drills) {
+        const best = progress[d.id];
+        const b = this.button('', () => {
+          this.trainerPick = d.id;
+          this.renderTrainer();
+        }, `trainer-drill${this.trainerPick === d.id ? ' selected' : ''}`);
+        b.replaceChildren(h('span', {}, d.name), h('span', { class: best?.passed ? 'done' : '' }, best?.passed ? '✔' : '★'.repeat(d.level)));
+        list.append(b);
+      }
+    }
+    cols.append(list, this.drillDetail(DRILLS.find((d) => d.id === this.trainerPick) ?? DRILLS[0], progress));
+    panel.append(cols);
+    panel.append(this.button('Back', () => this.show('main')));
+    root.append(panel);
+  }
+
+  private drillDetail(d: DrillDef, progress: Record<string, DrillBest>): HTMLElement {
+    const box = h('div', { class: 'trainer-detail' });
+    const best = progress[d.id];
+    const goal = d.timeTicks ? `${d.goal}% over ${d.timeTicks / 20} s` : `${d.goal} successful attempts`;
+    box.append(h('h3', {}, d.name));
+    box.append(h('div', { class: 'trainer-meta' }, `${kitById(d.kit).name} kit · ${'★'.repeat(d.level)}${'☆'.repeat(3 - d.level)} · Goal: ${goal}`));
+    if (best) {
+      const bits = [best.passed ? 'Passed' : 'Not passed yet', `best ${Math.round(best.best)}%`];
+      if (best.fastest !== undefined) bits.push(`fastest ${best.fastest.toFixed(1)} s`);
+      box.append(h('div', { class: 'trainer-meta' }, bits.join(' · ')));
+    }
+    box.append(h('ol', {}, ...d.how.map((s) => h('li', {}, s))));
+    box.append(h('div', { class: 'trainer-why' }, h('b', {}, 'Why it works: '), d.why));
+    box.append(this.button('Start drill', () => this.cb.onDrill(d.id), 'big'));
+    return box;
+  }
+
+  showDrillResult(d: DrillDef, r: DrillResult, newBest: boolean, onRetry: () => void) {
+    const root = this.screens.results;
+    root.replaceChildren();
+    root.classList.toggle('won', r.passed);
+    root.classList.toggle('lost', !r.passed);
+    const panel = h('div', { class: 'menu-panel' });
+    panel.append(h('div', { class: 'result-title' }, r.passed ? 'Drill passed!' : 'Keep practising'));
+    panel.append(h('div', { class: 'result-sub' }, `${d.name} · ${kitById(d.kit).name} kit`));
+    const table = h('div', { class: 'stats-table' });
+    const rows: [string, string][] = r.score !== undefined
+      ? [['Score', `${Math.round(r.score)}% (goal ${d.goal}%)`], ['Time', `${r.seconds.toFixed(1)} s`]]
+      : [
+          ['Successes', `${r.successes} / ${d.goal}`],
+          ['Misses', `${r.fails}`],
+          ['Accuracy', `${Math.round(r.accuracy * 100)}%`],
+          ['Best streak', `${r.bestStreak}`],
+          ['Time', `${r.seconds.toFixed(1)} s`],
+        ];
+    for (const [a, b] of rows) table.append(h('span', {}, a), h('span', {}, b), h('span', {}, ''));
+    panel.append(table);
+    if (newBest) panel.append(h('div', { class: 'result-tier' }, 'New personal best!'));
+    panel.append(this.button('Try again (R)', onRetry, 'big'));
+    panel.append(h('div', { class: 'btn-row' }, this.button('All drills', () => this.show('trainer')), this.button('Title Screen', () => this.cb.onQuit())));
+    root.append(panel);
+    this.show('results');
+  }
+
+  // ------------------------------------------------------------------ Bot vs Bot
+
+  private renderVersus() {
+    const root = this.screens.versus;
+    root.replaceChildren();
+    const s = this.settings;
+    const panel = h('div', { class: 'menu-panel' });
+    panel.append(h('div', { class: 'screen-title' }, 'Bot vs Bot'));
+    panel.append(h('div', { class: 'tiers-sub' }, 'Pick a kit and two tiers, then watch them fight round after round. Any tier can fight any tier.'));
+
+    panel.append(h('div', { class: 'section-title' }, 'Kit'));
+    const kits = h('div', { class: 'versus-kits' });
+    for (const kit of KITS) {
+      const b = this.button(kit.name, () => {
+        s.kit = kit.id as KitId;
+        saveSettings(s);
+        this.renderVersus();
+      }, `versus-kit${s.kit === kit.id ? ' selected' : ''}`);
+      kits.append(b);
+    }
+    panel.append(kits);
+
+    const tierRow = (label: string, key: 'versusA' | 'versusB') => {
+      panel.append(h('div', { class: 'section-title' }, label));
+      const row = h('div', { class: 'diff-row' });
+      for (const id of DIFFICULTY_ORDER) {
+        if (id === 'practice') continue;
+        const d = DIFFICULTIES[id];
+        const b = h('button', { class: `diff-btn${s[key] === id ? ' selected' : ''}` }, d.name);
+        b.style.setProperty('--diff', d.color);
+        b.addEventListener('click', () => {
+          this.cb.onUiSound();
+          s[key] = id;
+          saveSettings(s);
+          this.renderVersus();
+        });
+        row.append(b);
+      }
+      panel.append(row);
+    };
+    tierRow('Left bot', 'versusA');
+    tierRow('Right bot', 'versusB');
+
+    const a = DIFFICULTIES[s.versusA];
+    const b = DIFFICULTIES[s.versusB];
+    const vs = h('div', { class: 'versus-line' }, h('b', {}, a.name), ' vs ', h('b', {}, b.name), ` · ${kitById(s.kit).name}`);
+    (vs.children[0] as HTMLElement).style.color = a.color;
+    (vs.children[1] as HTMLElement).style.color = b.color;
+    panel.append(vs);
+    panel.append(this.button('Watch', () => this.cb.onSpectate(s.kit, s.versusA, s.versusB), 'big'));
+    panel.append(this.button('Back', () => this.show('main')));
+    root.append(panel);
   }
 
   // ------------------------------------------------------------------ My Tiers

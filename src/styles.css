@@ -1780,3 +1780,274 @@ body.custom-crosshair .crosshair {
 .result-tier b {
   color: var(--tier);
 }
+
+/* ---- Bot vs Bot spectator overlay */
+.spec-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  color: #fff;
+  text-shadow: 1px 1px 0 #3f3f3f;
+}
+.spec-side {
+  position: absolute;
+  top: 12px;
+  width: min(340px, 40vw);
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 2px solid #000;
+}
+.spec-side.left {
+  left: 12px;
+}
+.spec-side.right {
+  right: 12px;
+  text-align: right;
+}
+.spec-name {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.spec-bar {
+  position: relative;
+  height: 10px;
+  background: #3a0d0d;
+  border: 2px solid #000;
+}
+.spec-side.right .spec-bar {
+  transform: scaleX(-1);
+}
+.spec-hp {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(#ff5b5b, #c41616);
+  transition: width 0.15s;
+}
+.spec-abs {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 3px;
+  background: var(--gold, #ffcc33);
+}
+.spec-text {
+  font-size: 13px;
+  color: #ddd;
+  margin-top: 4px;
+}
+.spec-score {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 17px;
+  color: #ffffa0;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+.spec-banner {
+  position: absolute;
+  top: 30%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 40px;
+  font-weight: 700;
+  opacity: 0;
+  text-shadow: 3px 3px 0 #3f3f3f;
+}
+.spec-help {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: #ddd;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .spec-help {
+    white-space: normal;
+    text-align: center;
+    width: 92vw;
+  }
+  .spec-score {
+    top: 90px;
+  }
+}
+
+/* ---- Bot vs Bot menu */
+.versus-kits {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.versus-kit {
+  padding: 6px 2px;
+  font-size: 14px;
+}
+.versus-kit.selected {
+  background: #2f2f2f;
+  outline: 2px solid #9f9;
+}
+.versus-line {
+  text-align: center;
+  font-size: 20px;
+  margin: 4px 0;
+}
+
+/* ---- Trainer: live drill panel */
+.drill-hud {
+  position: fixed;
+  left: 12px;
+  top: 34%;
+  width: min(380px, 42vw);
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid #000;
+  color: #fff;
+  text-shadow: 1px 1px 0 #3f3f3f;
+  pointer-events: none;
+  z-index: 4;
+}
+.drill-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffa0;
+}
+.drill-progress {
+  font-size: 22px;
+  margin: 2px 0 4px;
+}
+.drill-tip {
+  font-size: 12px;
+  color: #bbb;
+  margin-bottom: 6px;
+}
+.drill-line {
+  font-size: 14px;
+  margin-top: 2px;
+}
+.drill-line.good {
+  color: #7dff7d;
+}
+.drill-line.bad {
+  color: #ff8080;
+}
+.drill-line.info {
+  color: #9fd4ff;
+}
+
+/* ---- Trainer: drill list */
+.trainer-panel {
+  width: min(880px, 100%);
+}
+.trainer-cols {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: 14px;
+  min-height: 0;
+}
+.trainer-list {
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.trainer-group {
+  font-size: 12px;
+  color: #aaa;
+  text-transform: uppercase;
+  margin: 10px 0 4px;
+  letter-spacing: 1px;
+}
+.trainer-drill {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.trainer-drill.selected {
+  background: #2f2f2f;
+  outline: 2px solid #ffffa0;
+}
+.trainer-drill .done {
+  color: #7dff7d;
+}
+.trainer-detail {
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #000;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+}
+.trainer-detail h3 {
+  margin: 0;
+  font-size: 22px;
+  color: #ffffa0;
+}
+.trainer-meta {
+  color: #bbb;
+  font-size: 13px;
+}
+.trainer-detail ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.trainer-detail li {
+  margin-bottom: 4px;
+}
+.trainer-why {
+  color: #cfe3ff;
+  font-size: 13px;
+  line-height: 1.4;
+}
+@media (max-width: 720px) {
+  .trainer-cols {
+    grid-template-columns: 1fr;
+  }
+  .trainer-list,
+  .trainer-detail {
+    max-height: none;
+  }
+}
+
+/* Short windows (a 13" laptop): tighten the title screen so it fits without scrolling. */
+@media (max-height: 860px) and (min-width: 641px) {
+  .main-menu .menu-panel {
+    gap: 7px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .main-menu .logo {
+    margin: 0 0 2px;
+    transform: scale(0.8);
+    transform-origin: center top;
+    height: 70px;
+  }
+  .main-menu .kit-card {
+    padding: 5px 4px 4px;
+    gap: 2px;
+  }
+  .main-menu .kit-info {
+    font-size: 12px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .main-menu .diff-btn {
+    padding: 6px 2px;
+  }
+}
