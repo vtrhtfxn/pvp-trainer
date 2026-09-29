@@ -13,6 +13,8 @@ import { damageAfterArmor, damageAfterProtection, smashBonus } from '../game/com
 import { ANCHOR_POWER, CRYSTAL_POWER, attackCrystal, canPlaceCrystal, crosshairCrystal } from '../game/crystals';
 import { Blocks } from '../game/Blocks';
 import type { BotProfile } from './difficulty';
+import { SkyPlanner } from './SkyPlanner';
+import type { Match } from '../game/Match';
 
 export type BotState = 'engage' | 'retreat' | 'eat';
 
@@ -158,7 +160,9 @@ export class BotBrain {
   /** Spawned with splash potions: runs the pot/totem/mending game. */
   private potKit = false;
   /** Best melee weapon in the kit. */
-  private weapon: ItemId = 'diamond_sword';
+  weapon: ItemId = 'diamond_sword';
+  /** Bed Wars / SkyWars: the planner that walks, bridges, shops and loots (null otherwise). */
+  private sky: SkyPlanner | null = null;
   /**
    * Diamond Pot (pots but no totems): a combo game. Normal knockback, Speed II and Strength II
    * make sprint-hit combos the main damage, crits the exception; low on health it runs out of
@@ -183,7 +187,7 @@ export class BotBrain {
   private uhcKit = false;
   private plan: UhcPlan | null = null;
   private uhcCooldown = 0;
-  private settle = 0;
+  settle = 0;
   private uhcLabel = '';
   /** Ticks before it tries to rescue itself again (water, cutting a web) after a failed attempt. */
   private selfHelpCooldown = 0;
@@ -236,7 +240,13 @@ export class BotBrain {
     this.swingThreshold = rng.range(profile.chargeMin, profile.chargeMax);
   }
 
+  /** Plays a minigame's objectives (Bed Wars, SkyWars) on top of the sword game. */
+  attachSky(match: Match) {
+    this.sky = new SkyPlanner(this.bot, this.target, this.world, match, this.rng, this);
+  }
+
   get label(): string {
+    if (this.sky) return this.sky.label || 'Fighting';
     if (this.potLabel) return this.potLabel;
     if (this.uhcLabel) return this.uhcLabel;
     if (this.state === 'retreat') return 'Retreating';
@@ -320,6 +330,7 @@ export class BotBrain {
     this.thinkTimer = 0;
     this.surroundCooldown = 0;
     this.blockTimer = 0;
+    this.sky?.reset();
   }
 
   tick() {
@@ -354,6 +365,11 @@ export class BotBrain {
     this.potLabel = '';
     if (this.inv) {
       this.invStep();
+      b.input = input;
+      return;
+    }
+    if (this.sky) {
+      this.sky.tick(per, input, () => this.legacyEngage(per, dist, justHurt, input));
       b.input = input;
       return;
     }
@@ -452,7 +468,7 @@ export class BotBrain {
     return { ...s, x: s.x + vx * lead, z: s.z + vz * lead, vx, vz };
   }
 
-  private aimAt(x: number, y: number, z: number, gain = 1) {
+  aimAt(x: number, y: number, z: number, gain = 1) {
     const b = this.bot;
     const P = this.profile;
     const dx = x - b.pos.x;
@@ -468,7 +484,7 @@ export class BotBrain {
     this.turnTo(wantYaw + this.errYaw, wantPitch + this.errPitch, this.fastTarget ? gain * 1.6 : gain);
   }
 
-  private turnTo(yaw: number, pitch: number, gain = 1) {
+  turnTo(yaw: number, pitch: number, gain = 1) {
     const b = this.bot;
     const P = this.profile;
     const max = P.maxTurnDeg * DEG * gain;
@@ -667,7 +683,7 @@ export class BotBrain {
    * hurt immunity decide which clicks count. After a sprint hit it resets its sprint so the next
    * hit knocks you back again — a W-tap, an S-tap or a block-hit — and it jump-resets your hits.
    */
-  private legacyEngage(per: Perceived, dist: number, justHurt: boolean, input: MoveInput) {
+  legacyEngage(per: Perceived, dist: number, justHurt: boolean, input: MoveInput) {
     const b = this.bot;
     const T = this.target;
     const P = this.profile;
@@ -757,7 +773,7 @@ export class BotBrain {
   private get reachBonus(): number {
     return this.bot.entityReach() - C.ATTACK_REACH;
   }
-  private get maxReach(): number {
+  get maxReach(): number {
     return this.profile.maxReach + this.reachBonus;
   }
 
@@ -2291,7 +2307,7 @@ export class BotBrain {
    * A point on block face (sx, sy, sz)+(nx, ny, nz) that our crosshair can reach and click
    * (nothing in front of it, not hidden by the opponent), or null.
    */
-  private facePoint(sx: number, sy: number, sz: number, nx: number, ny: number, nz: number): [number, number, number] | null {
+  facePoint(sx: number, sy: number, sz: number, nx: number, ny: number, nz: number): [number, number, number] | null {
     const b = this.bot;
     const eye = b.eyePos();
     const cx = sx + 0.5 + nx * 0.5;
@@ -2330,7 +2346,7 @@ export class BotBrain {
   }
 
   /** A visible face of solid block (sx, sy, sz) — for crystals on obsidian and anchor clicks. */
-  private anyFacePoint(x: number, y: number, z: number): [number, number, number] | null {
+  anyFacePoint(x: number, y: number, z: number): [number, number, number] | null {
     for (const [nx, ny, nz] of FACES) {
       if (isSolidBlock(this.world.blocks.get(x + nx, y + ny, z + nz))) continue;
       const p = this.facePoint(x, y, z, nx, ny, nz);
@@ -2340,7 +2356,7 @@ export class BotBrain {
   }
 
   /** A support face we can click to put a block into (x, y, z), or null. */
-  private supportFace(x: number, y: number, z: number): [number, number, number, number, number, number] | null {
+  supportFace(x: number, y: number, z: number): [number, number, number, number, number, number] | null {
     const blocks = this.world.blocks;
     for (const [nx, ny, nz] of FACES) {
       const sx = x - nx;
@@ -2355,7 +2371,7 @@ export class BotBrain {
     return null;
   }
 
-  private cellHasFighter(x: number, y: number, z: number, h = 1): boolean {
+  cellHasFighter(x: number, y: number, z: number, h = 1): boolean {
     for (const f of this.world.fighters) {
       if (f.dead) continue;
       const bb = f.aabb();
@@ -3015,7 +3031,7 @@ export class BotBrain {
   }
 
   /** Turn toward a point quickly (placing and mining are deliberate flicks); counts settled ticks. */
-  private aimPoint(x: number, y: number, z: number) {
+  aimPoint(x: number, y: number, z: number) {
     const b = this.bot;
     const dx = x - b.pos.x;
     const dy = y - (b.pos.y + b.eyeHeight());
@@ -3222,7 +3238,7 @@ export class BotBrain {
 
   // ------------------------------------------------------------ helpers
 
-  private equip(id: ItemId): boolean {
+  equip(id: ItemId): boolean {
     const slot = this.bot.slotOf(id);
     if (slot < 0) {
       if (id === 'golden_apple') this.enter('engage');
@@ -3236,7 +3252,7 @@ export class BotBrain {
    * Makes sure `id` is in the hotbar and selected: 'ready', 'fetching' (the inventory is open to
    * bring it in — it takes real time), or 'none' (we have none, or no room for it).
    */
-  private fetch(id: ItemId): 'ready' | 'fetching' | 'none' {
+  fetch(id: ItemId): 'ready' | 'fetching' | 'none' {
     const b = this.bot;
     const slot = b.slotOf(id);
     if (slot >= 0) {

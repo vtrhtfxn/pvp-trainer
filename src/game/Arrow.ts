@@ -152,7 +152,7 @@ export class Arrow {
     let cart: TntCart | null = null;
     if (speed > 1e-6 && world.carts.length) {
       for (const c of world.carts) {
-        if (c.removed) continue;
+        if (c.removed || c.bare) continue;
         const t = rayAABB(this.pos, tmpDir, c.aabbInto(tmpBox));
         if (t >= 0 && t / speed <= travel) {
           travel = t / speed;

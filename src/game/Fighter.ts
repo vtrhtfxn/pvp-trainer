@@ -1,14 +1,14 @@
 import * as C from '../core/constants';
 import { V3, clamp, forwardX, forwardZ, lookDir, rayAABB, wrapAngle, type AABB } from '../core/math';
 import { Arrow } from './Arrow';
-import { FIST, INSTANT_EFFECTS, ITEMS, cloneStack, defOf, legacyAttackDamage, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
+import { FIST, INSTANT_EFFECTS, ITEMS, POTIONS, cloneStack, defOf, legacyAttackDamage, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
 import { ATTRIBUTES, defaultAttributes, type AttributeId, type Attributes, type GameMode } from './attributes';
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
 import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks';
 import { DroppedItem } from './DroppedItem';
 import { burn, fallHurt, hurt, lavaHurt, type DamageKind } from './combat';
 import { canPlaceCrystal, detonateAnchor, placeCrystal } from './crystals';
-import { canHoldFire, canPlaceCart, placeCart } from './TntCart';
+import { canHoldFire, canPlaceCart, placeCart, spawnPrimedTnt } from './TntCart';
 import { Thrown } from './Thrown';
 import type { World } from './World';
 
@@ -114,6 +114,13 @@ export type FighterEvent =
   | { type: 'arrowHit'; target: Fighter; damage: number; crit: boolean }
   | { type: 'pickup' }
   | { type: 'shulkerOpen'; taken: number }
+  /** Fell into the void. */
+  | { type: 'void' }
+  | { type: 'respawn' }
+  /** Broke the other team's bed (Bed Wars). */
+  | { type: 'bedBroken'; team: number }
+  /** Right-clicked a chest or the shop (the game opens its screen). */
+  | { type: 'openBlock'; x: number; y: number; z: number; block: number }
   | { type: 'swapHands' }
   | { type: 'throw'; kind: 'potion' | 'xp' | 'pearl' | 'wind' }
   /** Right click swapped a piece of armor (or the elytra) on. */
@@ -418,6 +425,16 @@ export class Fighter {
   ) {}
 
   // ---------------------------------------------------------------- setup
+
+  /** Back to life at (x, y, z) with `kit` (Bed Wars respawns), keeping this game's stats. */
+  respawn(x: number, y: number, z: number, yaw: number, kit: Loadout) {
+    const stats = this.stats;
+    this.reset(x, z, yaw, kit);
+    this.pos.y = y;
+    this.prevPos.copy(this.pos);
+    this.stats = stats;
+    this.events.push({ type: 'respawn' });
+  }
 
   reset(x: number, z: number, yaw: number, kit: Loadout) {
     this.pos.set(x, this.world.floorY, z);
@@ -960,6 +977,12 @@ export class Fighter {
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
       }
+      if (hit && (hit.id === B.CHEST || hit.id === B.SHOP)) {
+        this.events.push({ type: 'openBlock', x: hit.x, y: hit.y, z: hit.z, block: hit.id });
+        this.world.onInteract?.(this, hit.x, hit.y, hit.z, hit.id);
+        this.rightClickDelay = C.USE_ITEM_DELAY;
+        return true;
+      }
       if (hit && hit.id === B.SHULKER) {
         this.openShulker(hit.x, hit.y, hit.z);
         this.rightClickDelay = C.USE_ITEM_DELAY;
@@ -996,6 +1019,21 @@ export class Fighter {
         if (hit) {
           if (!canPlaceCart(this.world, hit.x, hit.y, hit.z)) return false;
           placeCart(this.world, this, hit.x, hit.y, hit.z);
+          this.consume(s, hand);
+          if (hand === 'main') this.swing();
+          ok = true;
+        }
+      } else if (def.use === 'tnt') {
+        // Bed Wars TNT lights itself as it is placed.
+        if (!this.mayBuild()) continue;
+        if (hit === undefined) hit = this.crosshairBlock(this.blockReach(), true);
+        if (hit) {
+          const tx = hit.x + hit.nx;
+          const ty = hit.y + hit.ny;
+          const tz = hit.z + hit.nz;
+          const cur = this.world.blocks.get(tx, ty, tz);
+          if (cur !== B.AIR && !isFluid(cur)) return false;
+          spawnPrimedTnt(this.world, this, tx + 0.5, ty, tz + 0.5);
           this.consume(s, hand);
           if (hand === 'main') this.swing();
           ok = true;
@@ -1195,8 +1233,17 @@ export class Fighter {
         if (Blocks.boxOverlapsCell(c.x - 1, c.y, c.z - 1, c.x + 1, c.y + 2, c.z + 1, x, y, z)) return false;
       }
     }
-    const extra = id === B.RAIL ? (Math.abs(Math.sin(this.yaw)) > Math.abs(Math.cos(this.yaw)) ? 1 : 0) : id === B.SHULKER ? Math.min(27, s.stored ?? 0) : 0;
+    const extra =
+      id === B.RAIL
+        ? Math.abs(Math.sin(this.yaw)) > Math.abs(Math.cos(this.yaw))
+          ? 1
+          : 0
+        : id === B.SHULKER
+          ? Math.min(27, s.stored ?? 0)
+          : (ITEMS[s.id].blockData ?? 0);
+    if (!this.world.canPlace(this, x, y, z)) return false;
     blocks.set(x, y, z, id, extra);
+    blocks.markPlaced(x, y, z);
     this.consume(s, hand);
     if (hand === 'main') this.swing();
     this.world.emit({ type: 'blockPlace', x, y, z, block: id });
@@ -1290,7 +1337,8 @@ export class Fighter {
       this.mineProgress = 0;
       return false;
     }
-    const breakable = !!BLOCK_PROPS[hit.id];
+    // Map protection (Bed Wars): only blocks players placed (and beds) can be broken.
+    const breakable = !!BLOCK_PROPS[hit.id] && this.world.canBreak(this, hit.x, hit.y, hit.z, hit.id);
     // A fresh click (startDestroyBlock) ignores the delay; only holding the button waits it out.
     if (click) this.destroyDelay = 0;
     if (this.destroyDelay > 0) {
@@ -1328,8 +1376,9 @@ export class Fighter {
     const stored = block === B.SHULKER ? this.world.blocks.shulkerCarts(x, y, z) : 0;
     this.world.blocks.set(x, y, z, B.AIR);
     this.world.emit({ type: 'blockBreak', x, y, z, block });
+    const wool = block === B.WOOL ? (this.world.blocks.data(x, y, z) === 1 ? 'blue_wool' : 'red_wool') : null;
     if (props.drop && (!props.needsTool || correct)) {
-      const drop: ItemStack = { id: props.drop, count: 1 };
+      const drop: ItemStack = { id: wool ?? props.drop, count: 1 };
       if (stored) drop.stored = stored;
       this.world.items.push(new DroppedItem(drop, x + 0.5, y + 0.25, z + 0.5, this.world.rng));
     }
@@ -1408,6 +1457,17 @@ export class Fighter {
       this.cooldowns.set('wind_charge', { ticks: 10, total: 10 });
       this.stats.windCharges++;
       this.events.push({ type: 'throw', kind: 'wind' });
+      return;
+    }
+    if (s.id === 'fire_charge' || s.id === 'snowball' || s.id === 'egg') {
+      const kind = s.id === 'fire_charge' ? 'fireball' : s.id === 'snowball' ? 'snowball' : 'egg';
+      const t = new Thrown(this, kind, null, this.pos.x, this.pos.y + this.eyeHeight() - 0.1, this.pos.z);
+      t.throwFrom(this, kind === 'fireball' ? 1.1 : 1.5, this.world.rng, 0);
+      this.world.spawnThrown(t);
+      this.consume(s, hand);
+      if (hand === 'main') this.swing();
+      if (kind === 'fireball') this.cooldowns.set('fire_charge', { ticks: 10, total: 10 });
+      this.events.push({ type: 'throw', kind: 'pearl' });
       return;
     }
     if (s.id === 'ender_pearl') {
@@ -1602,6 +1662,18 @@ export class Fighter {
     } else if (this.rightClickDelay > 0) this.rightClickDelay--;
     if (this.networked) this.netStep();
     else this.aiStep();
+    // A body lost in the void stops somewhere below the map (so the camera doesn't fall forever).
+    if (this.dead && this.world.blocks.voidWorld && this.pos.y < this.world.voidY - 8) {
+      this.pos.y = this.world.voidY - 8;
+      this.vel.set(0, 0, 0);
+    }
+    // The void: fall out of a floating map and you are gone (no totem saves you).
+    if (this.world.blocks.voidWorld && this.pos.y < this.world.voidY && !this.dead && !this.replica && this.gameMode !== 'spectator') {
+      this.events.push({ type: 'void' });
+      const by = this.lastDamage?.attacker ?? null;
+      hurt(this, 1e6, by, false, false, true, 'kill');
+      this.lastDamage = { kind: 'void', attacker: by, fire: false };
+    }
     this.updateBodyRotation();
     this.updateWalkAnimation();
     this.updateSwingTime();
@@ -1701,6 +1773,8 @@ export class Fighter {
       if (def.cooldown) this.cooldowns.set(def.id, { ticks: def.cooldown, total: def.cooldown });
       if (def.id === 'golden_apple' || def.id === 'golden_head') this.stats.gapplesEaten++;
       if (def.id === 'chorus_fruit') this.chorusTeleport();
+      const drunk = def.id === 'potion' && stack.potion ? POTIONS[stack.potion] : null;
+      if (drunk && drunk.effect !== 'instant_health') this.addEffect(drunk.effect, drunk.amplifier, drunk.duration);
       this.events.push({ type: 'eatDone' });
     }
   }
@@ -2128,6 +2202,23 @@ export class Fighter {
       dy *= C.WEB_SLOW_V;
       dz *= C.WEB_SLOW_H;
       this.vel.set(0, 0, 0);
+    }
+    // Player.maybeBackOffFromEdge: sneaking on the ground never walks you off an edge — the
+    // move is cut back 0.05 at a time until there is still ground within 0.6 below the box.
+    if (this.sneaking && this.onGround && dy <= 0 && (dx !== 0 || dz !== 0)) {
+      const hw = C.PLAYER_WIDTH / 2;
+      const b = this.world.blocks;
+      const x = this.pos.x;
+      const y = this.pos.y;
+      const z = this.pos.z;
+      const open = (ox: number, oz: number) => !b.boxHasSolid(x - hw + ox, y - 0.6, z - hw + oz, x + hw + ox, y, z + hw + oz);
+      const shrink = (v: number) => (Math.abs(v) < 0.05 ? 0 : v - Math.sign(v) * 0.05);
+      while (dx !== 0 && open(dx, 0)) dx = shrink(dx);
+      while (dz !== 0 && open(0, dz)) dz = shrink(dz);
+      while (dx !== 0 && dz !== 0 && open(dx, dz)) {
+        dx = shrink(dx);
+        dz = shrink(dz);
+      }
     }
     const r = this.world.move(this.pos.x, this.pos.y, this.pos.z, dx, dy, dz, C.PLAYER_WIDTH / 2, this.height());
     const horizontal = Math.hypot(r.x - this.pos.x, r.z - this.pos.z);

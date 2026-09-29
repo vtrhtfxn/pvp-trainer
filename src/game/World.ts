@@ -2,7 +2,7 @@ import { PLAYER_WIDTH } from '../core/constants';
 import { Rng } from '../core/rng';
 import type { TntCart } from './TntCart';
 import { Arrow } from './Arrow';
-import { Blocks, isSolid, type CollideResult } from './Blocks';
+import { B, Blocks, isSolid, type CollideResult } from './Blocks';
 import type { DroppedItem } from './DroppedItem';
 import type { EndCrystal } from './EndCrystal';
 import type { Fighter } from './Fighter';
@@ -90,6 +90,25 @@ export class World {
   /** 1.8 combat rules (the 1.8 Sword kit): see KitDef.legacyCombat. */
   legacyCombat = false;
   rules: GameRules = defaultGameRules();
+  /** Bed Wars: the map itself can't be broken, only what players placed (and beds). */
+  protectMap = false;
+  /** Game-mode rules for breaking a block (e.g. not your own bed). */
+  breakRule: ((f: Fighter, x: number, y: number, z: number, id: number) => boolean) | null = null;
+  /** Game-mode rules for placing a block (e.g. not inside a base's protected area). */
+  placeRule: ((f: Fighter, x: number, y: number, z: number) => boolean) | null = null;
+  /** Game-mode hook for right-clicking a chest or the shop. */
+  onInteract: ((f: Fighter, x: number, y: number, z: number, id: number) => void) | null = null;
+  /** Falling below this (void worlds) kills. */
+  voidY = -64;
+
+  canBreak(f: Fighter, x: number, y: number, z: number, id: number): boolean {
+    if (this.protectMap && id !== B.BED && !this.blocks.isPlaced(x, y, z)) return false;
+    return this.breakRule ? this.breakRule(f, x, y, z, id) : true;
+  }
+
+  canPlace(f: Fighter, x: number, y: number, z: number): boolean {
+    return this.placeRule ? this.placeRule(f, x, y, z) : true;
+  }
   /** Level.dayTime in ticks: 0 sunrise, 6000 noon, 13000 dusk, 18000 midnight (24000 a day). */
   dayTime = 6000;
   /** /weather rain or thunder: rain puts out burning players under the open sky. */

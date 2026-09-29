@@ -6,6 +6,8 @@ import { hitNearerEntity } from './crystals';
 import { Fighter } from './Fighter';
 import type { KitDef } from './kits';
 import { World } from './World';
+import type { GameMode } from './modes/GameMode';
+import { createMode } from './modes';
 
 export type Phase = 'countdown' | 'fight' | 'ended';
 export const COUNTDOWN_TICKS = 60;
@@ -28,6 +30,8 @@ export class Match {
   tickCount = 0;
   fightTicks = 0;
   winner: Fighter | null = null;
+  /** Bed Wars / SkyWars rules on top of the duel, or null for a plain duel. */
+  readonly mode: GameMode | null;
 
   // Player controls fed by the input layer
   /** Clicks this tick, each with what it hit on screen (renderedPick; NaN = test it at the tick). */
@@ -38,6 +42,8 @@ export class Match {
   useHeld = false;
   /** Left button held: keeps mining the block under the crosshair. */
   attackHeld = false;
+  /** The player's mining is driven elsewhere (a bot plays them in bot vs bot): don't reset it here. */
+  externalMining = false;
   /** Last outcome of a player click (for HUD feedback). */
   lastPlayerAttack: AttackOutcome | null = null;
   /**
@@ -52,7 +58,13 @@ export class Match {
     seed?: number,
   ) {
     this.rng = new Rng(seed);
-    this.world = new World(undefined, kit.floorDepth ?? 0);
+    this.mode = createMode(kit);
+    this.world = new World(undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
+    if (this.mode) {
+      // A floating map over the void: no floor, no walls.
+      this.world.blocks.voidWorld = true;
+      this.world.blocks.clear();
+    }
     this.player = new Fighter('player', 'You', this.world);
     this.bot = new Fighter('bot', `${profile.name} Bot`, this.world);
     this.world.fighters.push(this.player, this.bot);
@@ -67,7 +79,12 @@ export class Match {
       }
       return performAttack(this.bot, this.player);
     });
+    if (this.mode) this.brain.attachSky(this);
     this.reset();
+  }
+
+  onRespawn(f: Fighter) {
+    if (f === this.bot) this.brain.resetRound();
   }
 
   reset() {
@@ -77,6 +94,7 @@ export class Match {
     this.world.clearEntities();
     this.player.naturalRegen = this.bot.naturalRegen = this.kit.naturalRegen ?? true;
     this.player.food.locked = this.bot.food.locked = !!this.kit.noHunger;
+    if (this.mode) this.mode.setup(this);
     this.brain.resetRound();
     this.phase = 'countdown';
     this.phaseTicks = 0;
@@ -150,6 +168,14 @@ export class Match {
     if (this.phase === 'countdown' && this.phaseTicks >= COUNTDOWN_TICKS) {
       this.phase = 'fight';
       this.phaseTicks = 0;
+    } else if (this.phase === 'fight' && this.mode) {
+      this.mode.tick(this);
+      const w = this.mode.winner(this);
+      if (w) {
+        this.phase = 'ended';
+        this.phaseTicks = 0;
+        this.winner = w;
+      }
     } else if (this.phase === 'fight' && (p.dead || b.dead)) {
       this.phase = 'ended';
       this.phaseTicks = 0;
@@ -202,7 +228,7 @@ export class Match {
         else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot, onScreen);
       }
       this.queuedClicks.length = 0;
-      if (!mined) p.tickMining(this.attackHeld, false);
+      if (!mined && !this.externalMining) p.tickMining(this.attackHeld, false);
       while (this.queuedUse > 0) {
         this.queuedUse--;
         p.startUsingItem(true);

@@ -35,6 +35,8 @@ export class TntCart {
   removed = false;
   fallDistance = 0;
   private fireTicks = 0;
+  /** Primed TNT without a cart (Bed Wars TNT): can't be hit, just waits for its fuse. */
+  bare = false;
   age = 0;
 
   constructor(
@@ -132,6 +134,16 @@ export class TntCart {
   }
 }
 
+/** Bed Wars TNT: lit as it is placed, it goes off 50 ticks later with power 4. */
+export function spawnPrimedTnt(world: World, owner: Fighter, x: number, y: number, z: number): TntCart {
+  const t = new TntCart(x, y, z, owner);
+  t.bare = true;
+  t.fuse = 50;
+  world.carts.push(t);
+  world.emit({ type: 'cartPrimed', x, y, z });
+  return t;
+}
+
 /** Whether a TNT minecart can go on (x, y, z): a rail there, and no cart on it already. */
 export function canPlaceCart(world: World, x: number, y: number, z: number): boolean {
   if (world.blocks.get(x, y, z) !== B.RAIL) return false;
@@ -186,7 +198,7 @@ export function crosshairCart(f: Fighter, reach = f.entityReach()): { cart: TntC
   let best: TntCart | null = null;
   let bestT = reach;
   for (const c of world.carts) {
-    if (c.removed) continue;
+    if (c.removed || c.bare) continue;
     const t = rayAABB(eye, d, c.aabbInto(tmpBox));
     if (t >= 0 && t <= bestT) {
       bestT = t;

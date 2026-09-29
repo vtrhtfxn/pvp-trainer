@@ -158,7 +158,7 @@ const NO_DAMAGE: HurtResult = { damaged: false, fullHit: false, dealt: 0 };
  * Where damage came from. 'magic' (poison, instant damage) and 'wither' ignore armor; 'kill' is
  * /kill and /damage … generic_kill, which nothing stops.
  */
-export type DamageKind = 'generic' | 'explosion' | 'fall' | 'magic' | 'wither' | 'kill';
+export type DamageKind = 'generic' | 'explosion' | 'fall' | 'magic' | 'wither' | 'kill' | 'void';
 
 export function hurt(
   target: Fighter,
@@ -547,6 +547,22 @@ function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: num
   target.events.push({ type: 'shieldBlock', attacker });
   attacker.events.push({ type: 'hitShield', target, disabled, swap });
   return { hit: false, reach, crit: false, sprint: false, scale, damage: 0, blocked: true, disabled, swap };
+}
+
+/**
+ * A 0-damage hit (a snowball or egg): LivingEntity.hurt with 0 still starts hurt immunity and
+ * knocks the target back along the projectile's flight.
+ */
+export function knockbackOnly(target: Fighter, attacker: Fighter | null, dirX: number, dirZ: number) {
+  if (target.dead || target.invulnerable() || target.invulnerableTime > C.IFRAME_WINDOW) return;
+  target.invulnerableTime = C.INVULNERABLE_TICKS;
+  target.lastHurt = 0;
+  target.hurtTime = target.hurtDuration = C.HURT_DURATION;
+  const v = target.serverVel.clone();
+  applyKnockback(v, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), -dirX, -dirZ, true);
+  target.vel.set(v.x, v.y, v.z);
+  target.serverVel.set(v.x, v.y, v.z);
+  target.events.push({ type: 'hurt', attacker, damage: 0, crit: false, fire: false });
 }
 
 /** One tick of burning (Entity.baseTick every 20 fire ticks). */

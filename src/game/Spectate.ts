@@ -72,6 +72,8 @@ export class Spectate {
     m.player.name = this.nameA;
     m.bot.name = this.nameB;
     this.brainA = new BotBrain(m.player, m.bot, m.world, this.a, new Rng(s + 99), () => performAttack(m.player, m.bot));
+    if (m.mode) this.brainA.attachSky(m);
+    m.externalMining = true;
     this.brainA.resetRound();
     this.match = m;
     this.resultTimer = -1;
@@ -88,7 +90,7 @@ export class Spectate {
     if (this.resultTimer < 0) {
       let result: RoundResult | null = null;
       if (m.phase === 'ended') result = { winner: m.winner === m.player ? 'a' : 'b', timeout: false };
-      else if (m.phase === 'fight' && m.fightTicks >= SPEC_ROUND_TICKS) {
+      else if (m.phase === 'fight' && m.fightTicks >= (m.mode ? SPEC_ROUND_TICKS * 6 : SPEC_ROUND_TICKS)) {
         const score = (f: Fighter) => f.effectiveHealth() + 20 * f.countItem('totem_of_undying');
         result = { winner: score(m.player) >= score(m.bot) ? 'a' : 'b', timeout: true };
         m.phase = 'ended';

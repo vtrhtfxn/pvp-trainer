@@ -312,7 +312,7 @@ export class Menus {
       h(
         'div',
         { class: 'credits' },
-        'Not affiliated with Mojang. Textures: Bare Bones resource pack. Player rig (CC-BY 4.0) by lewisglasgow2005.',
+        'Not affiliated with Mojang. Textures: Minecraft default resource pack (Mojang). Player rig (CC-BY 4.0) by lewisglasgow2005.',
       ),
     );
     return root;

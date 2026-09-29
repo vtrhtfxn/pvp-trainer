@@ -9,6 +9,8 @@ export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>)
   if (s.id === 'tipped_arrow') return tippedArrowTexture(s.potion ?? 'slow_falling');
   if (s.id === 'respawn_anchor') return 'block/respawn_anchor_side0';
   if (s.id === 'ender_chest') return enderChestFace();
+  if (s.id === 'tnt') return 'block/tnt_side';
+  if (s.id === 'potion') return potionTexture(s.potion ?? 'bw_speed');
   // Block items use their block texture (a cube in the GUI and the hand; a flat sprite for webs).
   if (ITEMS[s.id].places !== undefined) return `block/${s.id}`;
   return `item/${s.id}`;
@@ -16,7 +18,7 @@ export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>)
 
 /** Block items drawn as a little isometric cube (the vanilla GUI block model). */
 export function isCubeItem(id: string): boolean {
-  return id === 'oak_planks' || id === 'oak_log' || id === 'red_shulker_box' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';
+  return id === 'oak_planks' || id === 'oak_log' || id === 'red_shulker_box' || id === 'red_wool' || id === 'blue_wool' || id === 'end_stone' || id === 'tnt' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';
 }
 
 /** Top texture of a cube item when it differs from its sides. */
@@ -24,6 +26,7 @@ function cubeTop(id: string): string | null {
   if (id === 'respawn_anchor') return 'block/respawn_anchor_top_off';
   if (id === 'oak_log') return 'block/oak_log_top';
   if (id === 'red_shulker_box') return 'block/red_shulker_box_top';
+  if (id === 'tnt') return 'block/tnt_top';
   if (id === 'ender_chest') return enderChestLid();
   return null;
 }

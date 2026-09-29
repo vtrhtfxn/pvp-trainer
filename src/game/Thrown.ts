@@ -4,8 +4,8 @@ import type { Fighter } from './Fighter';
 import { POTIONS, type PotionId } from './items';
 import type { RayHit } from './Blocks';
 import { detonateCrystal } from './crystals';
-import { hurt } from './combat';
-import { windExplosion } from './Explosion';
+import { hurt, knockbackOnly } from './combat';
+import { explode, windExplosion } from './Explosion';
 import type { EndCrystal } from './EndCrystal';
 import type { World } from './World';
 
@@ -31,7 +31,7 @@ export class Thrown {
 
   constructor(
     readonly owner: Fighter,
-    readonly kind: 'potion' | 'xp' | 'pearl' | 'wind',
+    readonly kind: 'potion' | 'xp' | 'pearl' | 'wind' | 'fireball' | 'snowball' | 'egg',
     readonly potion: PotionId | null,
     x: number,
     y: number,
@@ -42,7 +42,8 @@ export class Thrown {
   }
 
   get gravity() {
-    if (this.kind === 'wind') return 0;
+    if (this.kind === 'wind' || this.kind === 'fireball') return 0;
+    if (this.kind === 'snowball' || this.kind === 'egg') return 0.03;
     return this.kind === 'potion' ? C.POTION_GRAVITY : this.kind === 'pearl' ? C.PEARL_GRAVITY : C.XP_BOTTLE_GRAVITY;
   }
 
@@ -142,8 +143,8 @@ export class Thrown {
       return;
     }
     this.pos.set(this.pos.x + v.x, this.pos.y + v.y, this.pos.z + v.z);
-    // Wind charges (AbstractHurtingProjectile with no acceleration) keep their speed.
-    if (this.kind === 'wind') return;
+    // Wind charges and fireballs (AbstractHurtingProjectile) keep their speed.
+    if (this.kind === 'wind' || this.kind === 'fireball') return;
     v.x *= C.THROWN_DRAG;
     v.y *= C.THROWN_DRAG;
     v.z *= C.THROWN_DRAG;
@@ -152,6 +153,17 @@ export class Thrown {
 
   private impact(world: World, direct: Fighter | null) {
     this.removed = true;
+    if (this.kind === 'snowball' || this.kind === 'egg') {
+      // No damage — only the knockback of a hit (that is what knocks people off bridges).
+      if (direct) knockbackOnly(direct, this.owner, this.vel.x, this.vel.z);
+      return;
+    }
+    if (this.kind === 'fireball') {
+      // Bed Wars fireball: a small blast (breaks wool and wood, hurts a little) and a big push.
+      explode(world, this.pos.x, this.pos.y, this.pos.z, 1.6, { source: this.owner });
+      windExplosion(world, this.pos.x, this.pos.y, this.pos.z, 2.5, 1.3);
+      return;
+    }
     if (this.kind === 'wind') {
       // WindCharge.onHitEntity: 1 damage to whoever it hits, then the burst where it is.
       if (direct) hurt(direct, 1, this.owner, false);

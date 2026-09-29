@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { B } from '../src/game/Blocks';
 import type { KitId } from '../src/game/kits';
+import { Bedwars, RESPAWN_TICKS } from '../src/game/modes/Bedwars';
+import { Skywars } from '../src/game/modes/Skywars';
 import { Duel } from '../src/net/Duel';
 import { NetMatch } from '../src/net/NetMatch';
 import type { ClientMsg, ServerMsg } from '../src/net/protocol';
@@ -42,6 +44,7 @@ function room(kit: KitId) {
     }
     const state = duel.stateMessage(++n, [0, 0]);
     for (let i = 0; i < 2; i++) deliver(i, state);
+    for (const { to, msg } of duel.takeOutbox()) for (let i = 0; i < 2; i++) if (to < 0 || to === i) deliver(i, msg);
   };
   const toFight = () => {
     for (let t = 0; t < 200 && duel.phase !== 'fight'; t++) tick();
@@ -193,5 +196,95 @@ describe('online, every kit', () => {
     expect(landed).toBe(true);
     expect(r.clients[0].player.pos.z).toBeLessThan(0);
     expect(Math.abs(r.duel.fighters[0].pos.z - r.clients[0].player.pos.z)).toBeLessThan(0.5);
+  });
+});
+
+describe('online Bed Wars and SkyWars', () => {
+  it('Bed Wars: both clients build the server’s map and get their scoreboard', () => {
+    const r = room('bedwars');
+    r.toFight();
+    const mode = r.duel.mode as Bedwars;
+    for (const c of r.clients) {
+      expect(c.world.blocks.voidWorld).toBe(true);
+      for (const t of mode.layout.teams) for (const b of t.bed) expect(c.world.blocks.get(b.x, b.y, b.z)).toBe(B.BED);
+      expect(c.world.blocks.count).toBe(r.duel.world.blocks.count);
+      expect(c.modeUi.sb[0].text).toBe('BED WARS');
+      expect(c.modeUi.gear?.wool).toBeDefined();
+    }
+    // Each client stands on its own team's spawn (seat 1 is blue).
+    expect(r.clients[1].player.pos.z).toBeCloseTo(r.duel.fighters[1].pos.z, 1);
+    expect(r.clients[1].modeUi.sb.some((l) => l.text.includes('Blue') && l.text.includes('YOU'))).toBe(true);
+  });
+
+  it('Bed Wars: buying at your shop goes through the server', () => {
+    const r = room('bedwars');
+    r.toFight();
+    r.duel.fighters[0].addItem({ id: 'iron_ingot', count: 20 });
+    r.tick();
+    r.clients[0].buy('wool');
+    r.tick();
+    r.tick();
+    expect(r.clients[0].boughtMsg).toContain('Bought');
+    expect(r.clients[0].player.countItem('red_wool')).toBe(16);
+    expect(r.duel.fighters[0].countItem('iron_ingot')).toBe(16);
+    // Seat 1 is not at the red shop… but at its own; far from it, the server refuses.
+    const blue = r.clients[1].player;
+    blue.pos.set(0.5, 0, 0.5);
+    r.tick();
+    r.duel.fighters[1].addItem({ id: 'iron_ingot', count: 20 });
+    r.clients[1].buy('wool');
+    r.tick();
+    r.tick();
+    expect(r.clients[1].boughtMsg).toContain('too far');
+  });
+
+  it('Bed Wars: falling into the void kills you, and you respawn at your bed on your own screen', () => {
+    const r = room('bedwars');
+    r.toFight();
+    const me = r.clients[0].player;
+    me.pos.set(0.5, -40, 0.5);
+    r.tick();
+    r.tick();
+    expect(r.duel.fighters[0].dead).toBe(true);
+    expect(me.dead).toBe(true);
+    for (let t = 0; t < RESPAWN_TICKS + 10; t++) r.tick();
+    expect(r.duel.fighters[0].dead).toBe(false);
+    expect(me.dead).toBe(false);
+    const spawn = (r.duel.mode as Bedwars).layout.teams[0].spawn;
+    expect(Math.hypot(me.pos.x - spawn.x, me.pos.z - spawn.z)).toBeLessThan(1);
+    expect(r.duel.phase).toBe('fight');
+  });
+
+  it('SkyWars: cages open, a right-clicked chest opens on your screen and Take all fills your inventory', () => {
+    const r = room('skywars');
+    const mode = r.duel.mode as Skywars;
+    r.toFight();
+    for (const cage of mode.layout.cages) for (const c of cage) expect(r.clients[0].world.blocks.get(c.x, c.y, c.z)).not.toBe(B.GLASS);
+    const chest = mode.layout.islandChests[0][0];
+    const me = r.clients[0].player;
+    me.pos.set(chest.x + 0.5, chest.y, chest.z + 2.5);
+    for (let t = 0; t < 30 && !me.onGround; t++) r.tick();
+    r.look(0, chest.x + 0.5, chest.y + 0.5, chest.z + 0.5);
+    r.use(0, 0);
+    const msg = r.clients[0].chestMsg;
+    expect(msg?.open).toBe(true);
+    const n = msg!.items!.filter(Boolean).length;
+    expect(n).toBeGreaterThan(0);
+    r.clients[0].chestAction(chest.x, chest.y, chest.z, 'all');
+    r.tick();
+    r.tick();
+    expect(r.clients[0].chestMsg?.items?.every((s) => !s)).toBe(true);
+    const have = me.inventory.filter(Boolean).length + me.armorSlots.filter(Boolean).length;
+    expect(have).toBe(n);
+  });
+
+  it('SkyWars: knock the other player into the void and you win', () => {
+    const r = room('skywars');
+    r.toFight();
+    r.clients[1].player.pos.set(0.5, -40, 0.5);
+    for (let t = 0; t < 5; t++) r.tick();
+    expect(r.duel.phase).toBe('ended');
+    expect(r.duel.winner).toBe(0);
+    expect(r.clients[0].winner).toBe(r.clients[0].player);
   });
 });

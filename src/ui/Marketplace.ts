@@ -331,8 +331,8 @@ export class Marketplace {
       h(
         'div',
         { class: 'mk-text' },
-        h('div', { class: 'mk-name' }, 'Bare Bones 1.21.11', h('span', { class: 'mk-cat visual' }, 'Default')),
-        h('div', { class: 'mk-desc' }, 'The textures the game uses: a clean take on the vanilla look. Always on.'),
+        h('div', { class: 'mk-name' }, 'Minecraft Default', h('span', { class: 'mk-cat visual' }, 'Default')),
+        h('div', { class: 'mk-desc' }, 'The official Minecraft textures. Always on.'),
       ),
       h('div', { class: 'mk-actions' }, h('span', { class: 'mk-active' }, '✓ Active')),
     );

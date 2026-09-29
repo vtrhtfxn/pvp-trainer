@@ -229,7 +229,7 @@ body {
 
 .kit-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 8px;
 }
 .kit-card {
@@ -2325,4 +2325,170 @@ body.custom-crosshair .crosshair {
   text-transform: uppercase;
   letter-spacing: 1px;
   margin: 8px 0 2px;
+}
+
+/* ---- Bed Wars / SkyWars */
+.mode-scoreboard {
+  position: fixed;
+  right: 8px;
+  top: 38%;
+  transform: translateY(-50%);
+  min-width: 170px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 14px;
+  text-shadow: 1px 1px 0 #3f3f3f;
+  pointer-events: none;
+  z-index: 4;
+}
+.mode-sb-title {
+  text-align: center;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.mode-sb-line {
+  white-space: nowrap;
+}
+.mode-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 20;
+  pointer-events: auto;
+}
+.mode-panel {
+  width: min(640px, 96vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: #c6c6c6;
+  border: 3px solid;
+  border-color: #fff #555 #555 #fff;
+  padding: 10px 12px;
+  color: #3f3f3f;
+  font-family: var(--font);
+}
+.mode-panel.chest {
+  width: min(460px, 96vw);
+}
+.mode-title {
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+.mode-sub {
+  font-size: 13px;
+  margin: 6px 0 4px;
+}
+.mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.mode-tab {
+  font-family: var(--font);
+  font-size: 13px;
+  padding: 4px 8px;
+  background: #8b8b8b;
+  color: #fff;
+  border: 2px solid;
+  border-color: #aaa #373737 #373737 #aaa;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #3f3f3f;
+}
+.mode-tab.selected {
+  background: #5a8a3a;
+}
+.mode-wallet {
+  display: flex;
+  gap: 14px;
+  font-size: 14px;
+  padding: 4px 6px;
+  background: #3a3a3a;
+  text-shadow: 1px 1px 0 #111;
+  margin-bottom: 6px;
+}
+.mode-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 4px;
+}
+.mode-item {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 6px;
+  text-align: left;
+  font-family: var(--font);
+  padding: 4px;
+  background: #8b8b8b;
+  border: 2px solid;
+  border-color: #373737 #fff #fff #373737;
+  color: #fff;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 #3f3f3f;
+}
+.mode-item:hover {
+  background: #a5a5a5;
+}
+.mode-item .ms-icon {
+  grid-row: span 2;
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+.mode-item-name {
+  font-size: 13px;
+}
+.mode-item-price {
+  font-size: 12px;
+}
+.mode-item.poor .mode-item-price {
+  color: #ff8080 !important;
+}
+.mode-item.locked {
+  opacity: 0.55;
+}
+.mode-msg {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.mode-slots {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 2px;
+}
+.mode-slot {
+  position: relative;
+  aspect-ratio: 1;
+  background: #8b8b8b;
+  border: 2px solid;
+  border-color: #373737 #fff #fff #373737;
+  padding: 2px;
+  cursor: pointer;
+}
+.mode-slot:hover {
+  background: #a5a5a5;
+}
+.mode-slot .ms-icon {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.mode-count {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  color: #fff;
+  font-size: 13px;
+  text-shadow: 1px 1px 0 #3f3f3f;
+}
+.mode-takeall {
+  margin-top: 6px;
+  width: auto;
+  padding: 4px 12px;
+  font-size: 14px;
 }

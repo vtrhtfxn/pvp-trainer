@@ -174,7 +174,7 @@ export function explode(world: World, cx: number, cy: number, cz: number, power:
     if (!blocks.inside(x, y, z)) continue;
     const id = blocks.get(x, y, z);
     if (id === B.AIR) airCells.push([x, y, z]);
-    else if (id !== B.BEDROCK) {
+    else if (id !== B.BEDROCK && id !== B.SHOP && (!world.protectMap || (blocks.isPlaced(x, y, z) && id !== B.BED))) {
       blocks.set(x, y, z, B.AIR);
       airCells.push([x, y, z]);
     }

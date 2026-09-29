@@ -205,6 +205,12 @@ explosions and wind launches reach you as a velocity packet and a pearl as a tel
 sent before applying it are ignored). Your client still predicts your own movement, elytra
 gliding included, and reports its fall distance — crits, mace smashes and fall damage use it.
 
+**Bed Wars and SkyWars online:** the host is red, the joiner blue. Both clients build the same
+void map the server does; the server runs the rules (forges, generators, beds, respawns, chest
+loot and refills) and sends each player their scoreboard, respawn title, team upgrades and the
+announcements. Shop purchases and chest clicks go to the server, which checks you are at your own
+shop / within reach of the chest; a respawn arrives as a teleport to your spawn.
+
 **Opponents move smoothly, even on shaky Wi-Fi.** Every move a client sends carries its own tick
 number, and the server relays it to the opponent the moment it arrives (it does not wait for its
 next tick, so a busy or throttled host no longer freezes anyone). The receiver plays the moves
@@ -263,8 +269,29 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **Crystal** — Netherite armor (Prot IV helmet and chestplate, Blast Protection IV leggings and boots, Feather Falling IV boots; all Unbreaking III + Mending), Netherite Sword (Sharpness V, Knockback I), Netherite Pickaxe (Efficiency V, Silk Touch), 128 end crystals, 128 obsidian, 128 respawn anchors, 128 glowstone, 8 totems (one in the off hand), 64 golden apples, 80 ender pearls, 32 ender chests, Crossbow (Multishot, Quick Charge III) with 64 Slow Falling arrows, 128 XP bottles, 4× Strength II, 4× Speed II · diggable ground | ✅ Playable (vs bot) |
 | **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
 | **Mace** — Netherite armor (Protection IV, Unbreaking III), Elytra, Mace (Density V, Wind Burst III), Mace (Breach IV), Netherite Sword and Axe (Sharpness V), Shield, 2 totems (one in the off hand), 128 wind charges, 64 ender pearls, 128 golden apples, 13× Strength II and 8× Speed II splash (as laid out in the reference inventory) | ✅ Playable (vs bot) |
+| **Bed Wars** — 1v1 on a void map: forge iron/gold, buy from the shop, bridge over, break their bed, final-kill them (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
+| **SkyWars** — 1v1 Solo Normal: caged on your island, loot chests, knock them into the void (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
 
-The arena is 80 × 80 blocks (walls 16 high). Every built-in kit also works online (see Multiplayer).
+The arena is 80 × 80 blocks (walls 16 high); Bed Wars and SkyWars use their own void maps. Every built-in kit, Bed Wars and SkyWars included, also works online (see Multiplayer).
+
+### Bed Wars
+
+A 1v1 version of Hypixel's Bed Wars (one player per team) on **Twin Isles**: two base islands with a bed, a forge and a shop, a middle island with an emerald generator, and two diamond islands on the sides — all floating over the void. 1.8 combat, hunger off.
+
+- **Resources:** your forge drops iron (every second) and gold (every 6 s); diamonds (30 s) and emeralds (60 s) spawn on the outer islands. Generators speed up after 5 minutes. Walk over drops to pick them up.
+- **Shop** (right-click the shop block at your base; Hypixel prices): Wool ×16 for 4 iron, End Stone ×12 for 24 iron, Blast-Proof Glass ×4 for 12 iron, Oak Planks ×16 for 4 gold, Obsidian ×4 for 4 emeralds; stone/iron/diamond swords for 10 iron / 7 gold / 4 emeralds, Knockback Stick 5 gold; permanent chainmail/iron/diamond armor for 24 iron / 12 gold / 6 emeralds; pickaxe and axe upgrades (they drop a tier when you die), permanent shears; arrows, bow, Power bow; Speed II, Jump V and Invisibility potions; golden apple, fireball (40 iron), TNT, ender pearl, water bucket. **Upgrades:** Sharpened Swords (4 diamonds), Reinforced Armor I–IV (2/4/8/16 diamonds).
+- **Rules:** while your bed stands you respawn after 5 s (your iron/gold/diamonds/emeralds go to your killer); once it is broken the next death is a final kill. You can't break your own bed, and only blocks players placed can be broken (the map is protected; TNT and fireballs only break placed wool/wood/end stone, never glass or obsidian). Beds are destroyed for everyone at 12 minutes (sudden death).
+- **Bot:** collects, shops by tier, covers its bed in wool (end stone at higher tiers), bridges over, breaks your bed, and fights with the 1.8 sword AI (and throws snowballs/eggs at you on bridges).
+
+### SkyWars
+
+A 1v1 version of Hypixel's Solo Normal SkyWars on **Floating Pair**: each player starts in a glass cage over their own island with three chests; a bigger middle island has four better chests and there is a small side island with one chest each side. The cages open when the countdown ends. No respawns — last one standing wins. 1.8 combat, natural regeneration on.
+
+- **Chests:** island chests always give a sword, 2–4 armor pieces and blocks, then some of: bow and arrows, snowballs/eggs, golden apples, an ender pearl, water/lava buckets, a tool, food. Middle chests give enchanted diamond/iron gear, Power bows, pearls, apples and splash potions. All chests refill at 4:00. Break a chest and it spills its contents.
+- **Chest screen:** right-click a chest; click an item to take it (armor goes straight on if that slot is empty) or *Take all*; click your own items to put them in.
+- **Bot:** loots its island, puts on the best armor, then (higher tiers) bridges to the middle chests before hunting you; it bridges with sneak, avoids fighting with its back to the void, and throws snowballs/eggs.
+
+Sources for rules and prices: [Hypixel Wiki — Bed Wars](https://hypixel.fandom.com/wiki/Bed_Wars), [Hypixel forums — Bed Wars price list](https://hypixel.net/threads/bed-wars-price-list.1335731/), [Hypixel forums — SkyWars chest guide](https://hypixel.net/threads/chest-guide-newest-hypixel-chest-guide.748358/), [Badlion — SkyWars guide](https://www.badlion.net/minecraft-blog/minecraft-skywars). The maps are original and simplified for 1v1.
 
 ### Subtiers
 
@@ -712,10 +739,12 @@ src/game      Fighter (movement/inventory/items/effects/durability/mining), comb
               XpOrb (mending), Blocks (placed blocks, collision, raycasts, water/lava flow), DroppedItem,
               Explosion, EndCrystal, crystals (placing, hitting, anchors),
               Match (tick order), Game (glue), kits, customKits (kit editor data), items
-src/ai        BotBrain + difficulty profiles
+src/game/modes  minigames on void maps: GameMode interface, maps, Bed Wars (+ shop), SkyWars (+ loot)
+src/ai        BotBrain + difficulty profiles; SkyPlanner (Bed Wars / SkyWars: shop, loot, bridge, beds)
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
               first-person hands, item meshes from the resource pack, arrows, particles
-src/ui        HUD, chat, Marketplace, inventory screen, menus, kit editor, settings, pixel-art sprites
+src/ui        HUD, chat, Marketplace, inventory screen, menus, kit editor, settings, pixel-art sprites,
+              ModeScreens (minigame scoreboard, Bed Wars shop, SkyWars chest)
 src/commands  Brigadier-style dispatcher, argument types (selectors, coordinates, items with components),
               the built-in commands
 src/mods      the Marketplace's mods: registry + settings, HUD widgets, damage indicator, AppleSkin maths
@@ -735,6 +764,7 @@ items to `src/game/items.ts`. Item models are generated from the 16×16 textures
 
 ## Credits
 
-Textures: the **Bare Bones** resource pack (items, armor, shield, arrows, blocks and HUD sprites in
-`src/assets/pack/`) — used here for private practice; check the pack's terms before redistributing.
+Textures: the official **Minecraft default** resource pack (items, armor, shield, arrows, blocks and
+HUD sprites in `src/assets/pack/`; team leather armor is dyed the vanilla way) — © Mojang, used here
+for private practice; Mojang's terms don't allow redistributing their assets.
 Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005. Not affiliated with Mojang or Microsoft.

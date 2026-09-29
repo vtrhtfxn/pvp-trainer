@@ -46,7 +46,51 @@ export type ItemId =
   | 'rail'
   | 'tnt_minecart'
   | 'flint_and_steel'
-  | 'red_shulker_box';
+  | 'red_shulker_box'
+  | 'wooden_sword'
+  | 'stone_sword'
+  | 'iron_sword'
+  | 'wooden_pickaxe'
+  | 'stone_pickaxe'
+  | 'iron_pickaxe'
+  | 'wooden_axe'
+  | 'stone_axe'
+  | 'iron_axe'
+  | 'shears'
+  | 'red_leather_helmet'
+  | 'red_leather_chestplate'
+  | 'red_leather_leggings'
+  | 'red_leather_boots'
+  | 'blue_leather_helmet'
+  | 'blue_leather_chestplate'
+  | 'blue_leather_leggings'
+  | 'blue_leather_boots'
+  | 'chainmail_helmet'
+  | 'chainmail_chestplate'
+  | 'chainmail_leggings'
+  | 'chainmail_boots'
+  | 'iron_helmet'
+  | 'iron_chestplate'
+  | 'iron_leggings'
+  | 'iron_boots'
+  | 'golden_helmet'
+  | 'golden_chestplate'
+  | 'golden_leggings'
+  | 'golden_boots'
+  | 'iron_ingot'
+  | 'gold_ingot'
+  | 'diamond'
+  | 'emerald'
+  | 'red_wool'
+  | 'blue_wool'
+  | 'end_stone'
+  | 'glass'
+  | 'fire_charge'
+  | 'tnt'
+  | 'snowball'
+  | 'egg'
+  | 'stick'
+  | 'potion';
 export type EffectId =
   | 'regeneration'
   | 'absorption'
@@ -93,13 +137,23 @@ export const HARMFUL_EFFECTS: ReadonlySet<EffectId> = new Set([
 ]);
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip' | 'sword_block' | 'cart' | 'ignite';
+export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip' | 'sword_block' | 'cart' | 'ignite' | 'tnt';
 
 /** Mining tool classes (the mineable/* block tags). */
-export type ToolKind = 'axe' | 'pickaxe' | 'sword';
+export type ToolKind = 'axe' | 'pickaxe' | 'sword' | 'shears';
 
 /** The splash potions NethPot uses (vanilla potion registry names in the comments). */
-export type PotionId = 'strength' | 'swiftness' | 'long_swiftness' | 'fire_resistance' | 'healing' | 'regeneration' | 'slow_falling';
+export type PotionId =
+  | 'strength'
+  | 'swiftness'
+  | 'long_swiftness'
+  | 'fire_resistance'
+  | 'healing'
+  | 'regeneration'
+  | 'slow_falling'
+  | 'bw_speed'
+  | 'bw_jump'
+  | 'bw_invisibility';
 
 export interface PotionDef {
   id: PotionId;
@@ -117,6 +171,10 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   strength: { id: 'strength', name: 'Strength', color: 0xffc700, effect: 'strength', amplifier: 1, duration: 1800 },
   // strong_swiftness: Speed II, 1:30
   swiftness: { id: 'swiftness', name: 'Swiftness', color: 0x33ebff, effect: 'speed', amplifier: 1, duration: 1800 },
+  // Bed Wars shop potions (drunk): Speed II and Jump Boost V for 45 s, Invisibility for 30 s.
+  bw_speed: { id: 'bw_speed', name: 'Swiftness', color: 0x33ebff, effect: 'speed', amplifier: 1, duration: 900 },
+  bw_jump: { id: 'bw_jump', name: 'Leaping', color: 0xfdff84, effect: 'jump_boost', amplifier: 4, duration: 900 },
+  bw_invisibility: { id: 'bw_invisibility', name: 'Invisibility', color: 0xf6f6f6, effect: 'invisibility', amplifier: 0, duration: 600 },
   // long_swiftness: Speed I, 8:00
   long_swiftness: { id: 'long_swiftness', name: 'Swiftness', color: 0x33ebff, effect: 'speed', amplifier: 0, duration: 9600 },
   // long_fire_resistance: Fire Resistance, 8:00
@@ -236,6 +294,8 @@ export interface ItemDef {
   toolSpeed?: number;
   /** Block item: the block (Blocks B.*) it places. */
   places?: number;
+  /** …and the `amount` it places it with (wool colour). */
+  blockData?: number;
   /** Bucket contents: the fluid (Blocks B.WATER / B.LAVA), or 0 for an empty bucket. */
   bucket?: number;
   /** ItemCooldowns: ticks the item is unusable after being used (golden heads: 10 s). */
@@ -438,6 +498,62 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   // Place it and right-click it to take out the 27 Minecarts with TNT it holds.
   red_shulker_box: { id: 'red_shulker_box', name: 'Red Shulker Box', maxStack: 1, ...MELEE_FIST, use: 'place', places: 16 },
   flint_and_steel: { id: 'flint_and_steel', name: 'Flint and Steel', maxStack: 1, ...MELEE_FIST, use: 'ignite', maxDamage: 64 },
+  // ---- Bed Wars / SkyWars tiers (unbreakable, like the minigame servers make them)
+  wooden_sword: { id: 'wooden_sword', name: 'Wooden Sword', maxStack: 1, attackDamage: 4, attackSpeed: 1.6, use: 'none', handheld: true, hitCost: 0, tool: 'sword', toolSpeed: 15 },
+  stone_sword: { id: 'stone_sword', name: 'Stone Sword', maxStack: 1, attackDamage: 5, attackSpeed: 1.6, use: 'none', handheld: true, hitCost: 0, tool: 'sword', toolSpeed: 15 },
+  iron_sword: { id: 'iron_sword', name: 'Iron Sword', maxStack: 1, attackDamage: 6, attackSpeed: 1.6, use: 'none', handheld: true, hitCost: 0, tool: 'sword', toolSpeed: 15 },
+  wooden_pickaxe: { id: 'wooden_pickaxe', name: 'Wooden Pickaxe', maxStack: 1, attackDamage: 2, attackSpeed: 1.2, use: 'none', handheld: true, tool: 'pickaxe', toolSpeed: 2 },
+  stone_pickaxe: { id: 'stone_pickaxe', name: 'Stone Pickaxe', maxStack: 1, attackDamage: 3, attackSpeed: 1.2, use: 'none', handheld: true, tool: 'pickaxe', toolSpeed: 4 },
+  iron_pickaxe: { id: 'iron_pickaxe', name: 'Iron Pickaxe', maxStack: 1, attackDamage: 4, attackSpeed: 1.2, use: 'none', handheld: true, tool: 'pickaxe', toolSpeed: 6 },
+  wooden_axe: { id: 'wooden_axe', name: 'Wooden Axe', maxStack: 1, attackDamage: 7, attackSpeed: 0.8, use: 'none', handheld: true, disablesShield: true, tool: 'axe', toolSpeed: 2 },
+  stone_axe: { id: 'stone_axe', name: 'Stone Axe', maxStack: 1, attackDamage: 9, attackSpeed: 0.8, use: 'none', handheld: true, disablesShield: true, tool: 'axe', toolSpeed: 4 },
+  iron_axe: { id: 'iron_axe', name: 'Iron Axe', maxStack: 1, attackDamage: 9, attackSpeed: 0.9, use: 'none', handheld: true, disablesShield: true, tool: 'axe', toolSpeed: 6 },
+  shears: { id: 'shears', name: 'Shears', maxStack: 1, ...MELEE_FIST, use: 'none', tool: 'shears', toolSpeed: 5 },
+  red_leather_helmet: armor('red_leather_helmet', 'Red Leather Cap', 0, 1, 0, 0),
+  red_leather_chestplate: armor('red_leather_chestplate', 'Red Leather Tunic', 1, 3, 0, 0),
+  red_leather_leggings: armor('red_leather_leggings', 'Red Leather Pants', 2, 2, 0, 0),
+  red_leather_boots: armor('red_leather_boots', 'Red Leather Boots', 3, 1, 0, 0),
+  blue_leather_helmet: armor('blue_leather_helmet', 'Blue Leather Cap', 0, 1, 0, 0),
+  blue_leather_chestplate: armor('blue_leather_chestplate', 'Blue Leather Tunic', 1, 3, 0, 0),
+  blue_leather_leggings: armor('blue_leather_leggings', 'Blue Leather Pants', 2, 2, 0, 0),
+  blue_leather_boots: armor('blue_leather_boots', 'Blue Leather Boots', 3, 1, 0, 0),
+  chainmail_helmet: armor('chainmail_helmet', 'Chainmail Helmet', 0, 2, 0, 0),
+  chainmail_chestplate: armor('chainmail_chestplate', 'Chainmail Chestplate', 1, 5, 0, 0),
+  chainmail_leggings: armor('chainmail_leggings', 'Chainmail Leggings', 2, 4, 0, 0),
+  chainmail_boots: armor('chainmail_boots', 'Chainmail Boots', 3, 1, 0, 0),
+  iron_helmet: armor('iron_helmet', 'Iron Helmet', 0, 2, 0, 0),
+  iron_chestplate: armor('iron_chestplate', 'Iron Chestplate', 1, 6, 0, 0),
+  iron_leggings: armor('iron_leggings', 'Iron Leggings', 2, 5, 0, 0),
+  iron_boots: armor('iron_boots', 'Iron Boots', 3, 2, 0, 0),
+  golden_helmet: armor('golden_helmet', 'Golden Helmet', 0, 2, 0, 0),
+  golden_chestplate: armor('golden_chestplate', 'Golden Chestplate', 1, 5, 0, 0),
+  golden_leggings: armor('golden_leggings', 'Golden Leggings', 2, 3, 0, 0),
+  golden_boots: armor('golden_boots', 'Golden Boots', 3, 1, 0, 0),
+  iron_ingot: { id: 'iron_ingot', name: 'Iron Ingot', maxStack: 64, ...MELEE_FIST, use: 'none' },
+  gold_ingot: { id: 'gold_ingot', name: 'Gold Ingot', maxStack: 64, ...MELEE_FIST, use: 'none' },
+  diamond: { id: 'diamond', name: 'Diamond', maxStack: 64, ...MELEE_FIST, use: 'none' },
+  emerald: { id: 'emerald', name: 'Emerald', maxStack: 64, ...MELEE_FIST, use: 'none' },
+  red_wool: { id: 'red_wool', name: 'Red Wool', maxStack: 64, ...MELEE_FIST, use: 'place', places: 17, blockData: 0 },
+  blue_wool: { id: 'blue_wool', name: 'Blue Wool', maxStack: 64, ...MELEE_FIST, use: 'place', places: 17, blockData: 1 },
+  end_stone: { id: 'end_stone', name: 'End Stone', maxStack: 64, ...MELEE_FIST, use: 'place', places: 18 },
+  glass: { id: 'glass', name: 'Blast-Proof Glass', maxStack: 64, ...MELEE_FIST, use: 'place', places: 19 },
+  // Bed Wars fireball: flies straight where you look and bursts (power 1.5, big knockback).
+  fire_charge: { id: 'fire_charge', name: 'Fireball', maxStack: 64, ...MELEE_FIST, use: 'throw', cooldown: 10 },
+  // Lights itself the moment it is placed (Bed Wars): goes off 2.5 s later.
+  tnt: { id: 'tnt', name: 'TNT', maxStack: 64, ...MELEE_FIST, use: 'tnt' },
+  // No damage, just the knockback of a hit.
+  snowball: { id: 'snowball', name: 'Snowball', maxStack: 16, ...MELEE_FIST, use: 'throw' },
+  egg: { id: 'egg', name: 'Egg', maxStack: 16, ...MELEE_FIST, use: 'throw' },
+  stick: { id: 'stick', name: 'Knockback Stick', maxStack: 1, ...MELEE_FIST, use: 'none', handheld: true },
+  // Drinkable potion (its effect is the stack's potion): 1.6 s to drink.
+  potion: {
+    id: 'potion',
+    name: 'Potion',
+    maxStack: 1,
+    ...MELEE_FIST,
+    use: 'food',
+    food: { nutrition: 0, saturationModifier: 0, useTicks: 32, alwaysEdible: true, effects: [] },
+  },
 };
 
 export const FIST: ItemDef = { id: 'arrow', name: 'Hand', maxStack: 0, ...MELEE_FIST, use: 'none' };
@@ -493,6 +609,7 @@ export function sameItem(a: ItemStack, b: ItemStack): boolean {
 /** Display name, e.g. "Splash Potion of Healing". */
 export function stackName(s: ItemStack): string {
   if (s.id === 'splash_potion' && s.potion) return `Splash Potion of ${POTIONS[s.potion].name}`;
+  if (s.id === 'potion' && s.potion) return `Potion of ${POTIONS[s.potion].name}`;
   if (s.id === 'tipped_arrow' && s.potion) return `Arrow of ${POTIONS[s.potion].name}`;
   return ITEMS[s.id].name;
 }

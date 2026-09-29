@@ -1,5 +1,5 @@
 /**
- * Textures from the Bare Bones resource pack (src/assets/pack), keyed by their path under
+ * Textures from the Minecraft default resource pack (src/assets/pack), keyed by their path under
  * assets/minecraft/textures without the extension — e.g. "item/diamond_sword".
  * Everything is bundled (and inlined into the single-file build) and decoded once at startup.
  */
