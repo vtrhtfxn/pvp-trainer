@@ -12,8 +12,11 @@ import { Thrown } from '../game/Thrown';
 import { World, type WorldEvent } from '../game/World';
 import { XpOrb } from '../game/XpOrb';
 import { COUNTDOWN_TICKS, SPAWN_DISTANCE } from '../game/Match';
+import { createMode } from '../game/modes';
+import type { GameMode, ModeHost, ScoreLine } from '../game/modes/GameMode';
+import type { TeamGear } from '../game/modes/shop';
 import type { NetClient } from './Client';
-import { PLAYBACK_MAX_MS, PLAYBACK_MIN_MS, fromSlot, toSlot, type NetEntities, type NetEvent, type NetFighter, type NetPhase, type ServerMsg } from './protocol';
+import { PLAYBACK_MAX_MS, PLAYBACK_MIN_MS, fromSlot, toSlot, type ClientMsg, type NetEntities, type NetEvent, type NetFighter, type NetPhase, type ServerMsg } from './protocol';
 
 const RNG = new Rng(3);
 
@@ -97,6 +100,19 @@ export class NetMatch {
   private readonly shown = { x: 0, y: 0, z: 0 };
   /** Wall clock (ms); tests drive it with simulated time. */
   clock: () => number = () => performance.now();
+  /**
+   * Bed Wars / SkyWars: the mode builds the same map the server does and knows its layout (for
+   * the shop check); its rules run on the server, which sends the panels below.
+   */
+  readonly mode: GameMode | null;
+  /** The server's scoreboard, title and team upgrades for us. */
+  modeUi: { sb: ScoreLine[]; title: { title: string; sub: string } | null; gear: TeamGear | null } = { sb: [], title: null, gear: null };
+  /** Announcements not yet shown. */
+  announcements: ScoreLine[] = [];
+  /** Chest contents the server sent (the newest), and whether it asked to open the screen. */
+  chestMsg: { x: number; y: number; z: number; items: ReturnType<typeof fromSlot>[] | null; open: boolean } | null = null;
+  /** The server's answer to our last purchase, not yet shown. */
+  boughtMsg: string | null = null;
 
   constructor(
     private readonly net: NetClient,
@@ -104,7 +120,12 @@ export class NetMatch {
     kitId: KitId = 'sword',
   ) {
     this.kit = kitById(kitId);
-    this.world = new World(undefined, this.kit.floorDepth ?? 0);
+    this.mode = createMode(this.kit);
+    this.world = new World(undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
+    if (this.mode) {
+      this.world.blocks.voidWorld = true;
+      this.world.blocks.clear();
+    }
     this.world.legacyCombat = !!this.kit.legacyCombat;
     this.player = new Fighter('player', 'You', this.world);
     this.bot = new Fighter('bot', 'Opponent', this.world);
@@ -116,6 +137,41 @@ export class NetMatch {
     this.player.reset(0, mine, you === 0 ? 0 : Math.PI, this.kit);
     this.bot.reset(0, -mine, you === 0 ? Math.PI : 0, this.kit);
     this.bot.networked = true;
+    this.setupMode();
+  }
+
+  /** The mode's view of this game: seat 0 is red (`player`), seat 1 blue. */
+  get host(): ModeHost {
+    const me = this.player;
+    const them = this.bot;
+    const you = this.you;
+    const w = this.world;
+    const phase = this.phase;
+    const fightTicks = this.fightTicks;
+    return { world: w, player: you === 0 ? me : them, bot: you === 0 ? them : me, phase, fightTicks };
+  }
+
+  /** Builds the mode's map and puts both fighters on their spawns, as the server does. */
+  private setupMode() {
+    if (!this.mode) return;
+    this.mode.setup(this.host);
+    this.player.events.length = 0;
+    this.bot.events.length = 0;
+    this.bot.networked = true;
+    this.modeUi = { sb: [], title: null, gear: null };
+    this.announcements = [];
+    this.chestMsg = null;
+    this.boughtMsg = null;
+  }
+
+  /** Bed Wars: buy a shop item (the answer comes back as boughtMsg). */
+  buy(key: string) {
+    this.net.send({ t: 'buy', key });
+  }
+
+  /** SkyWars: a click in the chest screen. */
+  chestAction(x: number, y: number, z: number, op: Extract<ClientMsg, { t: 'chest' }>['op'], i = 0) {
+    this.net.send({ t: 'chest', x, y, z, op, i });
   }
 
   get countdownSeconds(): number {
@@ -203,7 +259,20 @@ export class NetMatch {
         this.player.vel.set(0, 0, 0);
         this.player.fallDistance = 0;
         this.player.fallFlying = false;
+        if (typeof msg.yaw === 'number') this.player.yaw = this.player.prevYaw = msg.yaw;
         this.teleportAck = msg.id;
+        break;
+      case 'mode':
+        this.modeUi = { sb: msg.sb ?? [], title: msg.title ?? null, gear: (msg.gear as unknown as TeamGear) ?? null };
+        break;
+      case 'announce':
+        this.announcements.push(...(msg.lines ?? []));
+        break;
+      case 'chest':
+        this.chestMsg = { x: msg.x, y: msg.y, z: msg.z, items: msg.items ? msg.items.map((s) => fromSlot(s)) : null, open: !!msg.open };
+        break;
+      case 'bought':
+        this.boughtMsg = msg.msg;
         break;
       case 'start':
         this.phase = 'countdown';
@@ -227,6 +296,7 @@ export class NetMatch {
     this.player.reset(0, mine, this.you === 0 ? 0 : Math.PI, this.kit);
     this.bot.reset(0, -mine, this.you === 0 ? Math.PI : 0, this.kit);
     this.bot.networked = true;
+    this.setupMode();
     this.lastSwing = 0;
     this.hasRemote = false;
     this.samples.length = 0;

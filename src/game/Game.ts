@@ -49,6 +49,7 @@ function blockSound(block: number): 'wood' | 'stone' | 'web' {
 import { Match } from './Match';
 import { Spectate } from './Spectate';
 import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
+import type { ScoreLine } from './modes/GameMode';
 import { Bedwars } from './modes/Bedwars';
 import { Skywars } from './modes/Skywars';
 import { SpectatorHud } from '../ui/SpectatorHud';
@@ -96,6 +97,8 @@ export class Game {
   private readonly clickHint: HTMLDivElement;
   private readonly net: NetClient;
   private netMatch: NetMatch | null = null;
+  /** Where the chest screen was opened (online: to match the server's updates to it). */
+  private openChestAt: { x: number; y: number; z: number } | null = null;
   private readonly inventory: InventoryScreen;
   private readonly previewCanvas: HTMLCanvasElement;
   // ---- commands & chat
@@ -643,9 +646,26 @@ export class Game {
   /** Opens the shop or a chest the player right-clicked (Bed Wars / SkyWars). */
   private openModeScreen(x: number, y: number, z: number, block: number) {
     const m = this.match;
-    if (!(m instanceof Match)) return;
     const p = m.player;
     if (this.state !== 'playing' || p.dead || m.phase !== 'fight' || this.screenOpen) return;
+    if (m instanceof NetMatch) {
+      // Online the server owns the shop; chests open when the server sends their contents.
+      const mode = m.mode;
+      if (block !== B.SHOP || !(mode instanceof Bedwars)) return;
+      if (!mode.nearShop(m.host, p)) {
+        this.hud.showCenter('That is the other team’s shop', 'toast', 40);
+        return;
+      }
+      const gear = m.modeUi.gear;
+      if (!gear) return;
+      this.freeMouse();
+      this.shopUi.show(p, gear, (item) => {
+        m.buy(item.key);
+        return undefined;
+      });
+      return;
+    }
+    if (!(m instanceof Match)) return;
     const mode = m.mode;
     if (block === B.SHOP && mode instanceof Bedwars) {
       if (!mode.nearShop(m, p)) {
@@ -660,7 +680,12 @@ export class Game {
       mode.open(m, p, x, y, z);
       this.freeMouse();
       this.sound.equip();
-      this.chestUi.show(p, items, () => this.sound.equip());
+      this.chestUi.show(
+        p,
+        items,
+        { take: (i) => mode.take(p, x, y, z, i), takeAll: () => mode.takeAll(p, x, y, z), put: (i) => mode.put(p, x, y, z, i) },
+        () => this.sound.equip(),
+      );
     }
   }
 
@@ -691,21 +716,60 @@ export class Game {
       this.scoreboard.hide();
       return;
     }
-    this.scoreboard.update(mode.scoreboard(m, viewer));
-    for (const a of mode.takeAnnouncements()) {
+    this.showModePanels(mode.scoreboard(m, viewer), mode.takeAnnouncements(), spectating ? null : mode.title(m, viewer), spectating);
+    // Right-clicked a chest or the shop this tick.
+    if (!spectating) for (const e of viewer.events) if (e.type === 'openBlock') this.openModeScreen(e.x, e.y, e.z, e.block);
+  }
+
+  private showModePanels(sb: ScoreLine[] | null, announcements: ScoreLine[], title: { title: string; sub: string } | null, spectating: boolean) {
+    this.scoreboard.update(sb);
+    for (const a of announcements) {
       if (spectating) this.specHud.announce(a.text, a.color ?? '#ffffff');
       else this.chat.print([{ t: a.text, c: a.color }]);
       if (a.text.startsWith('BED DESTRUCTION')) this.sound.jingle(false);
     }
-    if (!spectating) {
-      const t = mode.title(m, viewer);
-      if (t) {
-        this.hud.showTitle('title', t.title);
-        this.hud.showTitle('subtitle', t.sub);
-      }
-      // Right-clicked a chest or the shop this tick.
-      for (const e of viewer.events) if (e.type === 'openBlock') this.openModeScreen(e.x, e.y, e.z, e.block);
+    if (title) {
+      this.hud.showTitle('title', title.title);
+      this.hud.showTitle('subtitle', title.sub);
     }
+  }
+
+  /** The online side of tickModeUi: everything comes from the server's messages. */
+  private tickOnlineModeUi(m: NetMatch) {
+    if (!m.mode) {
+      this.scoreboard.hide();
+      return;
+    }
+    const p = m.player;
+    this.showModePanels(m.modeUi.sb.length ? m.modeUi.sb : null, m.announcements.splice(0), m.modeUi.title, false);
+    for (const e of p.events) if (e.type === 'openBlock') this.openModeScreen(e.x, e.y, e.z, e.block);
+    const c = m.chestMsg;
+    m.chestMsg = null;
+    if (c) {
+      const same = this.chestUi.open && this.openChestAt?.x === c.x && this.openChestAt.y === c.y && this.openChestAt.z === c.z;
+      if (same && !c.items) this.closeModeScreens();
+      else if (same && c.items) this.chestUi.setItems(c.items);
+      else if (c.open && c.items && this.state === 'playing' && !p.dead && m.phase === 'fight' && !this.screenOpen) {
+        const { x, y, z } = c;
+        this.openChestAt = { x, y, z };
+        this.freeMouse();
+        this.sound.equip();
+        this.chestUi.show(
+          p,
+          c.items,
+          { take: (i) => m.chestAction(x, y, z, 'take', i), takeAll: () => m.chestAction(x, y, z, 'all'), put: (i) => m.chestAction(x, y, z, 'put', i) },
+          () => this.sound.equip(),
+        );
+      }
+    }
+    if (m.boughtMsg !== null) {
+      this.shopUi.setMessage(m.boughtMsg);
+      m.boughtMsg = null;
+    }
+    if (this.shopUi.open && m.modeUi.gear) this.shopUi.setGear(m.modeUi.gear);
+    if ((this.shopUi.open || this.chestUi.open) && (p.dead || m.phase !== 'fight')) this.closeModeScreens();
+    else if (this.shopUi.open) this.shopUi.refreshIfChanged();
+    else if (this.chestUi.open) this.chestUi.refreshIfChanged();
   }
 
   private toggleInventory() {
@@ -941,9 +1005,8 @@ export class Game {
     this.sound.unlock();
     this.leaveOnline(false);
     // Hosting a room uses the kit selected in the main menu; joining uses the room's.
-    // Custom kits only live in this browser, and Bed Wars / SkyWars are offline for now: an
-    // online room uses Sword instead.
-    const offline = isCustomKit(this.settings.kit) || kitById(this.settings.kit).offlineOnly;
+    // Custom kits only live in this browser: an online room uses Sword instead.
+    const offline = isCustomKit(this.settings.kit);
     this.net.connect(url, room, name, offline ? 'sword' : this.settings.kit);
   }
 
@@ -1448,6 +1511,7 @@ export class Game {
     if (m instanceof Match) this.tickModeUi(m, m.player, false);
     if ((this.shopUi.open || this.chestUi.open) && (m.player.dead || m.phase !== 'fight')) this.closeModeScreens();
     else if (this.shopUi.open) this.shopUi.refreshIfChanged();
+    else if (this.chestUi.open) this.chestUi.refreshIfChanged();
     if (this.drill && this.state === 'playing') {
       this.tickDrill(this.drill);
       if (this.state !== 'playing' || this.match !== m) {
@@ -1492,6 +1556,7 @@ export class Game {
     m.tick();
     this.view.firstPerson.tick(m.player);
     this.hud.tick(m.player);
+    this.tickOnlineModeUi(m);
 
     if (m.phase === 'countdown') {
       const n = m.countdownSeconds;

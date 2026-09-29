@@ -2,8 +2,7 @@ import { B } from '../Blocks';
 import { DroppedItem } from '../DroppedItem';
 import type { Fighter } from '../Fighter';
 import type { ItemId } from '../items';
-import type { Match } from '../Match';
-import { TEAM_COLORS, TEAM_NAMES, teamOf, type GameMode, type ScoreLine } from './GameMode';
+import { TEAM_COLORS, TEAM_NAMES, teamOf, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
 import { buildBedwarsMap, type BedwarsLayout, type Spot } from './maps';
 import { SHOP, applyTeamEnchants, buy, respawnLoadout, type Currency, type ShopItem, type TeamGear } from './shop';
 
@@ -192,7 +191,7 @@ export class Bedwars implements GameMode {
         st.respawnAt = null;
         st.deathHandled = false;
         this.spawn(m, f, true);
-        if (f === m.bot) m.brain.resetRound();
+        m.onRespawn?.(f);
       }
     }
   }

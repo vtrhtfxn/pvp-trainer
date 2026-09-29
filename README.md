@@ -205,6 +205,12 @@ explosions and wind launches reach you as a velocity packet and a pearl as a tel
 sent before applying it are ignored). Your client still predicts your own movement, elytra
 gliding included, and reports its fall distance — crits, mace smashes and fall damage use it.
 
+**Bed Wars and SkyWars online:** the host is red, the joiner blue. Both clients build the same
+void map the server does; the server runs the rules (forges, generators, beds, respawns, chest
+loot and refills) and sends each player their scoreboard, respawn title, team upgrades and the
+announcements. Shop purchases and chest clicks go to the server, which checks you are at your own
+shop / within reach of the chest; a respawn arrives as a teleport to your spawn.
+
 **Opponents move smoothly, even on shaky Wi-Fi.** Every move a client sends carries its own tick
 number, and the server relays it to the opponent the moment it arrives (it does not wait for its
 next tick, so a busy or throttled host no longer freezes anyone). The receiver plays the moves
@@ -263,10 +269,10 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **Crystal** — Netherite armor (Prot IV helmet and chestplate, Blast Protection IV leggings and boots, Feather Falling IV boots; all Unbreaking III + Mending), Netherite Sword (Sharpness V, Knockback I), Netherite Pickaxe (Efficiency V, Silk Touch), 128 end crystals, 128 obsidian, 128 respawn anchors, 128 glowstone, 8 totems (one in the off hand), 64 golden apples, 80 ender pearls, 32 ender chests, Crossbow (Multishot, Quick Charge III) with 64 Slow Falling arrows, 128 XP bottles, 4× Strength II, 4× Speed II · diggable ground | ✅ Playable (vs bot) |
 | **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
 | **Mace** — Netherite armor (Protection IV, Unbreaking III), Elytra, Mace (Density V, Wind Burst III), Mace (Breach IV), Netherite Sword and Axe (Sharpness V), Shield, 2 totems (one in the off hand), 128 wind charges, 64 ender pearls, 128 golden apples, 13× Strength II and 8× Speed II splash (as laid out in the reference inventory) | ✅ Playable (vs bot) |
-| **Bed Wars** — 1v1 on a void map: forge iron/gold, buy from the shop, bridge over, break their bed, final-kill them (see below) | ✅ Playable (vs bot, Bot vs Bot; offline only) |
-| **SkyWars** — 1v1 Solo Normal: caged on your island, loot chests, knock them into the void (see below) | ✅ Playable (vs bot, Bot vs Bot; offline only) |
+| **Bed Wars** — 1v1 on a void map: forge iron/gold, buy from the shop, bridge over, break their bed, final-kill them (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
+| **SkyWars** — 1v1 Solo Normal: caged on your island, loot chests, knock them into the void (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
 
-The arena is 80 × 80 blocks (walls 16 high); Bed Wars and SkyWars use their own void maps. Every built-in kit except Bed Wars and SkyWars also works online (see Multiplayer).
+The arena is 80 × 80 blocks (walls 16 high); Bed Wars and SkyWars use their own void maps. Every built-in kit, Bed Wars and SkyWars included, also works online (see Multiplayer).
 
 ### Bed Wars
 
@@ -758,6 +764,7 @@ items to `src/game/items.ts`. Item models are generated from the 16×16 textures
 
 ## Credits
 
-Textures: the **Bare Bones** resource pack (items, armor, shield, arrows, blocks and HUD sprites in
-`src/assets/pack/`) — used here for private practice; check the pack's terms before redistributing.
+Textures: the official **Minecraft default** resource pack (items, armor, shield, arrows, blocks and
+HUD sprites in `src/assets/pack/`; team leather armor is dyed the vanilla way) — © Mojang, used here
+for private practice; Mojang's terms don't allow redistributing their assets.
 Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005. Not affiliated with Mojang or Microsoft.

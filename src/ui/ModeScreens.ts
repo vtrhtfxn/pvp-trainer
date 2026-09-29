@@ -1,5 +1,5 @@
 import type { Fighter } from '../game/Fighter';
-import { ITEMS, stackLore, stackName, type ItemStack } from '../game/items';
+import { stackLore, stackName, type ItemStack } from '../game/items';
 import type { ScoreLine } from '../game/modes/GameMode';
 import { CURRENCY_COLORS, CURRENCY_NAMES, SHOP, SHOP_CATEGORIES, priceOf, wallet, type Currency, type ShopCategory, type ShopItem, type TeamGear } from '../game/modes/shop';
 import { itemIcon } from '../render/itemIcons';
@@ -75,7 +75,8 @@ export class ShopScreen {
   private msg = '';
   private f: Fighter | null = null;
   private gear: TeamGear | null = null;
-  private buyFn: ((item: ShopItem) => string | null) | null = null;
+  /** Buys an item: an error, null (bought), or undefined (sent to the server; see setMessage). */
+  private buyFn: ((item: ShopItem) => string | null | undefined) | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -89,7 +90,7 @@ export class ShopScreen {
     parent.append(this.root);
   }
 
-  show(f: Fighter, gear: TeamGear, buyFn: (item: ShopItem) => string | null) {
+  show(f: Fighter, gear: TeamGear, buyFn: (item: ShopItem) => string | null | undefined) {
     this.f = f;
     this.gear = gear;
     this.buyFn = buyFn;
@@ -102,6 +103,19 @@ export class ShopScreen {
   hide() {
     this.open = false;
     this.root.style.display = 'none';
+  }
+
+  /** The server's answer to a purchase (online). */
+  setMessage(msg: string) {
+    this.msg = msg;
+    if (this.open) this.render();
+  }
+
+  /** The team's upgrades changed (online: the server's copy). */
+  setGear(gear: TeamGear) {
+    const changed = JSON.stringify(gear) !== JSON.stringify(this.gear);
+    this.gear = gear;
+    if (changed && this.open) this.render();
   }
 
   private walletKey = '';
@@ -152,8 +166,8 @@ export class ShopScreen {
       b.append(price);
       b.addEventListener('click', () => {
         this.cb.onUiSound();
-        const err = this.buyFn?.(item) ?? null;
-        this.msg = err ? `✘ ${err}` : `✔ Bought ${item.name}`;
+        const err = this.buyFn?.(item);
+        this.msg = err === undefined ? '…' : err ? `✘ ${err}` : `✔ Bought ${item.name}`;
         this.render();
       });
       grid.append(b);
@@ -164,13 +178,22 @@ export class ShopScreen {
   }
 }
 
+/** What the chest screen does with a click: offline straight on the mode, online via the server. */
+export interface ChestActions {
+  take(i: number): void;
+  takeAll(): void;
+  put(i: number): void;
+}
+
 /** A SkyWars chest: its 27 slots above your inventory; click a stack to move it across. */
 export class ChestScreen {
   readonly root: HTMLDivElement;
   open = false;
   private f: Fighter | null = null;
   private items: (ItemStack | null)[] = [];
+  private actions: ChestActions | null = null;
   private onChange: (() => void) | null = null;
+  private invKey = '';
 
   constructor(
     parent: HTMLElement,
@@ -184,9 +207,10 @@ export class ChestScreen {
     parent.append(this.root);
   }
 
-  show(f: Fighter, items: (ItemStack | null)[], onChange: () => void) {
+  show(f: Fighter, items: (ItemStack | null)[], actions: ChestActions, onChange: () => void) {
     this.f = f;
     this.items = items;
+    this.actions = actions;
     this.onChange = onChange;
     this.open = true;
     this.root.style.display = '';
@@ -198,44 +222,26 @@ export class ChestScreen {
     this.root.style.display = 'none';
   }
 
-  /** Chest → you: as much as fits. */
-  private take(i: number) {
-    const f = this.f!;
-    const s = this.items[i];
-    if (!s) return;
-    const copy = { ...s };
-    f.addItem(copy);
-    this.items[i] = copy.count > 0 ? copy : null;
-    // Armor goes straight on if that slot is empty (a common quality-of-life plugin rule).
-    this.autoEquip();
+  /** New contents (online: the server's answer to a click). */
+  setItems(items: (ItemStack | null)[]) {
+    this.items = items;
+    if (this.open) this.render();
   }
 
-  private autoEquip() {
+  private key(): string {
     const f = this.f!;
-    for (let i = 0; i < f.inventory.length; i++) {
-      const s = f.inventory[i];
-      const a = s ? ITEMS[s.id].armor : undefined;
-      if (!s || !a || a.glider || f.armorSlots[a.slot]) continue;
-      f.armorSlots[a.slot] = s;
-      f.inventory[i] = null;
-    }
-    f.recomputeArmor();
+    return JSON.stringify([f.inventory, f.armorSlots, this.items]);
   }
 
-  /** You → chest: into the first empty slot. */
-  private put(i: number) {
-    const f = this.f!;
-    const s = f.inventory[i];
-    if (!s) return;
-    const j = this.items.findIndex((x) => !x);
-    if (j < 0) return;
-    this.items[j] = s;
-    f.inventory[i] = null;
+  /** Re-draws when the inventory or the chest changed behind the screen (online snapshots). */
+  refreshIfChanged() {
+    if (this.open && this.f && this.key() !== this.invKey) this.render();
   }
 
   render() {
     const f = this.f;
     if (!f) return;
+    this.invKey = this.key();
     const panel = h('div', 'mode-panel chest');
     panel.append(h('div', 'mode-title', 'Chest'));
     const slot = (s: ItemStack | null, onClick: () => void) => {
@@ -254,20 +260,20 @@ export class ChestScreen {
       return b;
     };
     const chest = h('div', 'mode-slots');
-    this.items.forEach((s, i) => chest.append(slot(s, () => this.take(i))));
+    this.items.forEach((s, i) => chest.append(slot(s, () => this.actions?.take(i))));
     panel.append(chest);
     const takeAll = h('button', 'mc-btn mode-takeall', 'Take all');
     takeAll.addEventListener('click', () => {
       this.cb.onUiSound();
-      for (let i = 0; i < this.items.length; i++) this.take(i);
+      this.actions?.takeAll();
       this.onChange?.();
       this.render();
     });
     panel.append(takeAll);
     panel.append(h('div', 'mode-sub', 'Your inventory (click to put back)'));
     const inv = h('div', 'mode-slots');
-    for (let i = 9; i < 36; i++) inv.append(slot(f.inventory[i], () => this.put(i)));
-    for (let i = 0; i < 9; i++) inv.append(slot(f.inventory[i], () => this.put(i)));
+    for (let i = 9; i < 36; i++) inv.append(slot(f.inventory[i], () => this.actions?.put(i)));
+    for (let i = 0; i < 9; i++) inv.append(slot(f.inventory[i], () => this.actions?.put(i)));
     panel.append(inv);
     panel.append(h('div', 'mode-msg', 'Click an item to move it · Esc or E to close'));
     this.root.replaceChildren(panel);

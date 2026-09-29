@@ -2,9 +2,8 @@ import { B } from '../Blocks';
 import { DroppedItem } from '../DroppedItem';
 import type { Fighter } from '../Fighter';
 import { ITEMS, type Enchants, type ItemId, type ItemStack } from '../items';
-import type { Match } from '../Match';
 import type { Rng } from '../../core/rng';
-import { TEAM_COLORS, TEAM_NAMES, teamOf, type GameMode, type ScoreLine } from './GameMode';
+import { TEAM_COLORS, TEAM_NAMES, teamOf, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
 import { buildSkywarsMap, type SkywarsLayout, type Spot } from './maps';
 
 /** Chests refill this far into the game (Hypixel refills around then). */
@@ -163,6 +162,40 @@ export class Skywars implements GameMode {
     this.opened[teamOf(m, f)].add(`${x},${y},${z}`);
   }
 
+  /** Whether `f` can reach into the chest at (x, y, z): it exists and is within 6 blocks of their eyes. */
+  canUse(f: Fighter, x: number, y: number, z: number): boolean {
+    if (f.dead || !this.chestAt(x, y, z)) return false;
+    const e = f.eyePos();
+    return Math.hypot(e.x - (x + 0.5), e.y - (y + 0.5), e.z - (z + 0.5)) <= 6;
+  }
+
+  /** Chest slot `i` → `f`: as much as fits (armor goes straight on if that slot is empty). */
+  take(f: Fighter, x: number, y: number, z: number, i: number) {
+    const items = this.chestAt(x, y, z);
+    const s = items?.[i];
+    if (!items || !s) return;
+    const copy = { ...s };
+    f.addItem(copy);
+    items[i] = copy.count > 0 ? copy : null;
+    autoEquip(f);
+  }
+
+  /** Every slot of the chest → `f`. */
+  takeAll(f: Fighter, x: number, y: number, z: number) {
+    for (let i = 0; i < CHEST_SLOTS; i++) this.take(f, x, y, z, i);
+  }
+
+  /** `f`'s inventory slot `i` → the chest's first empty slot. */
+  put(f: Fighter, x: number, y: number, z: number, i: number) {
+    const items = this.chestAt(x, y, z);
+    const s = f.inventory[i];
+    if (!items || !s) return;
+    const j = items.findIndex((it) => !it);
+    if (j < 0) return;
+    items[j] = s;
+    f.inventory[i] = null;
+  }
+
   tick(m: Match) {
     const w = m.world;
     if (m.phase === 'fight' && !this.cagesOpen) {
@@ -216,6 +249,18 @@ export class Skywars implements GameMode {
     this.announcements = [];
     return out;
   }
+}
+
+/** Armor in the inventory goes on where that slot is empty (a common quality-of-life plugin rule). */
+function autoEquip(f: Fighter) {
+  for (let i = 0; i < f.inventory.length; i++) {
+    const s = f.inventory[i];
+    const a = s ? ITEMS[s.id].armor : undefined;
+    if (!s || !a || a.glider || f.armorSlots[a.slot]) continue;
+    f.armorSlots[a.slot] = s;
+    f.inventory[i] = null;
+  }
+  f.recomputeArmor();
 }
 
 /** How much better an item is than nothing, for sorting loot (the bot takes the best first). */

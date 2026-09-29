@@ -6,6 +6,12 @@ import { kitById, type KitDef, type KitId } from '../game/kits';
 import { World } from '../game/World';
 import { COUNTDOWN_TICKS, SPAWN_DISTANCE } from '../game/Match';
 import { Rng } from '../core/rng';
+import { B } from '../game/Blocks';
+import { createMode } from '../game/modes';
+import { Bedwars } from '../game/modes/Bedwars';
+import type { GameMode } from '../game/modes/GameMode';
+import { SHOP } from '../game/modes/shop';
+import { Skywars } from '../game/modes/Skywars';
 import { INTERP_TICKS, MAX_REWIND_MS, MAX_REWIND_TICKS, NET_TPS, fromSlot, itemTotals, toSlot, type NetEntities, type NetEvent, type NetFighter, type NetPhase, type ClientMsg, type ServerMsg, type Slot } from './protocol';
 
 /** Where a fighter was on one past tick, for lag compensation. */
@@ -27,8 +33,8 @@ interface LoggedMove extends Rewind {
 export interface DuelEvent {
   /** Something server-side (knockback, an explosion, a wind burst) moved this player. */
   motion?: { to: number; vx: number; vy: number; vz: number };
-  /** A pearl moved this player. */
-  teleport?: { to: number; id: number; x: number; y: number; z: number };
+  /** A pearl (or a respawn) moved this player. */
+  teleport?: { to: number; id: number; x: number; y: number; z: number; yaw?: number };
 }
 
 /** Movement events every client makes for itself; the rest of a fighter's events are forwarded. */
@@ -93,10 +99,24 @@ export class Duel {
   private nextId = 1;
   /** Last inventory sent per fighter (JSON), so unchanged inventories are not re-sent. */
   private readonly lastInv: [string, string] = ['', ''];
+  /** Bed Wars / SkyWars rules, or null for a plain duel. */
+  readonly mode: GameMode | null;
+  /** Mode messages waiting to go out: to a seat, or to both (-1). */
+  private outbox: { to: number; msg: ServerMsg }[] = [];
+  /** The last mode panel (scoreboard, title, gear) sent to each seat, as JSON. */
+  private readonly lastModeUi: [string, string] = ['', ''];
+  /** The chest each player has open, and what they were last sent of it (JSON). */
+  private readonly openChest: [{ x: number; y: number; z: number; sent: string } | null, { x: number; y: number; z: number; sent: string } | null] = [null, null];
 
   constructor(names: [string, string], kitId: KitId = 'sword') {
     this.kit = kitById(kitId);
-    this.world = new World(undefined, this.kit.floorDepth ?? 0);
+    this.mode = createMode(this.kit);
+    this.world = new World(undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
+    if (this.mode) {
+      // The same floating map every client builds for itself (see NetMatch).
+      this.world.blocks.voidWorld = true;
+      this.world.blocks.clear();
+    }
     this.world.damageMultiplier = this.kit.damageMultiplier ?? 1;
     this.world.shieldStuns = !!this.kit.shieldStuns;
     this.world.legacyCombat = !!this.kit.legacyCombat;
@@ -107,17 +127,32 @@ export class Duel {
     this.reset();
   }
 
+  /** Seat 0 is the red team, seat 1 blue (the mode host interface). */
+  get player(): Fighter {
+    return this.fighters[0];
+  }
+  get bot(): Fighter {
+    return this.fighters[1];
+  }
+
   reset() {
     const half = SPAWN_DISTANCE / 2;
     this.fighters[0].reset(0, half, 0, this.kit);
     this.fighters[1].reset(0, -half, Math.PI, this.kit);
     this.world.clearEntities();
-    this.world.blocks.changeLog?.clear();
     for (const f of this.fighters) {
       f.networked = true;
       f.naturalRegen = this.kit.naturalRegen ?? true;
       f.food.locked = !!this.kit.noHunger;
     }
+    // The mode builds its map and spawns everyone; the clients build the same map themselves,
+    // so none of it goes out as block changes.
+    this.mode?.setup(this);
+    for (const f of this.fighters) f.events.length = 0;
+    this.world.blocks.changeLog?.clear();
+    this.outbox = [];
+    this.lastModeUi[0] = this.lastModeUi[1] = '';
+    this.openChest[0] = this.openChest[1] = null;
     this.phase = 'countdown';
     this.phaseTicks = 0;
     this.fightTicks = 0;
@@ -292,28 +327,121 @@ export class Duel {
     b.tick();
     pushApart(a, b);
     this.world.tickEntities();
+    if (this.mode && this.phase === 'fight') this.mode.tick(this);
     this.record();
 
     for (let i = 0; i < 2; i++) {
       const f = this.fighters[i];
-      if (f.events.some((e) => e.type === 'pearlLand')) {
+      const respawned = f.events.some((e) => e.type === 'respawn');
+      if (respawned || f.events.some((e) => e.type === 'pearlLand')) {
         const id = ++this.teleportId[i];
-        out.push({ teleport: { to: i, id, x: r3(f.pos.x), y: r3(f.pos.y), z: r3(f.pos.z) } });
+        out.push({ teleport: { to: i, id, x: r3(f.pos.x), y: r3(f.pos.y), z: r3(f.pos.z), yaw: respawned ? r3(f.yaw) : undefined } });
       } else if (f.vel.x !== vel[i][0] || f.vel.y !== vel[i][1] || f.vel.z !== vel[i][2]) {
         out.push({ motion: { to: i, vx: f.vel.x, vy: f.vel.y, vz: f.vel.z } });
       }
     }
 
+    if (this.mode) this.tickModeUi();
+
     this.phaseTicks++;
     if (this.phase === 'countdown' && this.phaseTicks >= COUNTDOWN_TICKS) {
       this.phase = 'fight';
       this.phaseTicks = 0;
+    } else if (this.phase === 'fight' && this.mode) {
+      const w = this.mode.winner(this);
+      if (w) {
+        this.phase = 'ended';
+        this.phaseTicks = 0;
+        this.winner = this.fighters.indexOf(w);
+      }
     } else if (this.phase === 'fight' && (a.dead || b.dead)) {
       this.phase = 'ended';
       this.phaseTicks = 0;
       this.winner = a.dead ? (b.dead ? null : 1) : 0;
     }
     return out;
+  }
+
+  /**
+   * Bed Wars / SkyWars: opens chests players right-clicked, and queues each player's scoreboard,
+   * title and upgrades, the announcements, and the contents of any chest they have open.
+   */
+  private tickModeUi() {
+    const mode = this.mode!;
+    for (let i = 0; i < 2; i++) {
+      const f = this.fighters[i];
+      for (const e of f.events) {
+        if (e.type !== 'openBlock' || e.block !== B.CHEST || !(mode instanceof Skywars) || this.phase !== 'fight') continue;
+        if (!mode.canUse(f, e.x, e.y, e.z)) continue;
+        mode.open(this, f, e.x, e.y, e.z);
+        this.openChest[i] = { x: e.x, y: e.y, z: e.z, sent: '' };
+        this.sendChest(i, true);
+      }
+      if (this.openChest[i]) this.sendChest(i, false);
+      const ui = {
+        sb: mode.scoreboard(this, f),
+        title: mode.title(this, f),
+        gear: mode instanceof Bedwars ? ({ ...mode.gear(this, f) } as Record<string, unknown>) : undefined,
+      };
+      const json = JSON.stringify(ui);
+      if (json !== this.lastModeUi[i]) {
+        this.lastModeUi[i] = json;
+        this.outbox.push({ to: i, msg: { t: 'mode', ...ui } });
+      }
+    }
+    const lines = mode.takeAnnouncements();
+    if (lines.length) this.outbox.push({ to: -1, msg: { t: 'announce', lines } });
+  }
+
+  /** Sends seat `i` the chest they have open, if it changed (or `force`, when it opens). */
+  private sendChest(i: number, open: boolean) {
+    const c = this.openChest[i];
+    if (!c || !(this.mode instanceof Skywars)) return;
+    const items = this.mode.chestAt(c.x, c.y, c.z);
+    const slots = items ? items.map((s) => toSlot(s)) : null;
+    const json = JSON.stringify(slots);
+    if (!open && json === c.sent) return;
+    c.sent = json;
+    this.outbox.push({ to: i, msg: { t: 'chest', x: c.x, y: c.y, z: c.z, items: slots, open: open || undefined } });
+    if (!items) this.openChest[i] = null;
+  }
+
+  /** Mode messages since the last call (the room sends them after the state). */
+  takeOutbox(): { to: number; msg: ServerMsg }[] {
+    const out = this.outbox;
+    this.outbox = [];
+    return out;
+  }
+
+  /** A Bed Wars purchase: only at your own shop, only while alive and fighting. */
+  private buy(i: number, key: unknown) {
+    const mode = this.mode;
+    const f = this.fighters[i];
+    if (!(mode instanceof Bedwars) || this.phase !== 'fight') return;
+    const item = SHOP.find((s) => s.key === key);
+    if (!item) return;
+    let msg: string;
+    if (!mode.nearShop(this, f)) msg = '✘ You are too far from your shop';
+    else {
+      const err = mode.buy(this, f, item);
+      msg = err ? `✘ ${err}` : `✔ Bought ${item.name}`;
+    }
+    this.outbox.push({ to: i, msg: { t: 'bought', msg } });
+  }
+
+  /** A click in a SkyWars chest screen. */
+  private chestOp(i: number, m: Extract<ClientMsg, { t: 'chest' }>) {
+    const mode = this.mode;
+    const f = this.fighters[i];
+    if (!(mode instanceof Skywars) || this.phase !== 'fight') return;
+    const [x, y, z] = [m.x, m.y, m.z].map((v) => Number(v) | 0);
+    if (!mode.canUse(f, x, y, z)) return;
+    const slot = Number(m.i) | 0;
+    if (m.op === 'all') mode.takeAll(f, x, y, z);
+    else if (m.op === 'take' && slot >= 0 && slot < 27) mode.take(f, x, y, z, slot);
+    else if (m.op === 'put' && slot >= 0 && slot < 36) mode.put(f, x, y, z, slot);
+    this.openChest[i] = { x, y, z, sent: '' };
+    this.sendChest(i, false);
   }
 
   /** Mirrors Match.handlePlayerActions, but for a remote player's queued inputs. */
@@ -589,6 +717,12 @@ export class Duel {
         return null;
       case 'swap':
         this.queueSwap(i);
+        return null;
+      case 'buy':
+        this.buy(i, msg.key);
+        return null;
+      case 'chest':
+        if (msg && typeof msg === 'object') this.chestOp(i, msg);
         return null;
       case 'inv':
         this.setInventory(i, msg.slots);

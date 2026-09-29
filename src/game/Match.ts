@@ -7,8 +7,7 @@ import { Fighter } from './Fighter';
 import type { KitDef } from './kits';
 import { World } from './World';
 import type { GameMode } from './modes/GameMode';
-import { Bedwars } from './modes/Bedwars';
-import { Skywars } from './modes/Skywars';
+import { createMode } from './modes';
 
 export type Phase = 'countdown' | 'fight' | 'ended';
 export const COUNTDOWN_TICKS = 60;
@@ -59,7 +58,7 @@ export class Match {
     seed?: number,
   ) {
     this.rng = new Rng(seed);
-    this.mode = kit.mode === 'bedwars' ? new Bedwars() : kit.mode === 'skywars' ? new Skywars() : null;
+    this.mode = createMode(kit);
     this.world = new World(undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
     if (this.mode) {
       // A floating map over the void: no floor, no walls.
@@ -82,6 +81,10 @@ export class Match {
     });
     if (this.mode) this.brain.attachSky(this);
     this.reset();
+  }
+
+  onRespawn(f: Fighter) {
+    if (f === this.bot) this.brain.resetRound();
   }
 
   reset() {

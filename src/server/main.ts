@@ -201,9 +201,14 @@ class Room {
     this.tick++;
     for (const e of duel.tick()) {
       if (e.motion) this.seats[e.motion.to]?.send({ t: 'motion', vx: e.motion.vx, vy: e.motion.vy, vz: e.motion.vz });
-      if (e.teleport) this.seats[e.teleport.to]?.send({ t: 'teleport', id: e.teleport.id, x: e.teleport.x, y: e.teleport.y, z: e.teleport.z });
+      if (e.teleport) this.seats[e.teleport.to]?.send({ t: 'teleport', id: e.teleport.id, x: e.teleport.x, y: e.teleport.y, z: e.teleport.z, yaw: e.teleport.yaw });
     }
     this.broadcast(duel.stateMessage(this.tick, [this.seats[0]?.ping ?? 0, this.seats[1]?.ping ?? 0]));
+    // Bed Wars / SkyWars: scoreboards, announcements, chest contents, shop answers.
+    for (const { to, msg } of duel.takeOutbox()) {
+      if (to < 0) this.broadcast(msg);
+      else this.seats[to]?.send(msg);
+    }
     if (this.tick % PING_EVERY === 0) for (const c of this.players) c.startPing();
     if (duel.phase === 'ended' && duel.phaseTicks === 1) {
       this.broadcast({ t: 'end', winner: duel.winner });
@@ -269,7 +274,7 @@ function handle(client: Client, msg: ClientMsg) {
       // A new room takes the creator's kit; joining an existing room keeps its kit.
       if (room.players.length === 0) {
         const kit = String(msg.kit ?? 'sword');
-        room.kit = KITS.some((k) => k.id === kit && k.available && !k.offlineOnly) ? (kit as KitId) : 'sword';
+        room.kit = KITS.some((k) => k.id === kit && k.available) ? (kit as KitId) : 'sword';
       }
       const seat = room.freeSeat();
       if (seat < 0) {
@@ -292,7 +297,9 @@ function handle(client: Client, msg: ClientMsg) {
     case 'mine':
     case 'slot':
     case 'swap':
-    case 'inv': {
+    case 'inv':
+    case 'buy':
+    case 'chest': {
       const room = client.room;
       const relay = room?.duel?.receive(client.seat, msg);
       // Moves go straight on to the opponent: waiting for the next tick would re-time them to

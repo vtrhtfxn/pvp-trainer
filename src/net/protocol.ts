@@ -10,7 +10,7 @@
 
 import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
 
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -228,7 +228,17 @@ export type ClientMsg =
   | { t: 'rematch' }
   | { t: 'pong'; id: number }
   /** A chat line (T), /say or /me; the server adds the sender's name. */
-  | { t: 'chat'; kind: ChatKind; text: string };
+  | { t: 'chat'; kind: ChatKind; text: string }
+  /** Bed Wars: buy a shop item (by its key) — the server checks you stand at your shop. */
+  | { t: 'buy'; key: string }
+  /** SkyWars: a click in a chest screen — take slot `i`, take everything, or put inventory slot `i` in. */
+  | { t: 'chest'; x: number; y: number; z: number; op: 'take' | 'all' | 'put'; i: number };
+
+/** A scoreboard or announcement line. */
+export interface NetLine {
+  text: string;
+  color?: string;
+}
 
 /**
  * Server entities, re-sent every tick for the client to draw: arrows [id, x, y, z, yaw, pitch,
@@ -278,8 +288,19 @@ export type ServerMsg =
   | { t: 'mv'; q: number; x: number; y: number; z: number; yaw: number; pitch: number; f: number }
   /** Knockback, an explosion or a wind burst moved YOU — the client takes this velocity. */
   | { t: 'motion'; vx: number; vy: number; vz: number }
-  /** A pearl moved YOU; moves sent before you applied it are ignored. */
-  | { t: 'teleport'; id: number; x: number; y: number; z: number }
+  /** A pearl (or a respawn) moved YOU; moves sent before you applied it are ignored. */
+  | { t: 'teleport'; id: number; x: number; y: number; z: number; yaw?: number }
+  /**
+   * Bed Wars / SkyWars: your scoreboard, the big title (respawn countdown) and your team's shop
+   * upgrades — sent when any of them changes.
+   */
+  | { t: 'mode'; sb: NetLine[]; title: { title: string; sub: string } | null; gear?: Record<string, unknown> }
+  /** Mode announcements (bed destroyed, final kill, refill) for the chat. */
+  | { t: 'announce'; lines: NetLine[] }
+  /** A chest's contents, for the chest screen (items null: it is gone). */
+  | { t: 'chest'; x: number; y: number; z: number; items: Slot[] | null; open?: boolean }
+  /** The answer to a shop purchase. */
+  | { t: 'bought'; msg: string }
   | { t: 'end'; winner: number | null }
   | { t: 'ping'; id: number }
   | { t: 'chat'; kind: ChatKind; from: string; text: string };

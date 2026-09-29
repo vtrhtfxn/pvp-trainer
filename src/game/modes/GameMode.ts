@@ -1,5 +1,5 @@
 import type { Fighter } from '../Fighter';
-import type { Match } from '../Match';
+import type { World } from '../World';
 
 export type ModeId = 'bedwars' | 'skywars';
 
@@ -8,6 +8,22 @@ export interface ScoreLine {
   text: string;
   color?: string;
 }
+
+/**
+ * What a mode runs on: the offline Match or the server's Duel. `player` is team 0 (red), `bot`
+ * team 1 (blue).
+ */
+export interface ModeHost {
+  readonly world: World;
+  readonly player: Fighter;
+  readonly bot: Fighter;
+  readonly phase: string;
+  readonly fightTicks: number;
+  /** A fighter came back to life (the offline bot resets its plan). */
+  onRespawn?(f: Fighter): void;
+}
+
+type Match = ModeHost;
 
 /**
  * A minigame on top of a duel (Bed Wars, SkyWars): it builds its map, places the fighters,

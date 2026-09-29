@@ -72,8 +72,6 @@ export interface KitDef extends Loadout {
   subtier?: boolean;
   /** A minigame (Bed Wars, SkyWars): its own map and rules; the loadout comes from the game. */
   mode?: 'bedwars' | 'skywars';
-  /** Not playable in online rooms yet. */
-  offlineOnly?: boolean;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
@@ -594,7 +592,6 @@ export const KITS: KitDef[] = [
     icon: 'bedwars',
     available: true,
     mode: 'bedwars',
-    offlineOnly: true,
     summary: 'Protect your bed, break theirs. Iron and gold from your forge buy blocks and gear; once your bed is gone, dying is final.',
     contents: [
       'Start: wooden sword and team leather armor · 1.8 combat',
@@ -616,7 +613,6 @@ export const KITS: KitDef[] = [
     icon: 'skywars',
     available: true,
     mode: 'skywars',
-    offlineOnly: true,
     summary: 'Start in a cage on your own island, loot the chests, bridge over and knock them into the void. No respawns.',
     contents: [
       'Start with nothing: your island has 3 chests (sword, armor, blocks, maybe a bow, snowballs, pearls, apples, buckets)',
