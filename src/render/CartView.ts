@@ -66,10 +66,14 @@ export class CartView {
       g.position.set(lerp(c.prevPos.x, c.pos.x, a), lerp(c.prevPos.y, c.pos.y, a), lerp(c.prevPos.z, c.pos.z, a));
       g.rotation.y = c.axis === 0 ? Math.PI / 2 : 0;
       const tnt = g.children[g.children.length - 1];
+      // Bed Wars TNT is a bare block: no tub, sitting on the ground.
+      for (let k = 0; k < g.children.length - 1; k++) g.children[k].visible = !c.bare;
+      tnt.position.y = c.bare ? 0.5 : 0.52;
+      tnt.scale.setScalar(c.bare ? 1.33 : 1);
       const flash = tnt.children[0] as THREE.Mesh;
       const on = c.primed && Math.floor(timeSec * 4) % 2 === 0;
       (flash.material as THREE.MeshBasicMaterial).opacity = on ? 0.6 : 0;
-      tnt.scale.setScalar(c.primed ? 1 + 0.05 * Math.sin(timeSec * 20) : 1);
+      if (c.primed) tnt.scale.multiplyScalar(1 + 0.05 * Math.sin(timeSec * 20));
     }
   }
 }

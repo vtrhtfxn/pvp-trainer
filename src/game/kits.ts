@@ -21,10 +21,10 @@ export interface ArmorStats {
   legacyFallEpf: number;
 }
 
-export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'cart' | 'dia_smp';
+export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars';
 /** Built-in kits, and kits players made in the kit editor (`custom:<id>`). */
 export type KitId = BuiltinKitId | `custom:${string}`;
-export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp';
+export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars';
 
 /** Everything a fighter spawns with. */
 export interface Loadout {
@@ -70,6 +70,10 @@ export interface KitDef extends Loadout {
   custom?: boolean;
   /** A subtier (Cart, Diamond SMP): listed on the Subtiers page instead of the title screen. */
   subtier?: boolean;
+  /** A minigame (Bed Wars, SkyWars): its own map and rules; the loadout comes from the game. */
+  mode?: 'bedwars' | 'skywars';
+  /** Not playable in online rooms yet. */
+  offlineOnly?: boolean;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
@@ -583,6 +587,48 @@ export const KITS: KitDef[] = [
     ],
     ...maceLoadout(),
     armorLabel: 'Netherite · Prot IV',
+  },
+  {
+    id: 'bedwars',
+    name: 'Bed Wars',
+    icon: 'bedwars',
+    available: true,
+    mode: 'bedwars',
+    offlineOnly: true,
+    summary: 'Protect your bed, break theirs. Iron and gold from your forge buy blocks and gear; once your bed is gone, dying is final.',
+    contents: [
+      'Start: wooden sword and team leather armor · 1.8 combat',
+      'Forge: iron every second, gold every 6 s · diamonds (30 s) on the side islands, emeralds (60 s) in the middle',
+      'Shop (right-click the counter by your spawn): wool, end stone, glass, obsidian, swords, permanent armor, tools, bows, potions, fireballs, TNT, pearls',
+      'Upgrades: Sharpened Swords, Reinforced Armor I–IV · respawn in 5 s while your bed stands',
+      'Beds go for everyone after 12 minutes (sudden death)',
+    ],
+    hotbar: [],
+    armor: [null, null, null, null],
+    offhand: null,
+    armorLabel: 'Leather',
+    legacyCombat: true,
+    noHunger: true,
+  },
+  {
+    id: 'skywars',
+    name: 'SkyWars',
+    icon: 'skywars',
+    available: true,
+    mode: 'skywars',
+    offlineOnly: true,
+    summary: 'Start in a cage on your own island, loot the chests, bridge over and knock them into the void. No respawns.',
+    contents: [
+      'Start with nothing: your island has 3 chests (sword, armor, blocks, maybe a bow, snowballs, pearls, apples, buckets)',
+      'The middle island has 4 better chests (enchanted diamond gear), plus one on each side island',
+      'Chests refill after 4 minutes · 1.8 combat · last one standing wins',
+    ],
+    hotbar: [],
+    armor: [null, null, null, null],
+    offhand: null,
+    armorLabel: 'From chests',
+    legacyCombat: true,
+    noHunger: true,
   },
   {
     id: 'cart',

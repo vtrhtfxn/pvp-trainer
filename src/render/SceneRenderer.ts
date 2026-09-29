@@ -507,7 +507,8 @@ export class SceneRenderer {
     this.thrown.update(player.world.thrown, player.world.orbs, alpha, time, player.world.items);
     this.blocks.update(player.world.blocks, player.world.fighters, player, this.cameraMode !== 'orbit', time);
     // Crystal brings its own diggable ground; every other kit stands on the arena's grass.
-    this.arena.floor.visible = player.world.blocks.depth === 0;
+    this.arena.floor.visible = player.world.blocks.depth === 0 && !player.world.blocks.voidWorld;
+    this.arena.scenery.visible = !player.world.blocks.voidWorld;
     this.crystals.update(player.world.crystals, alpha);
     this.carts.update(player.world.carts, alpha, performance.now() / 1000);
     this.explosions.update(dt);

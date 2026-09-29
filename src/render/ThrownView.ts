@@ -57,7 +57,13 @@ export class ThrownView {
             ? { id: 'wind_charge', count: 1 }
             : t.kind === 'pearl'
             ? { id: 'ender_pearl', count: 1 }
-            : { id: 'splash_potion', count: 1, potion: t.potion ?? 'healing' },
+            : t.kind === 'fireball'
+              ? { id: 'fire_charge', count: 1 }
+              : t.kind === 'snowball'
+                ? { id: 'snowball', count: 1 }
+                : t.kind === 'egg'
+                  ? { id: 'egg', count: 1 }
+                  : { id: 'splash_potion', count: 1, potion: t.potion ?? 'healing' },
       );
       const tex = icon ? new THREE.CanvasTexture(icon) : null;
       if (tex) {

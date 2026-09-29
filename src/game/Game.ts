@@ -48,6 +48,9 @@ function blockSound(block: number): 'wood' | 'stone' | 'web' {
 }
 import { Match } from './Match';
 import { Spectate } from './Spectate';
+import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
+import { Bedwars } from './modes/Bedwars';
+import { Skywars } from './modes/Skywars';
 import { SpectatorHud } from '../ui/SpectatorHud';
 import { DrillHud } from '../ui/DrillHud';
 import { DrillRun, drillById, loadDrillProgress, recordDrill } from '../trainer/drills';
@@ -122,6 +125,9 @@ export class Game {
   private freelookToggled = false;
   private freelookWasDown = false;
   private readonly widgetFrame: WidgetFrame;
+  private readonly scoreboard: ScoreboardHud;
+  private readonly shopUi: ShopScreen;
+  private readonly chestUi: ChestScreen;
   private readonly tag = { name: '', color: '', status: '' };
   // ---- frame pacing & stats
   private lastDrawn = 0;
@@ -167,9 +173,21 @@ export class Game {
     kitIcons.sword18 = itemIcon({ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }) ?? makeKitIcon('sword');
     kitIcons.custom = makeKitIcon('custom');
     kitIcons.cart = itemIcon({ id: 'tnt_minecart', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.bedwars = itemIcon({ id: 'red_wool', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.skywars = itemIcon({ id: 'ender_pearl', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.dia_smp = itemIcon({ id: 'diamond_chestplate', count: 1 }) ?? makeKitIcon('axe');
     this.hud = new HUD(uiRoot, this.mods);
     this.specHud = new SpectatorHud(uiRoot);
+    this.scoreboard = new ScoreboardHud(uiRoot);
+    const overlayCb = {
+      onClose: () => this.closeModeScreens(),
+      onUiSound: () => {
+        this.sound.unlock();
+        this.sound.ui();
+      },
+    };
+    this.shopUi = new ShopScreen(uiRoot, overlayCb);
+    this.chestUi = new ChestScreen(uiRoot, overlayCb);
     this.drillHud = new DrillHud(uiRoot);
     this.modHud = new ModHud(uiRoot, this.mods);
     this.damage = new DamageIndicators(uiRoot);
@@ -247,11 +265,11 @@ export class Game {
         this.cameraMode = this.cameraMode === 'first' ? 'third' : 'first';
       },
       onUse: () => {
-        if (this.state !== 'playing' || this.inventory.open) return;
+        if (this.state !== 'playing' || this.screenOpen) return;
         this.hud.registerUse(performance.now());
         this.match.queueUse();
       },
-      onSwapHands: () => this.state === 'playing' && !this.inventory.open && this.match.queueSwapHands(),
+      onSwapHands: () => this.state === 'playing' && !this.screenOpen && this.match.queueSwapHands(),
       onInventory: () => this.toggleInventory(),
       onToggleHitboxes: () => this.toggleHitboxes(),
       onRestart: () => {
@@ -262,12 +280,12 @@ export class Game {
         } else this.restartCurrent();
       },
       onPointerLockChange: (locked) => {
-        if (!locked && this.state === 'playing' && !this.inventory.open && !this.chat.open) this.pause();
+        if (!locked && this.state === 'playing' && !this.screenOpen && !this.chat.open) this.pause();
       },
       onChat: (command) => this.openChat(command),
     });
     canvas.addEventListener('click', () => {
-      if (this.state === 'playing' && !this.input.locked && !this.inventory.open && !this.chat.open) void this.input.lock();
+      if (this.state === 'playing' && !this.input.locked && !this.screenOpen && !this.chat.open) void this.input.lock();
     });
     window.addEventListener('keydown', (e) => {
       if (this.state === 'spectating') {
@@ -275,7 +293,8 @@ export class Game {
         return;
       }
       if (e.key !== 'Escape') return;
-      if (this.hudEditor.style.display !== 'none') this.closeHudEditor();
+      if (this.shopUi.open || this.chestUi.open) this.closeModeScreens();
+      else if (this.hudEditor.style.display !== 'none') this.closeHudEditor();
       else if (this.market.open) this.closeMarket();
     });
     this.widgetFrame = {
@@ -496,7 +515,7 @@ export class Game {
   }
 
   private openChat(command: boolean) {
-    if (this.state !== 'playing' || this.inventory.open || this.chat.open) return;
+    if (this.state !== 'playing' || this.screenOpen || this.chat.open) return;
     // Like any screen, chat lets go of every key — but the duel keeps running behind it.
     this.input.releaseAll();
     this.match.useHeld = false;
@@ -508,7 +527,7 @@ export class Game {
 
   /** Chat closed (Enter or Esc): back into the duel. */
   private closeChat() {
-    if (this.state !== 'playing' || this.inventory.open) return;
+    if (this.state !== 'playing' || this.screenOpen) return;
     this.input.enabled = true;
     void this.input.lock();
   }
@@ -616,7 +635,84 @@ export class Game {
 
   // ------------------------------------------------------------------ inventory
 
+  /** The inventory, the Bed Wars shop or a SkyWars chest is open (the mouse is free). */
+  private get screenOpen(): boolean {
+    return this.inventory.open || this.shopUi.open || this.chestUi.open;
+  }
+
+  /** Opens the shop or a chest the player right-clicked (Bed Wars / SkyWars). */
+  private openModeScreen(x: number, y: number, z: number, block: number) {
+    const m = this.match;
+    if (!(m instanceof Match)) return;
+    const p = m.player;
+    if (this.state !== 'playing' || p.dead || m.phase !== 'fight' || this.screenOpen) return;
+    const mode = m.mode;
+    if (block === B.SHOP && mode instanceof Bedwars) {
+      if (!mode.nearShop(m, p)) {
+        this.hud.showCenter('That is the other team’s shop', 'toast', 40);
+        return;
+      }
+      this.freeMouse();
+      this.shopUi.show(p, mode.gear(m, p), (item) => mode.buy(m, p, item));
+    } else if (block === B.CHEST && mode instanceof Skywars) {
+      const items = mode.chestAt(x, y, z);
+      if (!items) return;
+      mode.open(m, p, x, y, z);
+      this.freeMouse();
+      this.sound.equip();
+      this.chestUi.show(p, items, () => this.sound.equip());
+    }
+  }
+
+  /** Lets go of the keys and the mouse for a screen. */
+  private freeMouse() {
+    const p = this.match.player;
+    if (p.usingItem) p.stopUsingItem();
+    this.match.useHeld = false;
+    this.input.useHeld = false;
+    this.input.enabled = false;
+    this.input.unlock();
+  }
+
+  private closeModeScreens() {
+    if (!this.shopUi.open && !this.chestUi.open) return;
+    this.shopUi.hide();
+    this.chestUi.hide();
+    if (this.state === 'playing') {
+      this.input.enabled = true;
+      void this.input.lock();
+    }
+  }
+
+  /** Scoreboard, titles and chat announcements of a Bed Wars / SkyWars game. */
+  private tickModeUi(m: Match, viewer: Fighter, spectating: boolean) {
+    const mode = m.mode;
+    if (!mode) {
+      this.scoreboard.hide();
+      return;
+    }
+    this.scoreboard.update(mode.scoreboard(m, viewer));
+    for (const a of mode.takeAnnouncements()) {
+      if (spectating) this.specHud.announce(a.text, a.color ?? '#ffffff');
+      else this.chat.print([{ t: a.text, c: a.color }]);
+      if (a.text.startsWith('BED DESTRUCTION')) this.sound.jingle(false);
+    }
+    if (!spectating) {
+      const t = mode.title(m, viewer);
+      if (t) {
+        this.hud.showTitle('title', t.title);
+        this.hud.showTitle('subtitle', t.sub);
+      }
+      // Right-clicked a chest or the shop this tick.
+      for (const e of viewer.events) if (e.type === 'openBlock') this.openModeScreen(e.x, e.y, e.z, e.block);
+    }
+  }
+
   private toggleInventory() {
+    if (this.shopUi.open || this.chestUi.open) {
+      this.closeModeScreens();
+      return;
+    }
     if (this.inventory.open) this.closeInventory();
     else this.openInventory();
   }
@@ -649,6 +745,9 @@ export class Game {
 
   private toMenu() {
     this.spec = null;
+    this.scoreboard.hide();
+    this.shopUi.hide();
+    this.chestUi.hide();
     this.drill = null;
     this.lastDrill = null;
     this.drillHud.hide();
@@ -795,6 +894,7 @@ export class Game {
       return;
     }
     const m = spec.match;
+    this.tickModeUi(m, m.player, true);
     this.handleEvents(m.player, false);
     this.handleEvents(m.bot, false);
     this.handleWorldEvents(m.world);
@@ -841,8 +941,10 @@ export class Game {
     this.sound.unlock();
     this.leaveOnline(false);
     // Hosting a room uses the kit selected in the main menu; joining uses the room's.
-    // Custom kits only live in this browser, so an online room uses Sword instead.
-    this.net.connect(url, room, name, isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit);
+    // Custom kits only live in this browser, and Bed Wars / SkyWars are offline for now: an
+    // online room uses Sword instead.
+    const offline = isCustomKit(this.settings.kit) || kitById(this.settings.kit).offlineOnly;
+    this.net.connect(url, room, name, offline ? 'sword' : this.settings.kit);
   }
 
   leaveOnline(toMenu = true) {
@@ -1123,8 +1225,8 @@ export class Game {
       }
       p.input = this.input.moveInput();
       p.doubleTapSprint = s.doubleTapSprint;
-      m.useHeld = this.input.useHeld && !this.inventory.open;
-      m.attackHeld = this.input.attackHeld && !this.inventory.open;
+      m.useHeld = this.input.useHeld && !this.screenOpen;
+      m.attackHeld = this.input.attackHeld && !this.screenOpen;
     } else {
       this.input.consumeLook();
       // Paused online the world goes on: let go of every key, or we would keep walking,
@@ -1227,7 +1329,7 @@ export class Game {
         this.view.renderPreview(this.previewCanvas, p, this.inventory.mouseX, this.inventory.mouseY);
       }
     }
-    this.clickHint.style.display = this.state === 'playing' && !this.input.locked && !this.inventory.open && !this.chat.open ? '' : 'none';
+    this.clickHint.style.display = this.state === 'playing' && !this.input.locked && !this.screenOpen && !this.chat.open ? '' : 'none';
     if (spec) return;
     const eye = p.eyePos();
     const l = this.sound.listener;
@@ -1343,6 +1445,9 @@ export class Game {
     m.tick();
     this.view.firstPerson.tick(m.player);
     this.hud.tick(m.player);
+    if (m instanceof Match) this.tickModeUi(m, m.player, false);
+    if ((this.shopUi.open || this.chestUi.open) && (m.player.dead || m.phase !== 'fight')) this.closeModeScreens();
+    else if (this.shopUi.open) this.shopUi.refreshIfChanged();
     if (this.drill && this.state === 'playing') {
       this.tickDrill(this.drill);
       if (this.state !== 'playing' || this.match !== m) {

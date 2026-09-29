@@ -23,12 +23,23 @@ export const B = {
   /** A diggable floor (Crystal): grass on top, dirt below. */
   GRASS: 12,
   DIRT: 13,
-  /** Floor and walls: solid, unbreakable, never stored. */
   OAK_LOG: 14,
   /** Flat and walk-through; its axis (0 north–south, 1 east–west) is kept in `amount`. */
   RAIL: 15,
   /** Red shulker box: `amount` is the Minecarts with TNT still inside. */
   SHULKER: 16,
+  /** Wool; its colour (WOOL_COLORS) lives in `amount`. */
+  WOOL: 17,
+  END_STONE: 18,
+  /** Bed Wars blast-proof glass (and SkyWars cages). */
+  GLASS: 19,
+  /** A bed half: `amount` bit 0 = team (0 red, 1 blue), bit 1 = head, bit 2 = runs along X. */
+  BED: 20,
+  /** A loot chest (SkyWars); what is inside is kept by the game mode. */
+  CHEST: 21,
+  /** Bed Wars item shop counter: right-click to buy. Unbreakable. */
+  SHOP: 22,
+  /** Floor and walls: solid, unbreakable, never stored. */
   BEDROCK: 255,
 } as const;
 export type FluidId = typeof B.WATER | typeof B.LAVA;
@@ -49,7 +60,13 @@ export type BlockName =
   | 'dirt'
   | 'oak_log'
   | 'rail'
-  | 'red_shulker_box';
+  | 'red_shulker_box'
+  | 'wool'
+  | 'end_stone'
+  | 'glass'
+  | 'bed'
+  | 'chest'
+  | 'shop';
 
 export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.PLANKS]: 'oak_planks',
@@ -68,17 +85,26 @@ export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.OAK_LOG]: 'oak_log',
   [B.RAIL]: 'rail',
   [B.SHULKER]: 'red_shulker_box',
+  [B.WOOL]: 'wool',
+  [B.END_STONE]: 'end_stone',
+  [B.GLASS]: 'glass',
+  [B.BED]: 'bed',
+  [B.CHEST]: 'chest',
+  [B.SHOP]: 'shop',
 };
+
+/** Wool colours by `amount`: 0 red, 1 blue, 2 white. */
+export const WOOL_COLORS = ['red', 'blue', 'white'] as const;
 
 export interface BlockProps {
   /** Block hardness (Blocks.java). */
   hardness: number;
   /** Which tool mines it quickly. */
-  tool: 'axe' | 'pickaxe' | 'sword' | null;
+  tool: 'axe' | 'pickaxe' | 'sword' | 'shears' | null;
   /** Drops nothing unless mined with that tool (requiresCorrectToolForDrops). */
   needsTool: boolean;
   /** Item it drops (null: nothing). */
-  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | 'oak_log' | 'rail' | 'red_shulker_box' | null;
+  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | 'oak_log' | 'rail' | 'red_shulker_box' | 'end_stone' | 'glass' | 'red_wool' | 'blue_wool' | null;
 }
 
 /**
@@ -92,7 +118,14 @@ export function blastResistance(id: number): number {
     case B.FIRE:
       return 0;
     case B.GLOWSTONE:
+    case B.BED:
       return 0.3;
+    case B.WOOL:
+      return 0.8;
+    case B.CHEST:
+      return 2.5;
+    case B.END_STONE:
+      return 9;
     case B.RAIL:
       return 0.7;
     case B.OAK_LOG:
@@ -116,6 +149,7 @@ export function blastResistance(id: number): number {
       return 600;
     case B.OBSIDIAN:
     case B.RESPAWN_ANCHOR:
+    case B.GLASS:
       return 1200;
     default:
       return 3600000; // the floor and the walls
@@ -140,6 +174,12 @@ export const BLOCK_PROPS: Record<number, BlockProps> = {
   [B.RAIL]: { hardness: 0.7, tool: 'pickaxe', needsTool: false, drop: 'rail' },
   // Keeps what is inside when broken.
   [B.SHULKER]: { hardness: 2, tool: 'pickaxe', needsTool: false, drop: 'red_shulker_box' },
+  // Wool drops its own colour (Fighter.breakBlock); shears cut it fastest.
+  [B.WOOL]: { hardness: 0.8, tool: 'shears', needsTool: false, drop: 'red_wool' },
+  [B.END_STONE]: { hardness: 3, tool: 'pickaxe', needsTool: true, drop: 'end_stone' },
+  [B.GLASS]: { hardness: 0.3, tool: null, needsTool: false, drop: 'glass' },
+  [B.BED]: { hardness: 0.2, tool: null, needsTool: false, drop: null },
+  [B.CHEST]: { hardness: 2.5, tool: 'axe', needsTool: false, drop: null },
 };
 
 export function isSolid(id: number): boolean {
@@ -147,6 +187,12 @@ export function isSolid(id: number): boolean {
     id === B.PLANKS ||
     id === B.OAK_LOG ||
     id === B.SHULKER ||
+    id === B.WOOL ||
+    id === B.END_STONE ||
+    id === B.GLASS ||
+    id === B.BED ||
+    id === B.CHEST ||
+    id === B.SHOP ||
     id === B.COBBLESTONE ||
     id === B.OBSIDIAN ||
     id === B.STONE ||
@@ -212,6 +258,14 @@ export class Blocks {
   /** Called when a block is replaced by fluid or converted (e.g. lava + water) — for particles/sound. */
   onChange: ((x: number, y: number, z: number, from: number, to: number) => void) | null = null;
 
+  /**
+   * A map floating over the void (Bed Wars, SkyWars): nothing below the grid and nothing around
+   * it — no floor, no walls. Fall out of it and you are gone.
+   */
+  voidWorld = false;
+  /** Cells a player placed (map protection lets only these be broken). */
+  readonly placed: Uint8Array;
+
   /** Chunks (16×16 columns) changed since the renderer last looked. */
   readonly dirty = new Set<number>();
 
@@ -227,6 +281,7 @@ export class Blocks {
     this.id = new Uint8Array(n);
     this.amount = new Uint8Array(n);
     this.flags = new Uint8Array(n);
+    this.placed = new Uint8Array(n);
     this.clear();
   }
 
@@ -234,10 +289,15 @@ export class Blocks {
     this.id.fill(0);
     this.amount.fill(0);
     this.flags.fill(0);
+    this.placed.fill(0);
     this.scheduled.clear();
     this.count = 0;
-    // Ground: grass on top, dirt under it (bedrock below that).
+    // Ground: grass on top, dirt under it (bedrock below that). Void maps start empty.
     const layer = this.sx * this.sz;
+    if (this.voidWorld) {
+      for (let cx = 0; cx < this.sx / CHUNK; cx++) for (let cz = 0; cz < this.sz / CHUNK; cz++) this.dirty.add(cx * 1024 + cz);
+      return;
+    }
     for (let d = 1; d <= this.depth; d++) this.id.fill(d === 1 ? B.GRASS : B.DIRT, (this.depth - d) * layer, (this.depth - d + 1) * layer);
     this.count = this.depth * layer;
     for (let cx = 0; cx < this.sx / CHUNK; cx++) for (let cz = 0; cz < this.sz / CHUNK; cz++) this.dirty.add(cx * 1024 + cz);
@@ -271,8 +331,8 @@ export class Blocks {
 
   /** Block at a cell; below the ground and outside the walls is BEDROCK, the sky is air. */
   get(x: number, y: number, z: number): number {
-    if (y < -this.depth) return B.BEDROCK;
-    if (x < -this.half || x >= this.half || z < -this.half || z >= this.half) return B.BEDROCK;
+    if (y < -this.depth) return this.voidWorld ? B.AIR : B.BEDROCK;
+    if (x < -this.half || x >= this.half || z < -this.half || z >= this.half) return this.voidWorld ? B.AIR : B.BEDROCK;
     if (y >= this.height) return B.AIR;
     return this.id[this.index(x, y, z)];
   }
@@ -302,8 +362,9 @@ export class Blocks {
     if (before === B.AIR && id !== B.AIR) this.count++;
     else if (before !== B.AIR && id === B.AIR) this.count--;
     this.id[i] = id;
-    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL || id === B.SHULKER ? amount : 0;
+    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL || id === B.SHULKER || id === B.WOOL || id === B.BED ? amount : 0;
     this.flags[i] = isFluid(id) ? (source ? 1 : 0) | (falling ? 2 : 0) : 0;
+    this.placed[i] = 0;
     this.version++;
     this.markDirty(x, z);
     this.changeLog?.add(i);
@@ -357,6 +418,20 @@ export class Blocks {
   }
 
   /** Respawn anchor charge, 0–4. */
+  /** Marks a cell as placed by a player (breakable under map protection). */
+  markPlaced(x: number, y: number, z: number) {
+    if (this.inside(x, y, z)) this.placed[this.index(x, y, z)] = 1;
+  }
+
+  isPlaced(x: number, y: number, z: number): boolean {
+    return this.inside(x, y, z) && this.placed[this.index(x, y, z)] === 1;
+  }
+
+  /** Raw `amount` of a cell (wool colour, bed bits…). */
+  data(x: number, y: number, z: number): number {
+    return this.inside(x, y, z) ? this.amount[this.index(x, y, z)] : 0;
+  }
+
   /** Minecarts with TNT left in a placed shulker box. */
   shulkerCarts(x: number, y: number, z: number): number {
     return this.get(x, y, z) === B.SHULKER ? this.amount[this.index(x, y, z)] : 0;
@@ -705,7 +780,7 @@ export class Blocks {
     for (let cy = cy0; cy <= cy1; cy++) {
       // Above build height only the arena walls remain: they go up forever, so a Wind Burst or
       // an elytra can't carry anyone out of the arena.
-      const above = cy >= this.height;
+      const above = cy >= this.height && !this.voidWorld;
       for (let cz = cz0; cz <= cz1; cz++)
         for (let cx = cx0; cx <= cx1; cx++) {
           if (above) {

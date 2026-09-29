@@ -33,6 +33,8 @@ export class Arena {
   readonly group = new THREE.Group();
   /** The grass inside the walls; hidden when the kit brings its own diggable ground. */
   readonly floor: THREE.Group;
+  /** Walls, the grass outside them and the trees; hidden over the void (Bed Wars, SkyWars). */
+  readonly scenery: THREE.Group;
   private sky: THREE.Mesh;
   private skyMat: THREE.ShaderMaterial;
   private sun: THREE.Mesh;
@@ -116,7 +118,8 @@ export class Arena {
       }
     }
 
-    this.group.add(meshVoxels(v));
+    this.scenery = meshVoxels(v);
+    this.group.add(this.scenery);
     this.floor = meshVoxels(inner);
     this.group.add(this.floor);
 

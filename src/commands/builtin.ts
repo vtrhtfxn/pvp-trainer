@@ -869,6 +869,7 @@ export function deathMessage(f: Fighter, name: (f: Fighter) => string): ChatLine
   let text: string;
   if (!d) text = `${me} died`;
   else if (d.kind === 'kill') text = `${me} was killed`;
+  else if (d.kind === 'void') text = by ? `${me} was knocked into the void by ${by}` : `${me} fell out of the world`;
   else if (d.kind === 'fall') text = by ? `${me} was doomed to fall by ${by}` : `${me} hit the ground too hard`;
   else if (d.kind === 'explosion') text = by ? `${me} was blown up by ${by}` : `${me} blew up`;
   else if (d.kind === 'magic') text = by ? `${me} was killed by ${by} using magic` : `${me} was killed by magic`;

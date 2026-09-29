@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { litMaterial } from './light';
-import { B, CHUNK, isFluid, isSolid, type Blocks } from '../game/Blocks';
+import { B, CHUNK, WOOL_COLORS, isFluid, isSolid, type Blocks } from '../game/Blocks';
+
+/** Blocks that don't fill their cell (or can be seen through): neighbours keep their faces. */
+function seeThrough(id: number): boolean {
+  return id === B.ENDER_CHEST || id === B.GLASS || id === B.BED || id === B.CHEST;
+}
 import type { Fighter } from '../game/Fighter';
 import { mcBox, packTexture, toGeometry, type Vec3 } from './itemMesh';
 import { packImage } from './pack';
@@ -52,6 +57,12 @@ function faceTexture(id: number, kind: 'top' | 'bottom' | 'side', blocks: Blocks
       return kind === 'side' ? 'oak_log' : 'oak_log_top';
     case B.SHULKER:
       return kind === 'top' ? 'red_shulker_box_top' : 'red_shulker_box';
+    case B.WOOL:
+      return `${WOOL_COLORS[blocks.data(x, y, z)] ?? 'white'}_wool`;
+    case B.END_STONE:
+      return 'end_stone';
+    case B.SHOP:
+      return kind === 'side' ? 'shop_side' : 'shop_top';
     case B.COBBLESTONE:
       return 'cobblestone';
     case B.OBSIDIAN:
@@ -145,6 +156,8 @@ export class BlocksView {
   private readonly fireMat: THREE.MeshBasicMaterial;
   private readonly fireTex: THREE.Texture | null;
   private readonly chestMat: THREE.MeshLambertMaterial;
+  private readonly lootChestMat: THREE.MeshLambertMaterial;
+  private readonly glassMat: THREE.MeshBasicMaterial;
   private readonly chestGeo = enderChestGeometry();
   private readonly cracks: THREE.Mesh[] = [];
   private readonly crackMats: THREE.MeshBasicMaterial[] = [];
@@ -159,6 +172,8 @@ export class BlocksView {
     this.fireTex = stripTexture('block/fire_0', FIRE_FRAMES);
     this.fireMat = new THREE.MeshBasicMaterial({ map: this.fireTex, alphaTest: 0.1, side: THREE.DoubleSide, fog: false });
     this.chestMat = new THREE.MeshLambertMaterial({ map: packTexture('entity/chest/ender'), alphaTest: 0.1 });
+    this.lootChestMat = new THREE.MeshLambertMaterial({ map: packTexture('entity/chest/normal'), alphaTest: 0.1 });
+    this.glassMat = litMaterial(new THREE.MeshBasicMaterial({ map: packTexture('block/glass'), transparent: true, depthWrite: false, side: THREE.DoubleSide, vertexColors: true }));
     for (let i = 0; i < 10; i++) {
       this.crackMats.push(
         new THREE.MeshBasicMaterial({ map: packTexture(`block/destroy_stage_${i}`), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }),
@@ -201,6 +216,8 @@ export class BlocksView {
     const lava = buf();
     const fire = buf();
     const chests: [number, number, number][] = [];
+    const lootChests: [number, number, number][] = [];
+    const glass = buf();
     const bottom = -blocks.depth;
     for (let y = bottom; y < blocks.height; y++)
       for (let z = z0; z < z0 + CHUNK; z++)
@@ -208,7 +225,7 @@ export class BlocksView {
           const id = blocks.get(x, y, z);
           if (id === B.AIR) {
             // Dug all the way down in the ground: show the bedrock under it.
-            if (y === bottom && blocks.depth > 0) {
+            if (y === bottom && blocks.depth > 0 && !blocks.voidWorld) {
               let b = solids.get('bedrock');
               if (!b) solids.set('bedrock', (b = buf()));
               this.quad(b, x, y - 1, z, FACES[0].c, 1, 1);
@@ -219,10 +236,26 @@ export class BlocksView {
             chests.push([x, y, z]);
             continue;
           }
+          if (id === B.CHEST) {
+            lootChests.push([x, y, z]);
+            continue;
+          }
+          if (id === B.GLASS) {
+            for (const f of FACES) {
+              const n = blocks.get(x + f.n[0], y + f.n[1], z + f.n[2]);
+              if (n === B.GLASS || (isSolid(n) && !seeThrough(n))) continue;
+              this.quad(glass, x, y, z, f.c, f.shade, 1);
+            }
+            continue;
+          }
+          if (id === B.BED) {
+            this.bed(solids, blocks, x, y, z);
+            continue;
+          }
           if (isSolid(id)) {
             for (const f of FACES) {
               const n = blocks.get(x + f.n[0], y + f.n[1], z + f.n[2]);
-              if (isSolid(n) && n !== B.ENDER_CHEST) continue;
+              if (isSolid(n) && !seeThrough(n)) continue;
               // The ground's underside and the outer walls' faces are never seen.
               if (y + f.n[1] < bottom) continue;
               const tex = faceTexture(id, f.kind, blocks, x, y, z);
@@ -251,6 +284,12 @@ export class BlocksView {
     if (fire.idx.length) add(toGeo(fire), this.fireMat, 4);
     if (lava.idx.length) add(toGeo(lava), this.lavaMat);
     if (water.idx.length) add(toGeo(water), this.waterMat, 2);
+    if (glass.idx.length) add(toGeo(glass), this.glassMat, 3);
+    for (const [x, y, z] of lootChests) {
+      const m = add(this.chestGeo, this.lootChestMat);
+      m.position.set(x, y, z);
+      m.updateMatrix();
+    }
     for (const [x, y, z] of chests) {
       const m = add(this.chestGeo, this.chestMat);
       m.position.set(x, y, z);
@@ -271,6 +310,44 @@ export class BlocksView {
       b.col.push(l, l, l);
     }
     b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+
+  /**
+   * A bed half: 9 px tall, the team colour on top (the head half with its pillow), turned along
+   * its axis. `amount` bits: 0 team, 1 head, 2 along X, 3 head toward −.
+   */
+  private bed(solids: Map<string, Buf>, blocks: Blocks, x: number, y: number, z: number) {
+    const d = blocks.data(x, y, z);
+    const team = d & 1 ? 'blue' : 'red';
+    const head = (d & 2) !== 0;
+    const alongX = (d & 4) !== 0;
+    const neg = (d & 8) !== 0;
+    const h = 9 / 16;
+    const get = (name: string) => {
+      let b = solids.get(name);
+      if (!b) solids.set(name, (b = buf()));
+      return b;
+    };
+    // Top: rotate the texture so the pillow sits at the head end.
+    const topName = `${team}_bed_${head ? 'head' : 'foot'}`;
+    const rot = alongX ? (neg ? 1 : 3) : neg ? 0 : 2;
+    const t = get(topName);
+    const base = t.pos.length / 3;
+    const c = FACES[0].c;
+    for (let i = 0; i < 4; i++) {
+      t.pos.push(x + c[i][0], y + h, z + c[i][2]);
+      const uv = UV[(i + rot) % 4];
+      t.uv.push(uv[0], uv[1]);
+      t.col.push(1, 1, 1);
+    }
+    t.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    const side = get(`${team}_bed_side`);
+    for (const f of FACES) {
+      if (f.n[1] !== 0) continue;
+      const n = blocks.get(x + f.n[0], y, z + f.n[2]);
+      if (n === B.BED) continue;
+      this.quad(side, x, y, z, f.c, f.shade, h);
+    }
   }
 
   /** A rail: a flat quad 1/16 above the ground, its texture turned to the rail's axis. */
