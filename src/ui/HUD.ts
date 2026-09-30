@@ -103,7 +103,7 @@ export class HUD {
   private readonly attackFull: HTMLDivElement;
   private readonly eatBar: HTMLDivElement;
   private readonly eatFill: HTMLDivElement;
-  private readonly practice: HTMLDivElement;
+  readonly practice: HTMLDivElement;
   private readonly feedback: HTMLDivElement;
   private readonly opponent: HTMLDivElement;
   private readonly oppName: HTMLDivElement;
@@ -147,7 +147,6 @@ export class HUD {
     this.sprites = makeHudSprites();
     this.canvas = el('canvas', 'hud-bars', this.root);
     this.ctx = this.canvas.getContext('2d')!;
-    el('div', 'crosshair', this.root);
     this.attackBar = el('div', 'attack-bar', this.root);
     this.attackFill = el('div', 'attack-fill', this.attackBar);
     this.attackFull = el('div', 'attack-full', this.root);
@@ -251,6 +250,11 @@ export class HUD {
 
   setVisible(v: boolean) {
     this.root.style.display = v ? '' : 'none';
+  }
+
+  /** The vanilla crosshair belongs on screen: the HUD is up and no custom crosshair replaces it. */
+  get crosshairShown(): boolean {
+    return this.root.style.display !== 'none' && !document.body.classList.contains('custom-crosshair');
   }
 
   layout(settings: Settings) {

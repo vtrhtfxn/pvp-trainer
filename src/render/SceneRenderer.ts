@@ -17,6 +17,7 @@ import { Nametag } from './Nametag';
 import { Particles } from './Particles';
 import { PlayerModel } from './PlayerModel';
 import { setWorldLight } from './light';
+import { Crosshair } from './Crosshair';
 import { Glint } from './glint';
 import { RainView } from './Weather';
 
@@ -95,6 +96,10 @@ export class SceneRenderer {
   private previewBuf: Uint8Array | null = null;
   private previewImg: ImageData | null = null;
   private readonly glint: Glint;
+  private readonly crosshair = new Crosshair();
+  /** Draw the crosshair this frame (the HUD is up and no custom crosshair replaces it), at this GUI scale. */
+  crosshairOn = false;
+  crosshairGui = 2;
   private readonly viewShake = new THREE.Matrix4();
   cameraMode: CameraMode = 'orbit';
   /** Device pixel ratio actually in use; lowered automatically when frames get slow. */
@@ -522,5 +527,6 @@ export class SceneRenderer {
       this.renderer.clearDepth();
       this.renderer.render(this.firstPerson.scene, this.firstPerson.camera);
     }
+    if (this.crosshairOn) this.crosshair.render(this.renderer, this.crosshairGui);
   }
 }
