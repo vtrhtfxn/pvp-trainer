@@ -155,9 +155,9 @@ centre). The **Resource Packs** tab shows the active pack; more are planned.
   resolution only while frames are slow), particles (All / Decreased / Minimal), smooth edges
   (MSAA; Auto skips it on high-density screens), entity shadows, clouds, fog, the title-screen
   background; hand position (X/Y/Z) and size.
-  In the desktop app, **Uncapped FPS** is ON by default (no VSync, no 60 FPS limit — runs at
-  your screen's full speed or beyond); turn it OFF for VSync, and use **Max Framerate** to cap
-  it anywhere in between. It is a Chromium switch, so it applies on the next launch.
+  The desktop app follows your screen's refresh rate (VSync: 60 FPS on 60 Hz, 120 on ProMotion).
+  On Windows, **Uncapped FPS** turns VSync off (applies on the next launch); it is not offered on
+  macOS, where uncapped frames are drawn but never shown.
 - **Controls** — sensitivity, separate vertical sensitivity, invert mouse, raw input, toggle
   sprint, toggle sneak, double-tap-W sprint, invert hotbar scroll.
 - **Key Binds** — every action, including mouse buttons 4/5.
