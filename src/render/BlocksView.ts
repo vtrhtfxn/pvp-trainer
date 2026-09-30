@@ -183,6 +183,27 @@ export class BlocksView {
     this.outline = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45 }));
     this.outline.visible = false;
     this.group.add(this.outline);
+    this.overlayFill = new THREE.Mesh(
+      new THREE.BoxGeometry(1.006, 1.006, 1.006),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
+    );
+    this.overlayFill.visible = false;
+    this.group.add(this.overlayFill);
+  }
+
+  /** The Block Overlay mod: the outline's colour and opacity, and an optional fill (null = vanilla). */
+  private readonly overlayFill: THREE.Mesh;
+  private fillOn = false;
+  setOverlay(o: { color: string; opacity: number; fill: boolean; fillColor: string; fillOpacity: number } | null) {
+    const line = this.outline.material as THREE.LineBasicMaterial;
+    const fill = this.overlayFill.material as THREE.MeshBasicMaterial;
+    line.color.set(o ? o.color : 0x000000);
+    line.opacity = o ? o.opacity : 0.45;
+    this.fillOn = !!o?.fill;
+    if (o) {
+      fill.color.set(o.fillColor);
+      fill.opacity = o.fillOpacity;
+    }
   }
 
   private solidMat(name: string): THREE.MeshBasicMaterial {
@@ -441,5 +462,7 @@ export class BlocksView {
     const hit = showOutline && !player.dead ? player.crosshairBlock() : null;
     this.outline.visible = !!hit && hit.id !== B.BEDROCK;
     if (hit && this.outline.visible) this.outline.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    this.overlayFill.visible = this.fillOn && this.outline.visible;
+    if (this.overlayFill.visible) this.overlayFill.position.copy(this.outline.position);
   }
 }

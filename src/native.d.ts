@@ -7,6 +7,14 @@ interface PvpNative {
   readonly uncapped: boolean;
   /** Saves the Uncapped FPS choice for the next launch. */
   setUncapped(on: boolean): Promise<void>;
+  /** The game build the app is running (0 for a local build). Older app shells lack it. */
+  build?(): Promise<number>;
+  /** Refresh rate of the window's screen in Hz (0 if unknown). */
+  displayHz?(): Promise<number>;
+  /** News from the updater: a newer game is ready (restart), or a new app is needed (download). */
+  onUpdate?(cb: (info: { kind: 'game' | 'app'; build: number }) => void): void;
+  restart?(): Promise<void>;
+  openDownload?(): Promise<void>;
 }
 
 interface Window {

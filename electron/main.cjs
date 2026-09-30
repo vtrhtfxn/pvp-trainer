@@ -3,19 +3,46 @@
 // The built game (dist/index.html) is served over a private "pvp://" scheme rather than
 // file://, so it gets a real web origin: localStorage keeps your settings and records, and
 // pointer lock behaves exactly like it does in Chrome.
+//
+// It keeps itself up to date: every build of main is published as a GitHub Release (see
+// .github/workflows/app.yml). At launch the app checks the latest one; a newer game (one
+// HTML file) is downloaded in the background and used from the next start — the game offers a
+// Restart button. A release that needs a newer app shell than this one only offers the
+// download page instead.
 
-const { app, BrowserWindow, Menu, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, protocol, net, screen, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
+const updater = require('./updater.cjs');
 
 const SCHEME = 'pvp';
 const HOST = 'game';
-const ROOT = path.join(__dirname, '..', 'dist');
+const REPO = 'vtrhtfxn/pvp-trainer';
+const RELEASES = `https://github.com/${REPO}/releases/latest`;
+/** Bumped (in shell-version.json) whenever main.cjs / preload.cjs change in a way a game build relies on. */
+const SHELL_VERSION = Number(require('./shell-version.json').shell) || 1;
+/** `--smoke-test`: load the game, print whether it started, and quit (used by the build workflow). */
+const SMOKE = process.argv.includes('--smoke-test');
+
+/** The game that came with the app, and where downloaded updates go. */
+const BUNDLED = path.join(__dirname, '..', 'dist');
+const UPDATES = path.join(app.getPath('userData'), 'game');
+
+/** The newest game this shell can run: a downloaded update, or the one in the app. */
+const GAME = updater.pickGame({ bundledDir: BUNDLED, updatesDir: UPDATES, shellVersion: SHELL_VERSION, allowUpdates: app.isPackaged && !SMOKE });
+const ROOT = GAME.dir;
 
 protocol.registerSchemesAsPrivileged([
   { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
+
+// Linux CI machines have no GPU: let the smoke test render in software there. (macOS keeps its
+// normal Metal path — Chromium has no software renderer on the Mac.)
+if (SMOKE && process.platform === 'linux') {
+  app.commandLine.appendSwitch('use-angle', 'swiftshader');
+  app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+}
 
 // Chromium throttles requestAnimationFrame in occluded windows, which would stall the
 // fixed-step simulation the moment the window loses focus.
@@ -189,6 +216,51 @@ function createWindow() {
   void win.loadURL(`${SCHEME}://${HOST}/index.html`);
 }
 
+// ---------------------------------------------------------------- updates
+
+/** Update news for the game, queued until its page has loaded. */
+let updateInfo = null;
+function tellGame() {
+  if (updateInfo && win && !win.webContents.isLoading()) win.webContents.send('pvp:update', updateInfo);
+}
+
+async function fetchWithTimeout(url, ms, init = {}) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await net.fetch(url, { ...init, signal: ctl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function checkForUpdate() {
+  const fetch = (url) =>
+    fetchWithTimeout(url, url.includes('api.github.com') ? 10000 : 120000, {
+      headers: { accept: url.includes('api.github.com') ? 'application/vnd.github+json' : '*/*', 'user-agent': 'PvP-Trainer-app' },
+    });
+  const info = await updater.checkForUpdate({ fetch, repo: REPO, currentBuild: GAME.build, shellVersion: SHELL_VERSION, updatesDir: UPDATES });
+  if (!info) return;
+  updateInfo = info;
+  tellGame();
+}
+
+ipcMain.handle('pvp:restart', (e) => {
+  if (!fromGame(e)) return;
+  app.relaunch();
+  app.exit(0);
+});
+ipcMain.handle('pvp:open-download', (e) => {
+  if (!fromGame(e)) return;
+  void shell.openExternal(RELEASES);
+});
+ipcMain.handle('pvp:build', (e) => (fromGame(e) ? GAME.build : 0));
+/** The refresh rate of the screen the window is on (60, 120 on ProMotion, …). */
+ipcMain.handle('pvp:display-hz', (e) => {
+  if (!fromGame(e) || !win) return 0;
+  return Math.round(screen.getDisplayMatching(win.getBounds()).displayFrequency || 0);
+});
+
 app.whenReady().then(() => {
   if (!fs.existsSync(path.join(ROOT, 'index.html'))) {
     const { dialog } = require('electron');
@@ -199,9 +271,51 @@ app.whenReady().then(() => {
   serveDist();
   buildMenu();
   createWindow();
+  if (SMOKE) {
+    smokeTest();
+    return;
+  }
+  win.webContents.on('did-finish-load', tellGame);
+  // Only a packaged app updates itself; `npm run app` always runs your own build.
+  if (app.isPackaged) checkForUpdate().catch(() => {});
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('window-all-closed', () => app.quit());
+
+/** Loads the game and reports whether it started (the build workflow runs this on a Mac). */
+function smokeTest() {
+  const done = (ok, msg) => {
+    console.log(`SMOKE ${ok ? 'OK' : 'FAIL'}: ${msg}`);
+    app.exit(ok ? 0 : 1);
+  };
+  const giveUp = setTimeout(() => done(false, 'timed out after 90 s'), 90000);
+  win.webContents.once('did-fail-load', (_e, code, desc) => done(false, `load failed ${code} ${desc}`));
+  win.webContents.once('did-finish-load', async () => {
+    for (;;) {
+      const r = await win.webContents
+        .executeJavaScript(`(() => { const l = document.getElementById('loading'); return { started: !!window.__pvp, text: l ? l.textContent.trim() : '', title: document.title }; })()`)
+        .catch((err) => ({ started: false, text: String(err) }));
+      if (r.started) {
+        clearTimeout(giveUp);
+        done(true, `game started (${r.title})`);
+        return;
+      }
+      if (/Failed to start/.test(r.text)) {
+        clearTimeout(giveUp);
+        // GitHub's Mac runners are virtual machines without a GPU. Everything up to WebGL has
+        // worked by then (the app, its pvp:// server, the scripts, fonts, textures and model),
+        // so the build workflow accepts that one failure — and nothing else.
+        if (process.env.PVP_SMOKE_NO_GPU_OK === '1' && /Error creating WebGL context/.test(r.text)) {
+          done(true, `game loaded; this machine has no GPU for WebGL (${r.text})`);
+          return;
+        }
+        done(false, r.text);
+        return;
+      }
+      await new Promise((res) => setTimeout(res, 500));
+    }
+  });
+}

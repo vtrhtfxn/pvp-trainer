@@ -10,23 +10,30 @@ Built for the web (Three.js + TypeScript). It runs in any Mac browser, builds to
 
 ## Play
 
-**macOS app:** build it once, then it lives in `dist-app/`:
+**Mac:** download **[PvP-Trainer-mac.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-mac.zip)**,
+open it and drag **PvP Trainer** into **Applications**. It runs on Apple silicon and Intel Macs.
+The first time, macOS says it can't check the app (it isn't signed with a paid Apple developer
+ID): open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** (on
+older macOS: right-click the app → **Open**). From then on it opens with a click like any other app.
 
-```bash
-npm install
-npm run app:build
-```
+**It updates itself.** Every change merged into `main` is built on a Mac by GitHub Actions
+(`.github/workflows/app.yml`), launch-tested, and published as a
+[release](https://github.com/vtrhtfxn/pvp-trainer/releases). When the app starts it checks the
+latest release; a newer game is downloaded in the background and a banner offers **Restart
+now** (or it is used next time). Only when the app shell itself changes does the banner ask you
+to download the app again. The title screen shows the build you are on.
 
-That produces `dist-app/PvP Trainer-darwin-arm64/PvP Trainer.app` — double-click it, or
-drag it to /Applications. `npm run app` runs the same shell without packaging.
+**Windows:** download **[PvP-Trainer-windows.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-windows.zip)**,
+extract it and run `PvP Trainer.exe`.
+
+**From the source** (for working on the game): `npm install`, then `npm run app` runs the desktop
+shell on your own build (it never self-updates), `npm run dev` runs it in the browser, and
+`npm run app:build` packages `dist-app/PvP Trainer-darwin-arm64/PvP Trainer.app` locally.
 
 The app serves the game over a private `pvp://` scheme rather than `file://`, so settings
-and duel records persist and pointer lock behaves exactly as it does in Chrome. It is
-ad-hoc signed (unsigned by a developer ID), so if you ever move it between machines run
-`xattr -dr com.apple.quarantine "PvP Trainer.app"` first. Pass `--universal` or
-`--arch=x64` to `node electron/build-app.mjs` for other Macs.
+and duel records persist and pointer lock behaves exactly as it does in Chrome.
 
-**Windows app (for friends):**
+**Building the Windows zip yourself:**
 
 ```bash
 npm run app:win
@@ -129,7 +136,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | Mod | |
 | --- | --- |
 | AppleSkin | Saturation and exhaustion on the hunger bar; hunger and health you'll get back while holding food; food values in tooltips |
-| FPS Display | FPS, frame time and (online) your ping |
+| FPS Display | FPS, frame time, your screen's refresh rate (desktop app) and (online) your ping |
 | uku's Armor HUD | Your armor beside the hotbar with durability bars, percent or points left |
 | BetterHurtCam | Hurt-camera strength 0–200% and the classic one-way tilt |
 | Pot Counter · Totem Counter · Item Counter | Healing pots, totems, gapples, pearls, arrows, crystals, obsidian, wind charges… |
@@ -142,9 +149,17 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | Hit Color | The hurt flash in any colour and strength |
 | Particles+ | More crit and sharpness sparks |
 | Freelook | Hold Left Alt to swing the camera around yourself while you keep running the same way |
+| **New:** Target HUD | Your opponent's health bar and hearts (absorption in gold), armor points and pieces, held item, distance |
+| **New:** Reach Display · Combo Counter · CPS Counter | Your last hit's reach, your current combo, clicks per second — each its own widget |
+| **New:** Direction HUD · Speedometer · Clock | A compass strip with your heading; blocks per second; the real time |
+| **New:** Block Overlay | The targeted block's outline in any colour, with an optional fill |
+| **New:** Scoreboard | Resize, restyle or hide the Bed Wars / SkyWars sidebar |
+| **New:** Time Changer | Always see morning, noon, sunset or night (visual only) |
+| **New:** Auto GG | Says gg (or gg wp, gf, GG…) when a duel ends — to your opponent online |
 
 **Edit HUD Layout** lets you drag the HUD widgets anywhere (they snap to edges and the
-centre). The **Resource Packs** tab shows the active pack; more are planned.
+centre). In a duel, widgets that land on the practice panel or on each other are pushed down
+until nothing overlaps. The **Resource Packs** tab shows the active pack; more are planned.
 
 ## Options
 

@@ -82,6 +82,13 @@ function h<K extends keyof HTMLElementTagNameMap>(
 
 /** Title screen, pause menu, settings, controls and the post-duel results screen. */
 export class Menus {
+  /** "Build N" in the title screen's footer (the desktop app's release number). */
+  private readonly buildEl = h('span', { class: 'build-tag' });
+
+  setBuild(n: number) {
+    this.buildEl.textContent = n > 0 ? ` · Build ${n}` : '';
+  }
+
   private readonly screens: Record<ScreenName, HTMLDivElement>;
   private settingsReturn: 'main' | 'pause' = 'main';
   private recordEl!: HTMLDivElement;
@@ -313,6 +320,7 @@ export class Menus {
         'div',
         { class: 'credits' },
         'Not affiliated with Mojang. Textures: Minecraft default resource pack (Mojang). Player rig (CC-BY 4.0) by lewisglasgow2005.',
+        this.buildEl,
       ),
     );
     return root;

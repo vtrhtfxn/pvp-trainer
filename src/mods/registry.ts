@@ -22,7 +22,18 @@ export type ModId =
   | 'lowshield'
   | 'hitcolor'
   | 'particles'
-  | 'freelook';
+  | 'freelook'
+  | 'targethud'
+  | 'reachdisplay'
+  | 'combocounter'
+  | 'cpscounter'
+  | 'directionhud'
+  | 'speedometer'
+  | 'clock'
+  | 'blockoverlay'
+  | 'scoreboard'
+  | 'timechanger'
+  | 'autogg';
 
 export type ModCategory = 'HUD' | 'Visual' | 'Utility';
 export type OptValue = number | string | boolean;
@@ -51,6 +62,8 @@ export interface ModDef {
   widget?: { x: number; y: number; right?: boolean };
   /** Needs a key (Options → Key Binds → Mods). */
   key?: 'zoom' | 'freelook';
+  /** Shows a NEW badge in the Marketplace. */
+  isNew?: boolean;
 }
 
 const scale = (label = 'Size'): ModOption => ({ key: 'scale', label, type: 'slider', min: 0.5, max: 2, step: 0.05, unit: 'x' });
@@ -76,12 +89,13 @@ export const MODS: ModDef[] = [
     id: 'fps',
     name: 'FPS Display',
     basedOn: 'the FPS mod of PvP clients',
-    description: 'Frames per second in a corner, with the frame time and — online — your ping to the host.',
+    description: "Frames per second in a corner, with the frame time, your screen's refresh rate (the most FPS it can show; desktop app) and — online — your ping to the host.",
     category: 'HUD',
     icon: 'draw:fps',
-    defaults: { showMs: false, showPing: true, background: true, color: '#ffffff', scale: 1 },
+    defaults: { showMs: false, showHz: true, showPing: true, background: true, color: '#ffffff', scale: 1 },
     options: [
       { key: 'showMs', label: 'Frame time (ms)', type: 'toggle' },
+      { key: 'showHz', label: "Screen refresh rate (desktop app)", type: 'toggle' },
       { key: 'showPing', label: 'Ping (online)', type: 'toggle' },
       { key: 'background', label: 'Background', type: 'toggle' },
       { key: 'color', label: 'Text colour', type: 'color' },
@@ -371,6 +385,202 @@ export const MODS: ModDef[] = [
       { key: 'invert', label: 'Invert vertical', type: 'toggle' },
     ],
     key: 'freelook',
+  },
+  {
+    id: 'targethud',
+    name: 'Target HUD',
+    basedOn: 'the Target HUD of PvP clients',
+    description: "Your opponent at a glance: their health (and absorption), armor, what they're holding and how far away they are.",
+    category: 'HUD',
+    icon: 'draw:target',
+    defaults: { armor: true, held: true, distance: true, onlyNear: false, scale: 1 },
+    options: [
+      { key: 'armor', label: 'Their armor', type: 'toggle' },
+      { key: 'held', label: 'What they hold', type: 'toggle' },
+      { key: 'distance', label: 'Distance', type: 'toggle' },
+      { key: 'onlyNear', label: 'Only within 8 blocks', type: 'toggle' },
+      scale(),
+    ],
+    widget: { x: 0.56, y: 0.56 },
+    isNew: true,
+  },
+  {
+    id: 'reachdisplay',
+    name: 'Reach Display',
+    basedOn: 'the Reach Display mod',
+    description: 'How far your last hit landed from, in blocks — spot when you are trading at max range.',
+    category: 'HUD',
+    icon: 'draw:reach',
+    defaults: { decimals: 2, background: true, color: '#ffffff', scale: 1 },
+    options: [
+      { key: 'decimals', label: 'Decimals', type: 'slider', min: 1, max: 3, step: 1, unit: '' },
+      { key: 'background', label: 'Background', type: 'toggle' },
+      { key: 'color', label: 'Text colour', type: 'color' },
+      scale(),
+    ],
+    widget: { x: 0.008, y: 0.44 },
+    isNew: true,
+  },
+  {
+    id: 'combocounter',
+    name: 'Combo Counter',
+    basedOn: 'the Combo Counter mod',
+    description: 'Hits in a row without being hit back. Resets the moment they touch you.',
+    category: 'HUD',
+    icon: 'draw:combo',
+    defaults: { hideZero: false, background: true, color: '#ffffff', scale: 1 },
+    options: [
+      { key: 'hideZero', label: 'Hide at 0', type: 'toggle' },
+      { key: 'background', label: 'Background', type: 'toggle' },
+      { key: 'color', label: 'Text colour', type: 'color' },
+      scale(),
+    ],
+    widget: { x: 0.008, y: 0.48 },
+    isNew: true,
+  },
+  {
+    id: 'cpscounter',
+    name: 'CPS Counter',
+    basedOn: 'the CPS mod',
+    description: 'Clicks per second on its own, without the whole Keystrokes box — left click, and right click if you want it.',
+    category: 'HUD',
+    icon: 'draw:mouse',
+    defaults: { right: false, background: true, color: '#ffffff', scale: 1 },
+    options: [
+      { key: 'right', label: 'Right click too', type: 'toggle' },
+      { key: 'background', label: 'Background', type: 'toggle' },
+      { key: 'color', label: 'Text colour', type: 'color' },
+      scale(),
+    ],
+    widget: { x: 0.008, y: 0.52 },
+    isNew: true,
+  },
+  {
+    id: 'directionhud',
+    name: 'Direction HUD',
+    basedOn: 'the Direction HUD mod',
+    description: 'A compass strip at the top of the screen: which way you face, and the exact heading.',
+    category: 'HUD',
+    icon: 'pack:item/compass_00',
+    defaults: { degrees: true, scale: 1 },
+    options: [{ key: 'degrees', label: 'Heading in degrees', type: 'toggle' }, scale()],
+    widget: { x: 0.43, y: 0.11 },
+    isNew: true,
+  },
+  {
+    id: 'speedometer',
+    name: 'Speedometer',
+    basedOn: 'speed HUD mods',
+    description: 'Your speed in blocks per second — see what sprint-jumping, W-taps and knockback really do.',
+    category: 'HUD',
+    icon: 'pack:item/feather',
+    defaults: { vertical: false, background: true, color: '#ffffff', scale: 1 },
+    options: [
+      { key: 'vertical', label: 'Include falling / rising', type: 'toggle' },
+      { key: 'background', label: 'Background', type: 'toggle' },
+      { key: 'color', label: 'Text colour', type: 'color' },
+      scale(),
+    ],
+    widget: { x: 0.008, y: 0.56 },
+    isNew: true,
+  },
+  {
+    id: 'clock',
+    name: 'Clock',
+    basedOn: 'the Clock mod',
+    description: "Your computer's time in a corner, so one more round never turns into ten.",
+    category: 'HUD',
+    icon: 'pack:item/clock_00',
+    defaults: { twelve: false, seconds: false, background: true, color: '#ffffff', scale: 1 },
+    options: [
+      { key: 'twelve', label: '12-hour (AM/PM)', type: 'toggle' },
+      { key: 'seconds', label: 'Seconds', type: 'toggle' },
+      { key: 'background', label: 'Background', type: 'toggle' },
+      { key: 'color', label: 'Text colour', type: 'color' },
+      scale(),
+    ],
+    widget: { x: 0.008, y: 0.02, right: true },
+    isNew: true,
+  },
+  {
+    id: 'blockoverlay',
+    name: 'Block Overlay',
+    basedOn: 'the Block Overlay mod',
+    description: 'Recolours the outline of the block you look at, and can fill it — easier to see where you are mining or placing in UHC, Crystal and Bed Wars.',
+    category: 'Visual',
+    icon: 'draw:overlay',
+    defaults: { color: '#ffffff', opacity: 0.8, fill: true, fillColor: '#ffffff', fillOpacity: 0.15 },
+    options: [
+      { key: 'color', label: 'Outline colour', type: 'color' },
+      { key: 'opacity', label: 'Outline opacity', type: 'slider', min: 0, max: 1, step: 0.05, unit: '%' },
+      { key: 'fill', label: 'Fill the block', type: 'toggle' },
+      { key: 'fillColor', label: 'Fill colour', type: 'color' },
+      { key: 'fillOpacity', label: 'Fill opacity', type: 'slider', min: 0.05, max: 0.6, step: 0.05, unit: '%' },
+    ],
+    isNew: true,
+  },
+  {
+    id: 'scoreboard',
+    name: 'Scoreboard',
+    basedOn: 'the Scoreboard mod',
+    description: 'Resize the Bed Wars / SkyWars sidebar, change its background, or hide it.',
+    category: 'Visual',
+    icon: 'draw:scoreboard',
+    defaults: { hide: false, background: 0.4, scale: 1 },
+    options: [
+      { key: 'hide', label: 'Hide the sidebar', type: 'toggle' },
+      { key: 'background', label: 'Background', type: 'slider', min: 0, max: 1, step: 0.05, unit: '%' },
+      scale(),
+    ],
+    isNew: true,
+  },
+  {
+    id: 'timechanger',
+    name: 'Time Changer',
+    basedOn: 'the Time Changer mod',
+    description: 'Picks the time of day you see — always noon, sunset or night — whatever the world clock says. Only changes what you see.',
+    category: 'Visual',
+    icon: 'draw:sun',
+    defaults: { time: 'noon' },
+    options: [
+      {
+        key: 'time',
+        label: 'Time',
+        type: 'select',
+        options: [
+          ['morning', 'Morning'],
+          ['noon', 'Noon'],
+          ['sunset', 'Sunset'],
+          ['night', 'Night'],
+        ],
+      },
+    ],
+    isNew: true,
+  },
+  {
+    id: 'autogg',
+    name: 'Auto GG',
+    basedOn: 'the Auto GG mod',
+    description: 'Says gg in chat when a duel ends — sent to your opponent online.',
+    category: 'Utility',
+    icon: 'draw:gg',
+    defaults: { message: 'gg', onlyWin: false },
+    options: [
+      {
+        key: 'message',
+        label: 'Message',
+        type: 'select',
+        options: [
+          ['gg', 'gg'],
+          ['GG', 'GG'],
+          ['gg wp', 'gg wp'],
+          ['gf', 'gf'],
+          ['Good game!', 'Good game!'],
+        ],
+      },
+      { key: 'onlyWin', label: 'Only when you win', type: 'toggle' },
+    ],
+    isNew: true,
   },
 ];
 

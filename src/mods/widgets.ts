@@ -8,6 +8,8 @@ import { MOD_BY_ID, type ModId, type ModManager } from './registry';
 export interface WidgetFrame {
   fps: number;
   frameMs: number;
+  /** The screen's refresh rate in Hz (desktop app; 0 = unknown). FPS can't be shown faster. */
+  displayHz: number;
   ping: number | null;
   player: Fighter;
   keys: { forward: boolean; left: boolean; back: boolean; right: boolean; jump: boolean; attack: boolean; use: boolean };
@@ -19,9 +21,50 @@ export interface WidgetFrame {
   gui: number;
   /** In a duel (widgets are hidden on the title screen unless the HUD editor is open). */
   inGame: boolean;
+  /** The opponent (Target HUD), their name colour, and how far your last hit reached. */
+  opponent: Fighter | null;
+  opponentColor: string;
+  lastReach: number | null;
 }
 
-const WIDGETS: ModId[] = ['fps', 'togglesprint', 'coords', 'potcounter', 'totemcounter', 'itemcounter', 'keystrokes'];
+const WIDGETS: ModId[] = [
+  'fps',
+  'togglesprint',
+  'coords',
+  'potcounter',
+  'totemcounter',
+  'itemcounter',
+  'keystrokes',
+  'targethud',
+  'reachdisplay',
+  'combocounter',
+  'cpscounter',
+  'directionhud',
+  'speedometer',
+  'clock',
+];
+
+/** Compass points in Minecraft degrees (0 = south, 90 = west). */
+const COMPASS: [number, string][] = [
+  [0, 'S'],
+  [45, 'SW'],
+  [90, 'W'],
+  [135, 'NW'],
+  [180, 'N'],
+  [225, 'NE'],
+  [270, 'E'],
+  [315, 'SE'],
+];
+
+/** Minecraft's heading for our yaw (ours: 0 = north, Minecraft: 0 = south). */
+function mcHeading(yaw: number): number {
+  return (((180 - (yaw * 180) / Math.PI) % 360) + 360) % 360;
+}
+
+/** One line of text in a widget, with the usual colour / background options. */
+function textBox(text: string, color: unknown, bg: unknown): string {
+  return `<div class="mw-text${bg ? ' bg' : ''}" style="color:${esc(String(color))}">${text}</div>`;
+}
 
 const ICON_CACHE = new Map<string, string>();
 /** A data-URL icon for an item (cached; drawn from the pack). */
@@ -216,6 +259,7 @@ export class ModHud {
       case 'fps': {
         const parts = [`${Math.round(f.fps)} FPS`];
         if (cfg('showMs')) parts.push(`${f.frameMs.toFixed(1)} ms`);
+        if (cfg('showHz') && f.displayHz > 0) parts.push(`${f.displayHz} Hz screen`);
         if (cfg('showPing') && f.ping !== null) parts.push(`${Math.round(f.ping)} ms ping`);
         const bg = cfg('background') ? ' bg' : '';
         return `<div class="mw-text${bg}" style="color:${esc(String(cfg('color')))}">${parts.join(' · ')}</div>`;
@@ -283,9 +327,89 @@ export class ModHud {
         if (cfg('space')) html += `<div class="ks-row">${key('<i class="ks-bar"></i>', k.jump, ' ks-space')}</div>`;
         return `<div class="ks" style="--ks-on:${esc(String(cfg('pressed')))}">${html}</div>`;
       }
+      case 'targethud':
+        return this.targetHud(f);
+      case 'reachdisplay': {
+        const r = f.lastReach;
+        const text = r === null ? (this.editing ? '3.00 blocks' : '— blocks') : `${r.toFixed(Number(cfg('decimals')))} blocks`;
+        return textBox(text, cfg('color'), cfg('background'));
+      }
+      case 'combocounter': {
+        const n = p.stats.combo;
+        if (!n && cfg('hideZero') && !this.editing) return '';
+        return textBox(`${n} Combo`, cfg('color'), cfg('background'));
+      }
+      case 'cpscounter': {
+        const text = cfg('right') ? `${f.cps.left} | ${f.cps.right} CPS` : `${f.cps.left} CPS`;
+        return textBox(text, cfg('color'), cfg('background'));
+      }
+      case 'directionhud': {
+        const h = mcHeading(p.yaw);
+        const marks: string[] = [];
+        for (const [deg, label] of COMPASS) {
+          const d = ((deg - h + 540) % 360) - 180;
+          if (Math.abs(d) > 90) continue;
+          const big = label.length === 1 ? ' big' : '';
+          marks.push(`<span class="dh-mark${big}" style="left:${(50 + (d / 90) * 50).toFixed(1)}%">${label}</span>`);
+        }
+        const deg = cfg('degrees') ? `<div class="dh-deg">${Math.round(h) % 360}°</div>` : '';
+        return `<div class="mw-dir"><div class="dh-strip">${marks.join('')}<i class="dh-tick"></i></div>${deg}</div>`;
+      }
+      case 'speedometer': {
+        const dx = p.pos.x - p.prevPos.x;
+        const dy = cfg('vertical') ? p.pos.y - p.prevPos.y : 0;
+        const dz = p.pos.z - p.prevPos.z;
+        // One tick's movement × 20 ticks a second.
+        const bps = Math.hypot(dx, dy, dz) * 20;
+        return textBox(`${bps.toFixed(2)} b/s`, cfg('color'), cfg('background'));
+      }
+      case 'clock': {
+        const d = new Date();
+        let hh = d.getHours();
+        let suffix = '';
+        if (cfg('twelve')) {
+          suffix = hh < 12 ? ' AM' : ' PM';
+          hh = hh % 12 || 12;
+        }
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const text = `${cfg('twelve') ? hh : pad(hh)}:${pad(d.getMinutes())}${cfg('seconds') ? `:${pad(d.getSeconds())}` : ''}${suffix}`;
+        return textBox(text, cfg('color'), cfg('background'));
+      }
       default:
         return '';
     }
+  }
+
+  /** Target HUD: the opponent's name, health bar, hearts, armor, held item and distance. */
+  private targetHud(f: WidgetFrame): string {
+    const cfg = (k: string) => this.mods.cfg('targethud', k);
+    const o = f.opponent;
+    if (!o) return this.editing ? '<div class="mw-target"><div class="tg-name">Opponent</div><div class="tg-bar"><i style="width:75%"></i></div><div class="tg-row">15.0 ❤</div></div>' : '';
+    const p = f.player;
+    const dist = Math.hypot(o.pos.x - p.pos.x, o.pos.y - p.pos.y, o.pos.z - p.pos.z);
+    if (cfg('onlyNear') && dist > 8 && !this.editing) return '';
+    const hp = Math.max(0, o.health);
+    const pct = Math.max(0, Math.min(100, (hp / o.maxHealth) * 100));
+    const color = pct > 60 ? '#55ff55' : pct > 30 ? '#ffd23f' : '#ff5555';
+    const abs = o.absorption > 0 ? ` <span class="tg-abs">+${(o.absorption / 2).toFixed(1)}</span>` : '';
+    const row = [`${(hp / 2).toFixed(1)} ❤${abs}`];
+    if (cfg('armor')) row.push(`Armor ${o.armor.points}`);
+    if (cfg('distance')) row.push(`${dist.toFixed(1)} m`);
+    const icons: string[] = [];
+    if (cfg('held')) {
+      const held = o.heldStack();
+      if (held) icons.push(`<img src="${iconUrl(held)}" title="${esc(stackName(held))}">`);
+    }
+    if (cfg('armor')) for (const a of o.armorSlots) if (a) icons.push(`<img src="${iconUrl(a)}" title="${esc(stackName(a))}">`);
+    const dead = o.dead ? ' dead' : '';
+    return (
+      `<div class="mw-target${dead}">` +
+      `<div class="tg-name" style="color:${esc(f.opponentColor)}">${esc(o.name)}</div>` +
+      `<div class="tg-bar"><i style="width:${pct.toFixed(1)}%;background:${color}"></i></div>` +
+      `<div class="tg-row">${row.join(' · ')}</div>` +
+      (icons.length ? `<div class="tg-items">${icons.join('')}</div>` : '') +
+      `</div>`
+    );
   }
 
   /** uku's Armor HUD: the four armor slots beside the hotbar, in hotbar style. */
