@@ -64,6 +64,9 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Smoke test — the app starts and the game loads
+        env:
+          # The runner is a VM that may have no GPU: see smokeTest() in electron/main.cjs.
+          PVP_SMOKE_NO_GPU_OK: '1'
         run: |
           "$APP/Contents/MacOS/PvP Trainer" --smoke-test 2>&1 | tee smoke.log
           grep -q '^SMOKE OK' smoke.log
