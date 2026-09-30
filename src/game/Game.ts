@@ -327,7 +327,7 @@ export class Game {
     this.applySettings();
     this.toMenu();
     this.view.prewarm();
-    requestAnimationFrame((t) => this.frame(t));
+    requestAnimationFrame(this.onFrame);
   }
 
   // ------------------------------------------------------------------ state changes
@@ -1227,8 +1227,11 @@ export class Game {
     return this.state === 'playing' && this.mods.on('zoom') && this.input.held('zoom');
   }
 
+  /** One bound callback for every frame, so the loop allocates nothing of its own. */
+  private readonly onFrame = (t: number) => this.frame(t);
+
   private frame(now: number) {
-    requestAnimationFrame((t) => this.frame(t));
+    requestAnimationFrame(this.onFrame);
     // Max Framerate: skip display refreshes that come too soon.
     const cap = this.settings.maxFps;
     if (cap > 0 && now - this.lastDrawn < 1000 / cap - 1) return;

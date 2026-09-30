@@ -1,5 +1,21 @@
+@font-face {
+  font-family: 'Minecraft';
+  src: url('./assets/fonts/minecraft.woff2') format('woff2');
+  font-display: block;
+}
+@font-face {
+  font-family: 'Minecraft UI';
+  src: url('./assets/fonts/minecraft.woff2') format('woff2');
+  font-display: block;
+  size-adjust: 85.7143%;
+}
 :root {
-  --font: 'Pixelify Sans', ui-monospace, monospace;
+  /* Minecraft's own font, built from the default pack's glyph sheets (scripts/build-font.py).
+     'Minecraft' is true size (8 px per em pixel-row: HUD, chat, titles, tooltips); 'Minecraft UI'
+     is the same font drawn 6/7 the size, so the menus' 12–24 px text keeps its old footprint
+     and lands on whole device pixels on a 2× screen. Pixelify Sans only fills in missing glyphs. */
+  --font: 'Minecraft UI', 'Pixelify Sans', ui-monospace, monospace;
+  --font-mc: 'Minecraft', 'Pixelify Sans', ui-monospace, monospace;
   --gui: 2;
   --text-shadow: 2px 2px 0 #3f3f3f;
   --panel-bg: rgba(12, 12, 16, 0.72);
@@ -23,6 +39,7 @@ body {
   overflow: hidden;
   background: #9ebfff;
   font-family: var(--font);
+  line-height: 1.3;
   color: #fff;
   user-select: none;
   -webkit-user-select: none;
@@ -2491,4 +2508,18 @@ body.custom-crosshair .crosshair {
   width: auto;
   padding: 4px 12px;
   font-size: 14px;
+}
+
+/* Text sized in whole GUI pixels (8 px × the GUI scale) is drawn at the font's true size. */
+.inv-label,
+.inv-count,
+.inv-tooltip,
+.chat,
+.title-main,
+.title-sub,
+.actionbar,
+.mod-widget,
+.mod-hud {
+  font-family: var(--font-mc);
+  line-height: 1.125;
 }

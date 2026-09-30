@@ -4,6 +4,7 @@ import { lerp, lerpAngle } from '../core/math';
 import type { Fighter, Hand } from '../game/Fighter';
 import { isEnchanted } from '../game/items';
 import { PART_NAMES, type Assets, type PartName } from './assets';
+import type { Glint } from './glint';
 import { HeldItemSlot, itemVisual } from './heldItem';
 import { mcBox, packTexture, toGeometry, type Vec3 } from './itemMesh';
 import { thirdPersonItemMatrix, type HandSide, type ItemKind } from './itemTransforms';
@@ -119,7 +120,7 @@ export class PlayerModel {
   /** Blob shadow under the feet (Options → Entity Shadows). */
   shadowsOn = true;
 
-  constructor(assets: Assets, glint: THREE.Material) {
+  constructor(assets: Assets, glint: Glint) {
     this.skin = new THREE.MeshLambertMaterial({ map: assets.rig.texture, alphaTest: 0.1, side: THREE.DoubleSide });
 
     const scaler = new THREE.Group();
@@ -146,7 +147,7 @@ export class PlayerModel {
       for (const [part, b] of byPart) {
         const geo = toGeometry(b);
         const mesh = new THREE.Mesh(geo, this.armorMat('diamond', piece.layer));
-        const g = new THREE.Mesh(geo, glint);
+        const g = new THREE.Mesh(geo, glint.armorMaterial((mesh.material as THREE.MeshLambertMaterial).map!));
         g.renderOrder = 2;
         this.pivots[part].add(mesh, g);
         entry.armor.push(mesh);
@@ -166,7 +167,7 @@ export class PlayerModel {
         const wing = new THREE.Group();
         wing.rotation.order = 'ZYX';
         wing.position.set(5 * side, 0, -2);
-        const g = new THREE.Mesh(geo, glint);
+        const g = new THREE.Mesh(geo, glint.armorMaterial(wingTex));
         g.renderOrder = 2;
         wing.add(new THREE.Mesh(geo, wingMat), g);
         this.pivots.body.add(wing);
@@ -275,6 +276,8 @@ export class PlayerModel {
         e.material = material;
         const mat = this.armorMat(material, e.layer);
         for (const m of e.armor) m.material = mat;
+        // The glint is clipped to the armor's own texture.
+        for (const m of e.glint) (m.material as THREE.ShaderMaterial).uniforms.uMask.value = mat.map;
       }
       for (const m of e.armor) m.visible = !!st;
       for (const m of e.glint) m.visible = !!st && isEnchanted(st);

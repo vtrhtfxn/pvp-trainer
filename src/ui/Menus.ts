@@ -576,7 +576,7 @@ export class Menus {
           // Lives in the app shell (a Chromium switch), not in the game's settings.
           let want = native.uncapped;
           const b = h('button', { class: 'mc-btn' });
-          b.title = 'VSync off: more FPS and slightly quicker input, but can stutter and makes laptops hot. Applies when you restart the app';
+          b.title = 'ON (default): no VSync and no 60 FPS limit — the most FPS and the quickest input. OFF: FPS follows your screen (cooler laptops, no tearing). Applies when you restart the app';
           const paint = () => (b.textContent = `Uncapped FPS: ${want ? 'ON' : 'OFF'}${want !== native.uncapped ? ' (restart app)' : ''}`);
           paint();
           b.addEventListener('click', () => {

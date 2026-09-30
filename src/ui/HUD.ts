@@ -636,7 +636,7 @@ export class HUD {
     }
     drawDurabilityBar(c, st, x - 1, y);
     if (st.count > 1) {
-      c.font = '7px "Pixelify Sans", monospace';
+      c.font = '8px Minecraft, "Pixelify Sans", monospace';
       c.textAlign = 'right';
       c.textBaseline = 'alphabetic';
       c.fillStyle = '#3f3f3f';

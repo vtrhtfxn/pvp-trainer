@@ -294,7 +294,7 @@ export class ModHud {
       else if (mode !== 'none' && max) {
         const left = max - (st.damage ?? 0);
         const text = mode === 'percent' ? `${Math.round((left / max) * 100)}%` : String(left);
-        x.font = '6px "Pixelify Sans", monospace';
+        x.font = '8px Minecraft, "Pixelify Sans", monospace';
         x.textAlign = 'center';
         x.fillStyle = '#3f3f3f';
         x.fillText(text, sx + 12, 21);

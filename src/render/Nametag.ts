@@ -28,7 +28,7 @@ export class Nametag {
     this.last = key;
     const c = this.ctx;
     c.clearRect(0, 0, 512, 160);
-    c.font = '600 44px "Pixelify Sans", monospace';
+    c.font = '40px Minecraft, "Pixelify Sans", monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     const drawPlate = (text: string, y: number, fill: string) => {
@@ -42,7 +42,7 @@ export class Nametag {
     };
     drawPlate(name, 42, color);
     const hearts = `${(hp / 2).toFixed(1)} ❤${absorption > 0 ? `  +${(absorption / 2).toFixed(1)}` : ''}`;
-    c.font = '600 40px "Pixelify Sans", monospace';
+    c.font = '40px Minecraft, "Pixelify Sans", monospace';
     drawPlate(status ? `${hearts} · ${status}` : hearts, 116, absorption > 0 ? '#ffd23f' : '#ff5555');
     this.texture.needsUpdate = true;
   }

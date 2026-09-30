@@ -21,16 +21,17 @@ protocol.registerSchemesAsPrivileged([
 // fixed-step simulation the moment the window loses focus.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
-// Frames are paced to the screen (VSync) unless the player turns on Options → Video →
-// Uncapped FPS. Uncapped runs as fast as the machine can, out of step with the display: more
-// FPS and slightly quicker input, but stutter, heat and throttling on laptops — so it is
-// opt-in, and it is a Chromium switch, so it takes effect on the next launch.
+// Frames are NOT paced to the screen: Chromium's frame-rate limit and VSync are switched off, so
+// the game runs as fast as the machine can (and past 60 on a 120/144 Hz display). Options →
+// Video → Uncapped FPS turns that off again if you would rather have VSync (cooler laptops, no
+// tearing); Options → Max Framerate caps it at any number in between. It is a Chromium switch,
+// so a change takes effect on the next launch.
 const DISPLAY_FILE = path.join(app.getPath('userData'), 'display.json');
 function readUncapped() {
   try {
-    return JSON.parse(fs.readFileSync(DISPLAY_FILE, 'utf8')).uncapped === true;
+    return JSON.parse(fs.readFileSync(DISPLAY_FILE, 'utf8')).uncapped !== false;
   } catch {
-    return false;
+    return true;
   }
 }
 const uncapped = readUncapped();
@@ -38,6 +39,12 @@ if (uncapped) {
   app.commandLine.appendSwitch('disable-frame-rate-limit');
   app.commandLine.appendSwitch('disable-gpu-vsync');
 }
+// Use the GPU for everything it can do, even on drivers Chromium is cautious about.
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+// Windows: don't let a window that is partly covered be treated as hidden (it would throttle).
+if (process.platform === 'win32') app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 /** Only the game page itself may talk to the app shell. */
 function fromGame(event) {
   const url = event.senderFrame?.url ?? '';
