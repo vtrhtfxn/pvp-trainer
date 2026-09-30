@@ -572,11 +572,12 @@ export class Menus {
           'Auto lowers the resolution only when frames get slow. Lower = smoother on weak computers',
         );
         const native = window.pvpNative;
-        if (native?.setUncapped) {
+        // Not offered on macOS, where switching VSync off starves the window server (see electron/main.cjs).
+        if (native?.setUncapped && native.platform !== 'darwin') {
           // Lives in the app shell (a Chromium switch), not in the game's settings.
           let want = native.uncapped;
           const b = h('button', { class: 'mc-btn' });
-          b.title = 'ON (default): no VSync and no 60 FPS limit — the most FPS and the quickest input. OFF: FPS follows your screen (cooler laptops, no tearing). Applies when you restart the app';
+          b.title = 'VSync off: more FPS and slightly quicker input, but can stutter and makes laptops hot. Applies when you restart the app';
           const paint = () => (b.textContent = `Uncapped FPS: ${want ? 'ON' : 'OFF'}${want !== native.uncapped ? ' (restart app)' : ''}`);
           paint();
           b.addEventListener('click', () => {

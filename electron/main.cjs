@@ -21,17 +21,19 @@ protocol.registerSchemesAsPrivileged([
 // fixed-step simulation the moment the window loses focus.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
-// Frames are NOT paced to the screen: Chromium's frame-rate limit and VSync are switched off, so
-// the game runs as fast as the machine can (and past 60 on a 120/144 Hz display). Options →
-// Video → Uncapped FPS turns that off again if you would rather have VSync (cooler laptops, no
-// tearing); Options → Max Framerate caps it at any number in between. It is a Chromium switch,
-// so a change takes effect on the next launch.
+// Frames are paced to the screen (VSync): 60 FPS on a 60 Hz display, 120 on a ProMotion one.
+//
+// Windows only: Options → Video → Uncapped FPS switches VSync and Chromium's frame-rate limit
+// off (a Chromium switch, so it applies on the next launch). Never on macOS: there the game then
+// draws hundreds of frames a second that the window server never shows — the FPS counter reads
+// huge numbers while the screen updates about ten times a second.
 const DISPLAY_FILE = path.join(app.getPath('userData'), 'display.json');
 function readUncapped() {
+  if (process.platform === 'darwin') return false;
   try {
-    return JSON.parse(fs.readFileSync(DISPLAY_FILE, 'utf8')).uncapped !== false;
+    return JSON.parse(fs.readFileSync(DISPLAY_FILE, 'utf8')).uncapped === true;
   } catch {
-    return true;
+    return false;
   }
 }
 const uncapped = readUncapped();
