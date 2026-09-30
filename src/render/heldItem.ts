@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as C from '../core/constants';
 import type { Fighter, Hand } from '../game/Fighter';
 import { ITEMS, isEnchanted, type ItemStack } from '../game/items';
+import type { Glint } from './glint';
 import { isCubeItem, itemTextureName } from './itemIcons';
 import { cubeModel, shieldModel, spriteModel, type ItemModel } from './itemMesh';
 import type { ItemKind } from './itemTransforms';
@@ -57,7 +58,7 @@ export class HeldItemSlot {
   private readonly entries = new Map<string, { root: THREE.Group; glint: THREE.Mesh; mat: THREE.MeshLambertMaterial }>();
   private shown: string | null = null;
 
-  constructor(private readonly glintMaterial: THREE.Material) {
+  constructor(private readonly glintSource: Glint) {
     this.group.matrixAutoUpdate = false;
   }
 
@@ -75,7 +76,7 @@ export class HeldItemSlot {
           const mat = new THREE.MeshLambertMaterial({ map: m.texture, alphaTest: 0.1, side: THREE.DoubleSide });
           const root = new THREE.Group();
           root.add(new THREE.Mesh(m.geometry, mat));
-          const glint = new THREE.Mesh(m.geometry, this.glintMaterial);
+          const glint = new THREE.Mesh(m.geometry, this.glintSource.itemMaterial(m.texture));
           glint.renderOrder = 2;
           root.add(glint);
           this.group.add(root);

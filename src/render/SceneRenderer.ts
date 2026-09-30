@@ -17,7 +17,8 @@ import { Nametag } from './Nametag';
 import { Particles } from './Particles';
 import { PlayerModel } from './PlayerModel';
 import { setWorldLight } from './light';
-import { glintTexture } from './textures';
+import { Crosshair } from './Crosshair';
+import { Glint } from './glint';
 import { RainView } from './Weather';
 
 const DEG = Math.PI / 180;
@@ -94,7 +95,11 @@ export class SceneRenderer {
   private previewTarget: THREE.WebGLRenderTarget | null = null;
   private previewBuf: Uint8Array | null = null;
   private previewImg: ImageData | null = null;
-  private readonly glint: THREE.CanvasTexture;
+  private readonly glint: Glint;
+  private readonly crosshair = new Crosshair();
+  /** Draw the crosshair this frame (the HUD is up and no custom crosshair replaces it), at this GUI scale. */
+  crosshairOn = false;
+  crosshairGui = 2;
   private readonly viewShake = new THREE.Matrix4();
   cameraMode: CameraMode = 'orbit';
   /** Device pixel ratio actually in use; lowered automatically when frames get slow. */
@@ -145,17 +150,9 @@ export class SceneRenderer {
     this.scene.add(this.arena.group);
     this.scene.add(this.particles.group);
 
-    this.glint = glintTexture();
-    this.glint.repeat.set(2, 2);
-    const glintMat = new THREE.MeshBasicMaterial({
-      map: this.glint,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      depthWrite: false,
-      depthFunc: THREE.LessEqualDepth,
-      opacity: 0.65,
-      fog: false,
-    });
+    this.glint = new Glint();
+    this.glint.warm(this.renderer, this.camera);
+    const glintMat = this.glint;
     this.playerModel = new PlayerModel(assets, glintMat);
     this.botModel = new PlayerModel(assets, glintMat);
     this.scene.add(this.playerModel.root, this.playerModel.shadow, this.botModel.root, this.botModel.shadow);
@@ -468,7 +465,7 @@ export class SceneRenderer {
     this.applyEnvironment(orbit ? null : player, view, view.clouds);
     this.arena.update(time, this.camera);
     this.rain.update(this.camera, this.extras.sky.rain, dt);
-    this.glint.offset.set((time * 0.12) % 1, (time * 0.05) % 1);
+    this.glint.update(time);
 
     const firstPerson = this.cameraMode === 'first' && !this.extras.freelook;
     this.playerModel.shadowsOn = this.botModel.shadowsOn = view.entityShadows;
@@ -530,5 +527,6 @@ export class SceneRenderer {
       this.renderer.clearDepth();
       this.renderer.render(this.firstPerson.scene, this.firstPerson.camera);
     }
+    if (this.crosshairOn) this.crosshair.render(this.renderer, this.crosshairGui);
   }
 }

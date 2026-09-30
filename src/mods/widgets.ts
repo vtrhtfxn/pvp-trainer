@@ -60,6 +60,13 @@ export class ModHud {
   private readonly crosshair: HTMLCanvasElement;
   private crosshairKey = '';
   editing = false;
+  /**
+   * The practice panel (top-left). Widgets placed on top of it, or on each other, are pushed down
+   * until nothing draws over anything else (checked a few times a second, not every frame).
+   */
+  avoid: HTMLElement | null = null;
+  private readonly nudge = new Map<ModId, number>();
+  private nudgeCheckedAt = 0;
   private drag: { id: ModId; dx: number; dy: number } | null = null;
 
   constructor(
@@ -152,7 +159,7 @@ export class ModHud {
       const p = this.mods.pos(id);
       const scale = Number(this.mods.cfg(id, 'scale') ?? 1);
       const x = `${Math.round(p.x * window.innerWidth)}px`;
-      const top = `${Math.round(p.y * window.innerHeight)}px`;
+      const top = `${Math.round(p.y * window.innerHeight) + (this.editing ? 0 : (this.nudge.get(id) ?? 0))}px`;
       const left = p.right ? 'auto' : x;
       const right = p.right ? x : 'auto';
       if (el.style.left !== left) el.style.left = left;
@@ -162,8 +169,44 @@ export class ModHud {
       const sc = String(scale);
       if (el.style.getPropertyValue('--s') !== sc) el.style.setProperty('--s', sc);
     }
+    if (show && !this.editing) this.checkOverlap();
     this.drawArmor(show && this.mods.on('armorhud') ? f! : null);
     this.drawCrosshair(!!f && f.inGame && this.mods.on('crosshair'));
+  }
+
+  /**
+   * Moves widgets that would sit on the practice panel, or on each other, down until they are
+   * clear — top to bottom, so a widget pushed down can in turn push the next one.
+   */
+  private checkOverlap() {
+    const now = performance.now();
+    if (now - this.nudgeCheckedAt < 250) return;
+    this.nudgeCheckedAt = now;
+    const panel = this.avoid;
+    const taken: { left: number; right: number; top: number; bottom: number }[] = [];
+    if (panel && panel.style.display !== 'none' && panel.offsetParent) {
+      const pr = panel.getBoundingClientRect();
+      if (pr.height) taken.push(pr);
+    }
+    const boxes = WIDGETS.filter((id) => this.boxes.get(id)!.style.display !== 'none').map((id) => {
+      const r = this.boxes.get(id)!.getBoundingClientRect();
+      const top = r.top - (this.nudge.get(id) ?? 0);
+      return { id, left: r.left, right: r.right, top, height: r.height };
+    });
+    boxes.sort((a, b) => a.top - b.top);
+    const next = new Map<ModId, number>();
+    for (const b of boxes) {
+      let top = b.top;
+      for (let guard = 0; guard < 12; guard++) {
+        const hit = taken.find((t) => b.left < t.right && b.right > t.left && top < t.bottom && top + b.height > t.top);
+        if (!hit) break;
+        top = Math.ceil(hit.bottom + 4);
+      }
+      if (top !== b.top) next.set(b.id, top - b.top);
+      taken.push({ left: b.left, right: b.right, top, bottom: top + b.height });
+    }
+    this.nudge.clear();
+    for (const [id, v] of next) this.nudge.set(id, v);
   }
 
   private render(id: ModId, f: WidgetFrame): string {
@@ -294,7 +337,7 @@ export class ModHud {
       else if (mode !== 'none' && max) {
         const left = max - (st.damage ?? 0);
         const text = mode === 'percent' ? `${Math.round((left / max) * 100)}%` : String(left);
-        x.font = '6px "Pixelify Sans", monospace';
+        x.font = '8px Minecraft, "Pixelify Sans", monospace';
         x.textAlign = 'center';
         x.fillStyle = '#3f3f3f';
         x.fillText(text, sx + 12, 21);

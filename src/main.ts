@@ -12,6 +12,8 @@ async function main() {
   try {
     await Promise.race([
       Promise.all([
+        document.fonts.load('16px "Minecraft"'),
+        document.fonts.load('16px "Minecraft UI"'),
         document.fonts.load('400 16px "Pixelify Sans"'),
         document.fonts.load('600 16px "Pixelify Sans"'),
         document.fonts.load('700 16px "Pixelify Sans"'),

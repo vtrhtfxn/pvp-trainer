@@ -8,3 +8,4 @@ vendor/
 New Folder With Items/
 /*.glb
 *.log
+__pycache__/

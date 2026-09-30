@@ -193,6 +193,7 @@ export class Game {
     this.chestUi = new ChestScreen(uiRoot, overlayCb);
     this.drillHud = new DrillHud(uiRoot);
     this.modHud = new ModHud(uiRoot, this.mods);
+    this.modHud.avoid = this.hud.practice;
     this.damage = new DamageIndicators(uiRoot);
     this.host = this.makeHost();
     registerBuiltins(this.commands);
@@ -327,7 +328,7 @@ export class Game {
     this.applySettings();
     this.toMenu();
     this.view.prewarm();
-    requestAnimationFrame((t) => this.frame(t));
+    requestAnimationFrame(this.onFrame);
   }
 
   // ------------------------------------------------------------------ state changes
@@ -1227,8 +1228,11 @@ export class Game {
     return this.state === 'playing' && this.mods.on('zoom') && this.input.held('zoom');
   }
 
+  /** One bound callback for every frame, so the loop allocates nothing of its own. */
+  private readonly onFrame = (t: number) => this.frame(t);
+
   private frame(now: number) {
-    requestAnimationFrame((t) => this.frame(t));
+    requestAnimationFrame(this.onFrame);
     // Max Framerate: skip display refreshes that come too soon.
     const cap = this.settings.maxFps;
     if (cap > 0 && now - this.lastDrawn < 1000 / cap - 1) return;
@@ -1356,6 +1360,7 @@ export class Game {
       tag.name = cb.name;
       tag.color = onB ? spec.a.color : spec.b.color;
       tag.status = spec.label(onB ? 'a' : 'b');
+      this.view.crosshairOn = false;
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);
       this.specHud.update(spec, dt);
       const cam = this.view.camera.position;
@@ -1365,6 +1370,8 @@ export class Game {
       tag.name = m.bot.name;
       tag.color = m.profile.color;
       tag.status = this.state === 'menu' ? '' : m.brain.label;
+      this.view.crosshairOn = this.state !== 'menu' && this.hud.crosshairShown;
+      this.view.crosshairGui = this.hud.guiScale;
       this.view.render(p, m.bot, alpha, this.time, dt, s, tag);
     }
     if (this.mods.on('damageindicator')) this.damage.update(this.view.camera, dt);

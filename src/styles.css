@@ -1,5 +1,21 @@
+@font-face {
+  font-family: 'Minecraft';
+  src: url('./assets/fonts/minecraft.woff2') format('woff2');
+  font-display: block;
+}
+@font-face {
+  font-family: 'Minecraft UI';
+  src: url('./assets/fonts/minecraft.woff2') format('woff2');
+  font-display: block;
+  size-adjust: 85.7143%;
+}
 :root {
-  --font: 'Pixelify Sans', ui-monospace, monospace;
+  /* Minecraft's own font, built from the default pack's glyph sheets (scripts/build-font.py).
+     'Minecraft' is true size (8 px per em pixel-row: HUD, chat, titles, tooltips); 'Minecraft UI'
+     is the same font drawn 6/7 the size, so the menus' 12–24 px text keeps its old footprint
+     and lands on whole device pixels on a 2× screen. Pixelify Sans only fills in missing glyphs. */
+  --font: 'Minecraft UI', 'Pixelify Sans', ui-monospace, monospace;
+  --font-mc: 'Minecraft', 'Pixelify Sans', ui-monospace, monospace;
   --gui: 2;
   --text-shadow: 2px 2px 0 #3f3f3f;
   --panel-bg: rgba(12, 12, 16, 0.72);
@@ -23,6 +39,7 @@ body {
   overflow: hidden;
   background: #9ebfff;
   font-family: var(--font);
+  line-height: 1.3;
   color: #fff;
   user-select: none;
   -webkit-user-select: none;
@@ -445,33 +462,6 @@ body {
   bottom: 0;
   transform: translateX(-50%);
   image-rendering: pixelated;
-}
-.crosshair {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: calc(var(--gui) * 9px);
-  height: calc(var(--gui) * 9px);
-  transform: translate(-50%, -50%);
-  mix-blend-mode: difference;
-}
-.crosshair::before,
-.crosshair::after {
-  content: '';
-  position: absolute;
-  background: #fff;
-}
-.crosshair::before {
-  left: calc(var(--gui) * 4px);
-  top: 0;
-  width: calc(var(--gui) * 1px);
-  height: 100%;
-}
-.crosshair::after {
-  top: calc(var(--gui) * 4px);
-  left: 0;
-  height: calc(var(--gui) * 1px);
-  width: 100%;
 }
 .attack-bar {
   position: absolute;
@@ -1282,9 +1272,6 @@ body {
   top: 50%;
   transform: translate(-50%, -50%);
   image-rendering: pixelated;
-}
-body.custom-crosshair .crosshair {
-  display: none;
 }
 .mod-hud.editing .mod-widget {
   pointer-events: auto;
@@ -2372,6 +2359,7 @@ body.custom-crosshair .crosshair {
 }
 .mode-panel.chest {
   width: min(460px, 96vw);
+  overflow-x: hidden;
 }
 .mode-title {
   font-size: 18px;
@@ -2458,12 +2446,17 @@ body.custom-crosshair .crosshair {
 }
 .mode-slots {
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
+  /* minmax(0, …): a slot's button must not push its column wider than a ninth of the panel
+     (with plain 1fr the 9th column was cut off and the rows spilled over the text below). */
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 2px;
 }
 .mode-slot {
   position: relative;
+  min-width: 0;
   aspect-ratio: 1;
+  font: inherit;
+  line-height: 0;
   background: #8b8b8b;
   border: 2px solid;
   border-color: #373737 #fff #fff #373737;
@@ -2484,6 +2477,7 @@ body.custom-crosshair .crosshair {
   bottom: 0;
   color: #fff;
   font-size: 13px;
+  line-height: 1;
   text-shadow: 1px 1px 0 #3f3f3f;
 }
 .mode-takeall {
@@ -2491,4 +2485,18 @@ body.custom-crosshair .crosshair {
   width: auto;
   padding: 4px 12px;
   font-size: 14px;
+}
+
+/* Text sized in whole GUI pixels (8 px × the GUI scale) is drawn at the font's true size. */
+.inv-label,
+.inv-count,
+.inv-tooltip,
+.chat,
+.title-main,
+.title-sub,
+.actionbar,
+.mod-widget,
+.mod-hud {
+  font-family: var(--font-mc);
+  line-height: 1.125;
 }

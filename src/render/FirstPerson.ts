@@ -4,6 +4,7 @@ import { clamp, lerp } from '../core/math';
 import type { Fighter, Hand } from '../game/Fighter';
 import type { ItemStack } from '../game/items';
 import type { Assets } from './assets';
+import type { Glint } from './glint';
 import { HeldItemSlot, itemVisual } from './heldItem';
 import { firstPersonItemMatrix } from './itemTransforms';
 
@@ -54,7 +55,7 @@ export class FirstPersonView {
   private readonly ambient: THREE.AmbientLight;
   private readonly key: THREE.DirectionalLight;
 
-  constructor(assets: Assets, glint: THREE.Material) {
+  constructor(assets: Assets, glint: Glint) {
     this.ambient = new THREE.AmbientLight(0xffffff, 0.62 * Math.PI);
     this.scene.add(this.ambient);
     const key = new THREE.DirectionalLight(0xffffff, 0.55 * Math.PI);
