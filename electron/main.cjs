@@ -3,19 +3,60 @@
 // The built game (dist/index.html) is served over a private "pvp://" scheme rather than
 // file://, so it gets a real web origin: localStorage keeps your settings and records, and
 // pointer lock behaves exactly like it does in Chrome.
+//
+// It keeps itself up to date: every build of main is published as a GitHub Release (see
+// .github/workflows/app.yml). At launch the app checks the latest one; a newer game (one
+// HTML file) is downloaded in the background and used from the next start — the game offers a
+// Restart button. A release that needs a newer app shell than this one only offers the
+// download page instead.
 
-const { app, BrowserWindow, Menu, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, protocol, net, screen, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 
 const SCHEME = 'pvp';
 const HOST = 'game';
-const ROOT = path.join(__dirname, '..', 'dist');
+const REPO = 'vtrhtfxn/pvp-trainer';
+const RELEASES = `https://github.com/${REPO}/releases/latest`;
+/** Bumped (in shell-version.json) whenever main.cjs / preload.cjs change in a way a game build relies on. */
+const SHELL_VERSION = Number(require('./shell-version.json').shell) || 1;
+/** `--smoke-test`: load the game, print whether it started, and quit (used by the build workflow). */
+const SMOKE = process.argv.includes('--smoke-test');
+
+/** The game that came with the app, and where downloaded updates go. */
+const BUNDLED = path.join(__dirname, '..', 'dist');
+const UPDATES = path.join(app.getPath('userData'), 'game');
+
+function readBuild(dir) {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(dir, 'build.json'), 'utf8'));
+    return { build: Number(j.build) || 0, shell: Number(j.shell) || 1 };
+  } catch {
+    return { build: 0, shell: 1 };
+  }
+}
+
+/** The newest game this shell can run: a downloaded update, or the one in the app. */
+function pickGame() {
+  const bundled = { dir: BUNDLED, ...readBuild(BUNDLED) };
+  if (SMOKE || !app.isPackaged) return bundled;
+  const cached = { dir: UPDATES, ...readBuild(UPDATES) };
+  const ok = cached.build > bundled.build && cached.shell <= SHELL_VERSION && fs.existsSync(path.join(UPDATES, 'index.html'));
+  return ok ? cached : bundled;
+}
+const GAME = pickGame();
+const ROOT = GAME.dir;
 
 protocol.registerSchemesAsPrivileged([
   { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
+
+// The build workflow's Mac has no GPU: let the smoke test render in software.
+if (SMOKE) {
+  app.commandLine.appendSwitch('use-angle', 'swiftshader');
+  app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+}
 
 // Chromium throttles requestAnimationFrame in occluded windows, which would stall the
 // fixed-step simulation the moment the window loses focus.
@@ -189,6 +230,77 @@ function createWindow() {
   void win.loadURL(`${SCHEME}://${HOST}/index.html`);
 }
 
+// ---------------------------------------------------------------- updates
+
+/** Update news for the game, queued until its page has loaded. */
+let updateInfo = null;
+function tellGame() {
+  if (updateInfo && win && !win.webContents.isLoading()) win.webContents.send('pvp:update', updateInfo);
+}
+
+async function fetchWithTimeout(url, ms, init = {}) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await net.fetch(url, { ...init, signal: ctl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** A release asset URL we are willing to download: only this repository's own releases. */
+function assetUrl(release, name) {
+  const url = release.assets?.find((a) => a.name === name)?.browser_download_url;
+  return typeof url === 'string' && url.startsWith(`https://github.com/${REPO}/releases/download/`) ? url : null;
+}
+
+async function checkForUpdate() {
+  const res = await fetchWithTimeout(`https://api.github.com/repos/${REPO}/releases/latest`, 10000, {
+    headers: { accept: 'application/vnd.github+json', 'user-agent': 'PvP-Trainer-app' },
+  });
+  if (!res.ok) return;
+  const release = await res.json();
+  const infoUrl = assetUrl(release, 'build.json');
+  const htmlUrl = assetUrl(release, 'game.html');
+  if (!infoUrl || !htmlUrl) return;
+  const info = await (await fetchWithTimeout(infoUrl, 15000)).json();
+  const build = Number(info.build) || 0;
+  const needShell = Number(info.shell) || 1;
+  if (build <= GAME.build) return;
+  if (needShell > SHELL_VERSION) {
+    // The new game needs a newer app: don't swap it in, point to the download.
+    updateInfo = { kind: 'app', build };
+    tellGame();
+    return;
+  }
+  const html = await (await fetchWithTimeout(htmlUrl, 120000)).text();
+  // A sanity check, not a signature: it has to look like our single-file build.
+  if (html.length < 200_000 || html.length > 60_000_000 || !/^<!doctype html>/i.test(html.trimStart()) || !html.includes('PvP Trainer')) return;
+  fs.mkdirSync(UPDATES, { recursive: true });
+  const tmp = path.join(UPDATES, 'index.html.part');
+  fs.writeFileSync(tmp, html);
+  fs.renameSync(tmp, path.join(UPDATES, 'index.html'));
+  fs.writeFileSync(path.join(UPDATES, 'build.json'), JSON.stringify({ build, shell: needShell }));
+  updateInfo = { kind: 'game', build };
+  tellGame();
+}
+
+ipcMain.handle('pvp:restart', (e) => {
+  if (!fromGame(e)) return;
+  app.relaunch();
+  app.exit(0);
+});
+ipcMain.handle('pvp:open-download', (e) => {
+  if (!fromGame(e)) return;
+  void shell.openExternal(RELEASES);
+});
+ipcMain.handle('pvp:build', (e) => (fromGame(e) ? GAME.build : 0));
+/** The refresh rate of the screen the window is on (60, 120 on ProMotion, …). */
+ipcMain.handle('pvp:display-hz', (e) => {
+  if (!fromGame(e) || !win) return 0;
+  return Math.round(screen.getDisplayMatching(win.getBounds()).displayFrequency || 0);
+});
+
 app.whenReady().then(() => {
   if (!fs.existsSync(path.join(ROOT, 'index.html'))) {
     const { dialog } = require('electron');
@@ -199,9 +311,44 @@ app.whenReady().then(() => {
   serveDist();
   buildMenu();
   createWindow();
+  if (SMOKE) {
+    smokeTest();
+    return;
+  }
+  win.webContents.on('did-finish-load', tellGame);
+  // Only a packaged app updates itself; `npm run app` always runs your own build.
+  if (app.isPackaged) checkForUpdate().catch(() => {});
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('window-all-closed', () => app.quit());
+
+/** Loads the game and reports whether it started (the build workflow runs this on a Mac). */
+function smokeTest() {
+  const done = (ok, msg) => {
+    console.log(`SMOKE ${ok ? 'OK' : 'FAIL'}: ${msg}`);
+    app.exit(ok ? 0 : 1);
+  };
+  const giveUp = setTimeout(() => done(false, 'timed out after 90 s'), 90000);
+  win.webContents.once('did-fail-load', (_e, code, desc) => done(false, `load failed ${code} ${desc}`));
+  win.webContents.once('did-finish-load', async () => {
+    for (;;) {
+      const r = await win.webContents
+        .executeJavaScript(`(() => { const l = document.getElementById('loading'); return { started: !!window.__pvp, text: l ? l.textContent.trim() : '', title: document.title }; })()`)
+        .catch((err) => ({ started: false, text: String(err) }));
+      if (r.started) {
+        clearTimeout(giveUp);
+        done(true, `game started (${r.title})`);
+        return;
+      }
+      if (/Failed to start/.test(r.text)) {
+        clearTimeout(giveUp);
+        done(false, r.text);
+        return;
+      }
+      await new Promise((res) => setTimeout(res, 500));
+    }
+  });
+}

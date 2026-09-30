@@ -38,8 +38,17 @@ export class ScoreboardHud {
     parent.append(this.root);
   }
 
+  /** The Scoreboard mod: hidden, or a size and background opacity (null = the default look). */
+  private hidden = false;
+  setStyle(o: { hide: boolean; background: number; scale: number } | null) {
+    this.hidden = !!o?.hide;
+    this.root.style.setProperty('--sb-scale', String(o ? o.scale : 1));
+    this.root.style.setProperty('--sb-bg', String(o ? o.background : 0.45));
+    if (this.hidden) this.hide();
+  }
+
   update(lines: ScoreLine[] | null) {
-    if (!lines) {
+    if (!lines || this.hidden) {
       this.hide();
       return;
     }

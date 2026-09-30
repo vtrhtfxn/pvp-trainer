@@ -1465,14 +1465,20 @@ body {
   letter-spacing: 1px;
   text-shadow: none;
 }
-.mk-cat.hud {
+.mk-cat.cat-hud {
   color: #55ffff;
 }
-.mk-cat.visual {
+.mk-cat.cat-visual {
   color: #ff77ff;
 }
-.mk-cat.utility {
+.mk-cat.cat-utility {
   color: #ffaa00;
+}
+.mk-cat.new {
+  color: #1b1b1b;
+  background: #55ff55;
+  border-color: #55ff55;
+  margin-left: 4px;
 }
 .mk-desc {
   font-size: 13px;
@@ -2319,10 +2325,11 @@ body {
   position: fixed;
   right: 8px;
   top: 38%;
-  transform: translateY(-50%);
+  transform: translateY(-50%) scale(var(--sb-scale, 1));
+  transform-origin: right center;
   min-width: 170px;
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, var(--sb-bg, 0.45));
   color: #fff;
   font-size: 14px;
   text-shadow: 1px 1px 0 #3f3f3f;
@@ -2499,4 +2506,97 @@ body {
 .mod-hud {
   font-family: var(--font-mc);
   line-height: 1.125;
+}
+
+/* ------------------------------------------------------------ desktop app updates */
+.update-banner {
+  position: fixed;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 12px;
+  background: rgba(12, 12, 16, 0.92);
+  border: 2px solid #55ff55;
+  font-size: 14px;
+  color: #fff;
+  text-shadow: var(--text-shadow);
+  pointer-events: auto;
+}
+.update-banner .mc-btn {
+  width: auto;
+  padding: 4px 12px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ Target HUD / Direction HUD */
+.mw-target {
+  min-width: calc(var(--u) * 90);
+  padding: calc(var(--u) * 3);
+  background: rgba(0, 0, 0, 0.45);
+}
+.mw-target.dead {
+  opacity: 0.5;
+}
+.tg-name {
+  margin-bottom: calc(var(--u) * 2);
+}
+.tg-bar {
+  height: calc(var(--u) * 3);
+  background: rgba(255, 255, 255, 0.15);
+  margin-bottom: calc(var(--u) * 2);
+}
+.tg-bar i {
+  display: block;
+  height: 100%;
+  background: #55ff55;
+}
+.tg-abs {
+  color: #ffd23f;
+}
+.tg-items {
+  display: flex;
+  gap: calc(var(--u) * 1);
+  margin-top: calc(var(--u) * 2);
+}
+.tg-items img {
+  width: calc(var(--u) * 16);
+  height: calc(var(--u) * 16);
+  image-rendering: pixelated;
+}
+.mw-dir {
+  width: calc(var(--u) * 120);
+  text-align: center;
+}
+.dh-strip {
+  position: relative;
+  height: calc(var(--u) * 11);
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.dh-mark {
+  position: absolute;
+  top: calc(var(--u) * 2);
+  transform: translateX(-50%);
+  color: #cfcfcf;
+}
+.dh-mark.big {
+  color: #fff;
+}
+.dh-tick {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--u) * 1);
+  transform: translateX(-50%);
+  background: #ff5555;
+}
+.dh-deg {
+  margin-top: calc(var(--u) * 1);
 }

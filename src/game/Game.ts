@@ -304,7 +304,11 @@ export class Game {
     this.widgetFrame = {
       fps: 0,
       frameMs: 0,
+      displayHz: 0,
       ping: null,
+      opponent: null,
+      opponentColor: '#ffffff',
+      lastReach: null,
       player: this.match.player,
       keys: { forward: false, left: false, back: false, right: false, jump: false, attack: false, use: false },
       cps: { left: 0, right: 0 },
@@ -325,6 +329,7 @@ export class Game {
     });
     // The macOS app routes its ⌘M menu item here, since the menu swallows the key event.
     window.pvpNative?.onToggleHitboxes(() => this.toggleHitboxes());
+    this.watchApp();
     this.applySettings();
     this.toMenu();
     this.view.prewarm();
@@ -401,6 +406,27 @@ export class Game {
       model.hurtStrength = hit ? Number(m.cfg('hitcolor', 'strength')) : 0.45;
     }
     v.extras.hurtcam = m.on('hurtcam') ? { strength: Number(m.cfg('hurtcam', 'strength')), classic: m.cfg('hurtcam', 'mode') === 'classic' } : null;
+    v.blocks.setOverlay(
+      m.on('blockoverlay')
+        ? {
+            color: String(m.cfg('blockoverlay', 'color')),
+            opacity: Number(m.cfg('blockoverlay', 'opacity')),
+            fill: !!m.cfg('blockoverlay', 'fill'),
+            fillColor: String(m.cfg('blockoverlay', 'fillColor')),
+            fillOpacity: Number(m.cfg('blockoverlay', 'fillOpacity')),
+          }
+        : null,
+    );
+    this.scoreboard.setStyle(
+      m.on('scoreboard') ? { hide: !!m.cfg('scoreboard', 'hide'), background: Number(m.cfg('scoreboard', 'background')), scale: Number(m.cfg('scoreboard', 'scale')) } : null,
+    );
+  }
+
+  /** Time Changer: the time of day you see (Minecraft ticks), or null for the world's own. */
+  private viewTime(): number | null {
+    if (!this.mods.on('timechanger')) return null;
+    const t = String(this.mods.cfg('timechanger', 'time'));
+    return t === 'morning' ? 1000 : t === 'sunset' ? 12300 : t === 'night' ? 18000 : 6000;
   }
 
   // ------------------------------------------------------------------ marketplace & HUD editor
@@ -548,6 +574,13 @@ export class Game {
       return;
     }
     this.chat.print(this.chatLine(kind, loadPlayerName(), t), false);
+  }
+
+  /** Auto GG mod: says gg a moment after a duel ends (to your opponent, online). */
+  private autoGG(won: boolean) {
+    if (!this.mods.on('autogg') || (this.mods.cfg('autogg', 'onlyWin') && !won)) return;
+    const text = String(this.mods.cfg('autogg', 'message') || 'gg');
+    setTimeout(() => this.broadcast('chat', text), 600);
   }
 
   private chatLine(kind: ChatKind, from: string, text: string): ChatLine {
@@ -1080,6 +1113,7 @@ export class Game {
         if (this.state === 'playing' || this.state === 'paused') {
           const won = msg.winner === this.net.you;
           this.hud.showCenter(msg.winner === null ? 'DRAW' : won ? 'VICTORY' : 'YOU DIED', won ? 'win' : 'lose', 40);
+          this.autoGG(won);
           this.resultTimer = 30;
         }
         break;
@@ -1409,6 +1443,40 @@ export class Game {
     l.yaw = p.yaw;
   }
 
+  /** The screen's refresh rate (desktop app only; 0 = unknown). */
+  private displayHz = 0;
+
+  /** Desktop app: build number, the screen's refresh rate, and the self-updater's news. */
+  private watchApp() {
+    const native = window.pvpNative;
+    if (!native) return;
+    void native.build?.().then((n) => this.menus.setBuild(n));
+    const hz = () => void native.displayHz?.().then((v) => (this.displayHz = v));
+    hz();
+    window.addEventListener('resize', hz);
+    native.onUpdate?.((info) => {
+      const bar = document.createElement('div');
+      bar.className = 'update-banner';
+      const text = document.createElement('span');
+      const go = document.createElement('button');
+      const later = document.createElement('button');
+      go.className = later.className = 'mc-btn';
+      later.textContent = 'Later';
+      if (info.kind === 'game') {
+        text.textContent = `Update downloaded (build ${info.build}). Restart to play it — or it starts next time.`;
+        go.textContent = 'Restart now';
+        go.addEventListener('click', () => void native.restart?.());
+      } else {
+        text.textContent = `A new version of the app is out (build ${info.build}). Download it to keep getting updates.`;
+        go.textContent = 'Download';
+        go.addEventListener('click', () => void native.openDownload?.());
+      }
+      later.addEventListener('click', () => bar.remove());
+      bar.append(text, go, later);
+      document.body.append(bar);
+    });
+  }
+
   /** Feeds the mods' HUD widgets (FPS, keystrokes, counters…) without allocating per frame. */
   private updateWidgets(p: Fighter) {
     const editing = this.hudEditor.style.display !== 'none';
@@ -1422,6 +1490,7 @@ export class Game {
     const now = performance.now();
     f.fps = this.fps;
     f.frameMs = this.frameMs;
+    f.displayHz = this.displayHz;
     f.ping = this.netMatch ? this.netMatch.myPing : null;
     f.player = p;
     const k = f.keys;
@@ -1439,6 +1508,9 @@ export class Game {
     f.sneakToggled = inp.sneakToggled;
     f.gui = this.hud.guiScale;
     f.inGame = inGame;
+    f.opponent = inGame ? this.match.bot : null;
+    f.opponentColor = this.match.profile.color;
+    f.lastReach = this.lastReach;
     this.modHud.update(f);
   }
 
@@ -1464,7 +1536,7 @@ export class Game {
     this.sound.setRain(this.state === 'menu' ? 0 : this.rainLevel);
     const sky = this.view.extras.sky;
     const m = this.cmdMatch;
-    sky.dayTime = m ? m.world.dayTime : 6000;
+    sky.dayTime = this.viewTime() ?? (m ? m.world.dayTime : 6000);
     sky.rain = this.rainLevel;
     sky.thunder = this.thunderLevel;
     sky.flash = this.flash;
@@ -1553,6 +1625,7 @@ export class Game {
         // Immediate respawn skips the results screen, so don't linger either.
         this.resultTimer = this.session.rules.doImmediateRespawn ? 22 : 30;
         this.hud.showCenter(m.winner === m.player ? 'VICTORY' : 'YOU DIED', m.winner === m.player ? 'win' : 'lose', 40);
+        this.autoGG(m.winner === m.player);
       } else if (--this.resultTimer === 0) this.finishDuel();
     }
   }

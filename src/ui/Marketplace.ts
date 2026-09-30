@@ -65,6 +65,48 @@ function drawIcon(name: string): HTMLCanvasElement {
       px('#3b7dd8', [[6, 6, 4, 4]]);
       px('#101010', [[7, 7, 2, 2], [2, 7, 1, 2], [13, 7, 1, 2], [4, 5, 1, 1], [11, 5, 1, 1], [4, 10, 1, 1], [11, 10, 1, 1]]);
       break;
+    case 'target':
+      px('#ff5555', [[5, 1, 6, 1], [3, 2, 2, 1], [11, 2, 2, 1], [2, 3, 1, 2], [13, 3, 1, 2], [1, 5, 1, 6], [14, 5, 1, 6], [2, 11, 1, 2], [13, 11, 1, 2], [3, 13, 2, 1], [11, 13, 2, 1], [5, 14, 6, 1]]);
+      px('#ffffff', [[7, 3, 2, 4], [7, 9, 2, 4], [3, 7, 4, 2], [9, 7, 4, 2]]);
+      px('#ff5555', [[7, 7, 2, 2]]);
+      break;
+    case 'reach':
+      px('#55ffff', [[1, 7, 14, 2], [1, 5, 1, 6], [14, 5, 1, 6], [3, 6, 1, 4], [12, 6, 1, 4]]);
+      px('#ffffff', [[5, 2, 1, 3], [7, 2, 1, 3], [9, 2, 1, 3], [6, 11, 4, 3]]);
+      break;
+    case 'combo':
+      px('#ffd23f', [[2, 10, 2, 4], [6, 7, 2, 7], [10, 4, 2, 10]]);
+      px('#ff5555', [[12, 1, 3, 1], [14, 1, 1, 3], [11, 4, 1, 1], [12, 3, 1, 1], [13, 2, 1, 1]]);
+      break;
+    case 'mouse':
+      px('#e8e8e8', [[4, 2, 8, 12], [3, 4, 1, 8], [12, 4, 1, 8]]);
+      px('#55ff55', [[4, 2, 4, 5]]);
+      px('#3a3a3a', [[8, 2, 1, 5], [4, 7, 8, 1]]);
+      break;
+    case 'overlay':
+      px('#7a5a3a', [[3, 3, 10, 10]]);
+      px('#9a7a52', [[4, 4, 4, 4], [8, 8, 4, 4]]);
+      x.fillStyle = 'rgba(255,255,255,0.35)';
+      x.fillRect(3, 3, 10, 10);
+      px('#ffffff', [[2, 2, 12, 1], [2, 13, 12, 1], [2, 2, 1, 12], [13, 2, 1, 12]]);
+      break;
+    case 'scoreboard':
+      x.fillStyle = 'rgba(0,0,0,0.6)';
+      x.fillRect(2, 1, 12, 14);
+      px('#ffff55', [[4, 3, 8, 1]]);
+      px('#ff5555', [[4, 6, 6, 1]]);
+      px('#5555ff', [[4, 8, 5, 1]]);
+      px('#ffffff', [[4, 10, 7, 1], [4, 12, 4, 1]]);
+      break;
+    case 'sun':
+      px('#ffd23f', [[5, 5, 6, 6]]);
+      px('#fff6b0', [[6, 6, 4, 4]]);
+      px('#ffaa00', [[7, 1, 2, 2], [7, 13, 2, 2], [1, 7, 2, 2], [13, 7, 2, 2], [3, 3, 1, 1], [12, 3, 1, 1], [3, 12, 1, 1], [12, 12, 1, 1]]);
+      break;
+    case 'gg':
+      px('#55ff55', [[1, 4, 5, 1], [1, 5, 1, 6], [1, 10, 5, 1], [5, 7, 1, 3], [3, 7, 2, 1], [9, 4, 5, 1], [9, 5, 1, 6], [9, 10, 5, 1], [13, 7, 1, 3], [11, 7, 2, 1]]);
+      px('#ffffff', [[7, 13, 2, 2]]);
+      break;
     default:
       px('#888', [[2, 2, 12, 12]]);
   }
@@ -216,7 +258,9 @@ export class Marketplace {
       return !q || `${m.name} ${m.description} ${m.category}`.toLowerCase().includes(q);
     });
     if (!shown.length) list.append(h('div', { class: 'mk-empty' }, this.filter === 'Installed' ? 'No mods installed yet — pick one below “All”.' : 'No mods match that.'));
-    for (const m of shown) list.append(this.card(m));
+    // Newest first: the mods added last show at the top of their list.
+    const ordered = [...shown.filter((m) => m.isNew), ...shown.filter((m) => !m.isNew)];
+    for (const m of ordered) list.append(this.card(m));
   }
 
   private card(m: ModDef): HTMLDivElement {
@@ -225,7 +269,7 @@ export class Marketplace {
     const text = h(
       'div',
       { class: 'mk-text' },
-      h('div', { class: 'mk-name' }, m.name, h('span', { class: `mk-cat ${m.category.toLowerCase()}` }, m.category)),
+      h('div', { class: 'mk-name' }, m.name, h('span', { class: `mk-cat cat-${m.category.toLowerCase()}` }, m.category), m.isNew ? h('span', { class: 'mk-cat new' }, 'New') : ''),
       h('div', { class: 'mk-desc' }, m.description),
     );
     if (m.key) text.append(h('div', { class: 'mk-key' }, `Key: ${keyName(this.cb.binds()[m.key])} (change it in Options → Key Binds)`));
@@ -258,7 +302,7 @@ export class Marketplace {
       h(
         'div',
         { class: 'mk-text' },
-        h('div', { class: 'mk-name big' }, m.name, h('span', { class: `mk-cat ${m.category.toLowerCase()}` }, m.category)),
+        h('div', { class: 'mk-name big' }, m.name, h('span', { class: `mk-cat cat-${m.category.toLowerCase()}` }, m.category)),
         h('div', { class: 'mk-desc' }, m.description),
         m.basedOn ? h('div', { class: 'mk-based' }, `A built-in take on ${m.basedOn} — not the original mod or its code.`) : '',
       ),
@@ -331,7 +375,7 @@ export class Marketplace {
       h(
         'div',
         { class: 'mk-text' },
-        h('div', { class: 'mk-name' }, 'Minecraft Default', h('span', { class: 'mk-cat visual' }, 'Default')),
+        h('div', { class: 'mk-name' }, 'Minecraft Default', h('span', { class: 'mk-cat cat-visual' }, 'Default')),
         h('div', { class: 'mk-desc' }, 'The official Minecraft textures. Always on.'),
       ),
       h('div', { class: 'mk-actions' }, h('span', { class: 'mk-active' }, '✓ Active')),

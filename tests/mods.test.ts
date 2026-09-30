@@ -63,6 +63,24 @@ describe('mod manager', () => {
   it('every mod has defaults for all its options', () => {
     for (const m of MODS) for (const o of m.options) expect(m.defaults[o.key], `${m.id}.${o.key}`).toBeDefined();
   });
+
+  it('the new PvP mods are in the Marketplace, marked new, with unique ids and on-screen widgets', () => {
+    const fresh = ['targethud', 'reachdisplay', 'combocounter', 'cpscounter', 'directionhud', 'speedometer', 'clock', 'blockoverlay', 'scoreboard', 'timechanger', 'autogg'];
+    const ids = MODS.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of fresh) {
+      const m = MODS.find((x) => x.id === id);
+      expect(m, id).toBeDefined();
+      expect(m!.isNew, id).toBe(true);
+    }
+    for (const m of MODS) {
+      if (!m.widget) continue;
+      expect(m.widget.x, m.id).toBeGreaterThanOrEqual(0);
+      expect(m.widget.x, m.id).toBeLessThan(1);
+      expect(m.widget.y, m.id).toBeGreaterThanOrEqual(0);
+      expect(m.widget.y, m.id).toBeLessThan(1);
+    }
+  });
 });
 
 describe('AppleSkin', () => {
