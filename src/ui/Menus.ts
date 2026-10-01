@@ -7,6 +7,7 @@ import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Ac
 import type { Sprite } from './sprites';
 import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
 import { MAX_FIRST_TO, TIER_POINTS, clampFirstTo, totalPoints, type MyTiers } from '../game/series';
+import type { ReplayData } from '../game/replay';
 import { DRILLS, DRILL_GROUPS, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 
 export interface MenuCallbacks {
@@ -30,6 +31,10 @@ export interface MenuCallbacks {
   installedMods(): number;
   /** The tiers earned so far (My Tiers). */
   myTiers(): MyTiers;
+  /** Replays: watch, star (keep for good) or delete a saved duel. */
+  onWatchReplay(r: ReplayData): void;
+  onStarReplay(id: string): void;
+  onDeleteReplay(id: string): void;
 }
 
 /** Title-screen card that stands for all custom kits. */
@@ -45,7 +50,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers';
+type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers' | 'replays';
 
 export interface ResultData {
   won: boolean;
@@ -130,6 +135,7 @@ export class Menus {
       trainer: h('div', { class: 'screen trainer' }),
       kits: h('div', { class: 'screen kit-editor' }),
       subtiers: h('div', { class: 'screen subtiers' }),
+      replays: h('div', { class: 'screen replays' }),
     };
     this.kitEditor = new KitEditor(this.screens.kits, customKits, {
       onUiSound: () => this.cb.onUiSound(),
@@ -168,6 +174,7 @@ export class Menus {
     if (name === 'trainer') this.renderTrainer();
     if (name === 'kits') this.kitEditor.render();
     if (name === 'subtiers') this.renderSubtiers();
+    if (name === 'replays') this.renderReplays();
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -290,10 +297,11 @@ export class Menus {
     panel.append(
       h(
         'div',
-        { class: 'btn-row four' },
+        { class: 'btn-row five' },
         this.button('Trainer', () => this.show('trainer'), 'trainer-btn'),
         this.button('Subtiers', () => this.show('subtiers'), 'subtier-btn'),
         this.button('Bot vs Bot', () => this.show('versus')),
+        this.button('Replays', () => this.show('replays'), 'replay-btn'),
         this.button('Multiplayer', () => this.show('multiplayer'), 'online'),
       ),
     );
@@ -1136,9 +1144,62 @@ export class Menus {
     root.append(panel);
   }
 
+  // ------------------------------------------------------------------ replays
+
+  private replayList: ReplayData[] = [];
+
+  /** The saved replays changed (a duel finished, one was starred or deleted). */
+  setReplays(list: ReplayData[]) {
+    this.replayList = list;
+    if (this.screens.replays.style.display !== 'none') this.renderReplays();
+  }
+
+  private renderReplays() {
+    const root = this.screens.replays;
+    root.replaceChildren();
+    const panel = h('div', { class: 'menu-panel' });
+    panel.append(h('div', { class: 'screen-title' }, 'Replays'));
+    panel.append(
+      h(
+        'div',
+        { class: 'tiers-sub' },
+        'Every duel you finish against a bot is saved here. Watch it back from any angle, slowed down or sped up. ★ keeps one for good; the oldest of the rest make room for new ones.',
+      ),
+    );
+    const list = h('div', { class: 'replay-list' });
+    if (!this.replayList.length) list.append(h('div', { class: 'replay-empty' }, 'No replays yet — finish a duel and it appears here.'));
+    for (const r of this.replayList) {
+      const kit = r.customKit ?? kitById(r.kitId as KitId);
+      const iconEl = h('canvas', { width: '16', height: '16' });
+      const icon = this.kitIcons[kit.icon];
+      if (icon) {
+        const ctx = iconEl.getContext('2d')!;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(icon, 0, 0, 16, 16);
+      }
+      const tier = (DIFFICULTIES as Record<string, { name: string; color: string }>)[r.profileId];
+      const secs = Math.floor(r.fightTicks / 20);
+      const len = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      const when = new Date(r.date);
+      const result = h('span', { class: `replay-result ${r.winner === 'player' ? 'won' : 'lost'}` }, r.winner === 'player' ? 'Win' : 'Loss');
+      const vs = h('span', { class: 'replay-vs' }, `${kit.name} vs `, h('b', {}, tier?.name ?? r.botName));
+      if (tier) (vs.lastChild as HTMLElement).style.color = tier.color;
+      const meta = h('span', { class: 'replay-meta' }, `${len} · ${when.toLocaleDateString()} ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      const star = this.button(r.starred ? '★' : '☆', () => this.cb.onStarReplay(r.id), `replay-star${r.starred ? ' on' : ''}`);
+      star.title = r.starred ? 'Starred: never deleted to make room' : 'Star: keep this replay for good';
+      const del = this.button('✕', () => this.cb.onDeleteReplay(r.id), 'replay-del');
+      del.title = 'Delete';
+      const watch = this.button('Watch', () => this.cb.onWatchReplay(r), 'replay-watch');
+      list.append(h('div', { class: 'replay-row' }, star, iconEl, result, h('div', { class: 'replay-info' }, vs, meta), watch, del));
+    }
+    panel.append(list);
+    panel.append(this.button('Done', () => this.show('main'), 'big'));
+    root.append(panel);
+  }
+
   // ------------------------------------------------------------------ results
 
-  showResults(r: ResultData, onRematch: () => void) {
+  showResults(r: ResultData, onRematch: () => void, onReplay?: () => void) {
     const root = this.screens.results;
     root.replaceChildren();
     root.classList.toggle('won', r.won);
@@ -1196,7 +1257,9 @@ export class Menus {
     for (const [a, b, c] of rows) table.append(h('span', {}, a), h('span', {}, b), h('span', {}, c));
     panel.append(table);
     panel.append(this.button(r.online ? 'Rematch (R) — both must agree' : 'Rematch (R)', onRematch, 'big'));
-    panel.append(this.button('Title Screen', () => this.cb.onQuit()));
+    if (onReplay) {
+      panel.append(h('div', { class: 'btn-row' }, this.button('Watch Replay', onReplay, 'replay-btn'), this.button('Title Screen', () => this.cb.onQuit())));
+    } else panel.append(this.button('Title Screen', () => this.cb.onQuit()));
     root.append(panel);
     this.show('results');
   }

@@ -259,13 +259,16 @@ const tmpEye = new V3();
 const tmpLook = new V3();
 const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 
+const UNSEEDED = { next: Math.random };
+
 /** Knocks `v` away from the source direction (x, z), like LivingEntity.knockback. */
-export function applyKnockback(v: V3, strength: number, x: number, z: number, onGround: boolean) {
+export function applyKnockback(v: V3, strength: number, x: number, z: number, onGround: boolean, rng: { next(): number } = UNSEEDED) {
   if (strength <= 0) return;
   let len = Math.hypot(x, z);
   if (len < 1e-7) {
-    x = (Math.random() - Math.random()) * 0.01;
-    z = (Math.random() - Math.random()) * 0.01;
+    // Seeded (the match's RNG) so replays re-simulate the same push.
+    x = (rng.next() - rng.next()) * 0.01;
+    z = (rng.next() - rng.next()) * 0.01;
     len = Math.hypot(x, z) || 1;
   }
   const nx = (x / len) * strength;

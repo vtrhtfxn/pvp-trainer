@@ -47,7 +47,9 @@ function blockSound(block: number): 'wood' | 'stone' | 'web' {
   return block === B.PLANKS ? 'wood' : block === B.COBWEB ? 'web' : 'stone';
 }
 import { Match } from './Match';
-import { Spectate } from './Spectate';
+import { Spectate, type Watch } from './Spectate';
+import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
+import { ReplayWatch } from './ReplayWatch';
 import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
 import type { ScoreLine } from './modes/GameMode';
 import { Bedwars } from './modes/Bedwars';
@@ -70,7 +72,11 @@ export class Game {
   private match: AnyMatch;
   private demoBrain: BotBrain;
   /** Bot vs Bot: the fight being watched. */
-  private spec: Spectate | null = null;
+  private spec: Watch | null = null;
+  /** Saved replays, newest first. */
+  private replays: ReplayData[] = loadReplays();
+  /** The replay being watched came from the Replays screen (Esc goes back there). */
+  private replayFromList = false;
   private readonly specHud: SpectatorHud;
   /** Trainer: the drill being played (and the last one, for Try again). */
   private drill: DrillRun | null = null;
@@ -215,6 +221,9 @@ export class Game {
     this.menus = new Menus(uiRoot, settings, this.records, kitIcons, {
       onStart: () => this.startDuel(),
       onSpectate: (kit, a, b) => this.startSpectate(kit, a, b),
+      onWatchReplay: (r) => this.watchReplay(r, true),
+      onStarReplay: (id) => this.starReplay(id),
+      onDeleteReplay: (id) => this.deleteReplay(id),
       onDrill: (id) => this.startDrill(id),
       drillProgress: () => this.drillProgress,
       myTiers: () => this.myTiers,
@@ -233,6 +242,7 @@ export class Game {
       onMarketplace: () => this.openMarket(),
       installedMods: () => this.mods.installedCount,
     }, customKits);
+    this.menus.setReplays(this.replays);
     this.market = new Marketplace(uiRoot, this.mods, {
       onClose: () => this.closeMarket(),
       onEditHud: () => this.openHudEditor(),
@@ -594,6 +604,12 @@ export class Game {
     const ctx: CmdCtx = { host: this.host, self: this.cmdMatch?.player ?? null };
     try {
       this.commands.execute(line, ctx);
+      // A replay re-runs the world too: note what the command left it like.
+      const rec = this.cmdMatch?.recorder;
+      if (rec && !rec.broken) {
+        const w = this.cmdMatch!.world;
+        rec.act({ k: 'env', raining: w.raining, dayTime: w.dayTime, rules: { ...w.rules } });
+      }
     } catch (e) {
       if (!(e instanceof CommandError)) {
         console.error(e);
@@ -631,6 +647,8 @@ export class Game {
   private markCheated() {
     if (this.cheated || !this.cmdMatch) return;
     this.cheated = true;
+    // A replay can't re-run what a command did.
+    if (this.cmdMatch?.recorder) this.cmdMatch.recorder.broken = true;
     this.chat.print([{ t: 'Commands changed this duel — it won’t count toward your record.', c: COLOR.gray, i: true }]);
   }
 
@@ -707,17 +725,21 @@ export class Game {
         return;
       }
       this.freeMouse();
-      this.shopUi.show(p, mode.gear(m, p), (item) => mode.buy(m, p, item));
+      this.shopUi.show(p, mode.gear(m, p), (item) => m.act({ k: 'buy', key: item.key }) ?? null);
     } else if (block === B.CHEST && mode instanceof Skywars) {
       const items = mode.chestAt(x, y, z);
       if (!items) return;
-      mode.open(m, p, x, y, z);
+      m.act({ k: 'open', x, y, z });
       this.freeMouse();
       this.sound.equip();
       this.chestUi.show(
         p,
         items,
-        { take: (i) => mode.take(p, x, y, z, i), takeAll: () => mode.takeAll(p, x, y, z), put: (i) => mode.put(p, x, y, z, i) },
+        {
+          take: (i) => void m.act({ k: 'take', x, y, z, i }),
+          takeAll: () => void m.act({ k: 'takeAll', x, y, z }),
+          put: (i) => void m.act({ k: 'put', x, y, z, i }),
+        },
         () => this.sound.equip(),
       );
     }
@@ -725,8 +747,7 @@ export class Game {
 
   /** Lets go of the keys and the mouse for a screen. */
   private freeMouse() {
-    const p = this.match.player;
-    if (p.usingItem) p.stopUsingItem();
+    if (this.match.player.usingItem) this.screenAction({ k: 'stopUse' });
     this.match.useHeld = false;
     this.input.useHeld = false;
     this.input.enabled = false;
@@ -819,7 +840,7 @@ export class Game {
     const p = this.match.player;
     if (this.state !== 'playing' || p.dead || this.match.phase === 'ended') return;
     // Opening a screen lets go of every key; an item in use is put away rather than fired.
-    if (p.usingItem) p.stopUsingItem();
+    if (p.usingItem) this.screenAction({ k: 'stopUse' });
     this.match.useHeld = false;
     this.input.useHeld = false;
     this.input.enabled = false;
@@ -888,11 +909,13 @@ export class Game {
       this.series = newSeries(kit.id, profile.id, this.settings.firstTo);
     }
     this.hud.setSeries(!drillDef && this.series!.target > 1 ? this.seriesScore() : null);
-    this.match = new Match(kit, profile);
+    const seed = Math.floor(Math.random() * 2 ** 30);
+    this.match = new Match(kit, profile, seed);
     // A new duel keeps what commands set up (rules, reach, game modes, time…) but not the rest.
     this.state = 'playing';
     this.applySession(true);
     this.cheated = sessionModified(this.session);
+    if (!drillDef && !this.cheated) this.startRecording(this.match as Match, seed);
     this.sprinting = null;
     this.stepTicks = 0;
     this.sound.muted = false;
@@ -983,7 +1006,7 @@ export class Game {
     this.input.unlock();
   }
 
-  private tickSpectate(spec: Spectate) {
+  private tickSpectate(spec: Watch) {
     const replaced = spec.tick();
     if (replaced) {
       this.match = spec.match;
@@ -1002,9 +1025,8 @@ export class Game {
     const r = spec.lastResult;
     if (r) {
       spec.lastResult = null;
-      const name = r.winner === 'a' ? spec.nameA : spec.nameB;
-      const color = r.winner === 'a' ? spec.a.color : spec.b.color;
-      this.specHud.announce(r.timeout ? `${name} wins on health` : `${name} wins!`, color);
+      const color = r.winner === 'a' ? spec.colorA : spec.colorB;
+      this.specHud.announce(spec.resultText(r), color);
       this.sound.jingle(true);
     }
   }
@@ -1017,13 +1039,20 @@ export class Game {
     else if (e.code === 'KeyV' || e.code === 'F5') spec.cycleCam(e.shiftKey ? -1 : 1);
     else if (e.code === 'BracketLeft' || e.code === 'Minus') spec.changeSpeed(-1);
     else if (e.code === 'BracketRight' || e.code === 'Equal') spec.changeSpeed(1);
-    else if (e.code === 'Space') spec.paused = !spec.paused;
-    else if (e.code === 'KeyR') {
-      spec.newRound();
-      this.match = spec.match;
-      this.view.particles.clear();
-    } else if (e.code === 'Escape') this.toMenu();
-    else return;
+    else if (e.code === 'Space') spec.togglePause();
+    else if (e.code === 'KeyR' || ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && spec.seekBy)) {
+      const replaced = e.code === 'KeyR' ? spec.restart() : spec.seekBy!(e.code === 'ArrowLeft' ? -5 : 5);
+      if (replaced) {
+        this.match = spec.match;
+        this.view.particles.clear();
+        this.damage.clear();
+        this.acc = 0;
+      }
+    } else if (e.code === 'Escape') {
+      const back = this.spec instanceof ReplayWatch && this.replayFromList;
+      this.toMenu();
+      if (back) this.menus.show('replays');
+    } else return;
     e.preventDefault();
     this.sound.ui();
   }
@@ -1193,6 +1222,7 @@ export class Game {
   private finishDuel() {
     const m = this.match;
     const won = m.winner === m.player;
+    this.keepReplay(m as Match);
     const key = `${m.kit.id}:${m.profile.id}`;
     const rec = this.records[key] ?? { wins: 0, losses: 0, bestCombo: 0 };
     const newBest = !this.cheated && m.player.stats.maxCombo > rec.bestCombo;
@@ -1253,7 +1283,98 @@ export class Game {
         tierBlocked: outcome === 'you' && series.modified && m.profile.id !== 'practice',
       },
       () => this.startDuel(),
+      this.lastReplay ? () => this.watchReplay(this.lastReplay!, false) : undefined,
     );
+  }
+
+  // ------------------------------------------------------------------ replays
+
+  /** The replay of the duel that just finished (for the results screen). */
+  private lastReplay: ReplayData | null = null;
+
+  private startRecording(m: Match, seed: number) {
+    const s = this.session;
+    const kit = m.kit;
+    const rec = new ReplayRecorder({
+      v: REPLAY_VERSION,
+      kitId: kit.id,
+      customKit: kit.custom ? JSON.parse(JSON.stringify(kit)) : undefined,
+      profileId: m.profile.id,
+      seed,
+      playerName: m.player.name,
+      botName: m.bot.name,
+      rules: { ...m.world.rules },
+      attrs: { player: { ...s.attrs.player } as Record<string, number>, bot: { ...s.attrs.bot } as Record<string, number> },
+      gameModes: { ...s.gameModes },
+      dayTime: m.world.dayTime,
+      raining: m.world.raining,
+      date: Date.now(),
+    });
+    rec.start(m.player);
+    m.recorder = rec;
+  }
+
+  /** A shop, chest or item action from a screen: through the match, so the replay has it too. */
+  private screenAction(a: ReplayAction) {
+    const m = this.match;
+    if (m instanceof Match) m.act(a);
+    else if (a.k === 'stopUse' && m.player.usingItem) m.player.stopUsingItem();
+  }
+
+  /** Stops recording a finished duel and saves it with the others. */
+  private keepReplay(m: Match) {
+    this.lastReplay = null;
+    const rec = m.recorder;
+    m.recorder = null;
+    if (!rec || this.cheated) return;
+    const data = rec.finish(m.winner ? (m.winner === m.player ? 'player' : 'bot') : null, m.fightTicks);
+    if (!data) return;
+    this.lastReplay = data;
+    this.replays = saveReplays([data, ...this.replays]);
+    this.menus.setReplays(this.replays);
+  }
+
+  private watchReplay(data: ReplayData, fromList: boolean) {
+    this.sound.unlock();
+    this.inventory.hide();
+    this.netMatch = null;
+    this.net.close();
+    this.series = null;
+    this.drill = null;
+    this.lastDrill = null;
+    this.drillHud.hide();
+    this.scoreboard.hide();
+    this.closeModeScreens();
+    this.hud.setVisible(false);
+    this.replayFromList = fromList;
+    const w = new ReplayWatch(data);
+    this.spec = w;
+    this.match = w.match;
+    this.state = 'spectating';
+    this.chat.hide();
+    this.menus.hideAll();
+    this.specHud.show();
+    this.view.particles.clear();
+    this.damage.clear();
+    this.sound.muted = false;
+    this.acc = 0;
+    this.input.enabled = false;
+    this.input.closeGuard = false;
+    this.input.unlock();
+  }
+
+  private starReplay(id: string) {
+    const r = this.replays.find((x) => x.id === id);
+    if (!r) return;
+    r.starred = !r.starred;
+    this.replays = saveReplays(this.replays);
+    this.menus.setReplays(this.replays);
+  }
+
+  private deleteReplay(id: string) {
+    this.replays = saveReplays(this.replays.filter((x) => x.id !== id));
+    if (this.lastReplay?.id === id) this.lastReplay = null;
+    this.menus.setReplays(this.replays);
   }
 
   // ------------------------------------------------------------------ loop
@@ -1392,7 +1513,7 @@ export class Game {
       this.view.cameraMode = spec.cam === 'orbit' ? 'orbit' : spec.cam.startsWith('pov') ? 'first' : 'third';
       const [cp, cb] = onB ? [m.bot, m.player] : [m.player, m.bot];
       tag.name = cb.name;
-      tag.color = onB ? spec.a.color : spec.b.color;
+      tag.color = onB ? spec.colorA : spec.colorB;
       tag.status = spec.label(onB ? 'a' : 'b');
       this.view.crosshairOn = false;
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);

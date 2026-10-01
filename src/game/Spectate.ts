@@ -22,11 +22,43 @@ export interface RoundResult {
   timeout: boolean;
 }
 
+/** Something you watch instead of play: Bot vs Bot, or a replay. Game and SpectatorHud drive it. */
+export interface Watch {
+  readonly match: Match;
+  readonly kit: KitDef;
+  cam: SpecCam;
+  speed: number;
+  paused: boolean;
+  readonly nameA: string;
+  readonly nameB: string;
+  readonly colorA: string;
+  readonly colorB: string;
+  /** Set when a round has just been decided (for the announcement), cleared by the caller. */
+  lastResult: RoundResult | null;
+  label(side: 'a' | 'b'): string;
+  /** The line at the top of the screen. */
+  title(): string;
+  /** The controls line at the bottom. */
+  help(camName: string): string;
+  /** Where a replay is (null for Bot vs Bot). */
+  progress(): { at: number; total: number; text: string } | null;
+  resultText(r: RoundResult): string;
+  /** One game tick. Returns true when a new match replaced the old one. */
+  tick(): boolean;
+  /** R. Returns true when a new match replaced the old one. */
+  restart(): boolean;
+  togglePause(): void;
+  cycleCam(dir?: number): void;
+  changeSpeed(dir: number): void;
+  /** ← →: a replay jumps; returns true when a new match replaced the old one. */
+  seekBy?(seconds: number): boolean;
+}
+
 /**
  * Bot vs bot: two tier bots fight round after round while you watch. Fighter A is the match's
  * "player" (driven by its own brain, like the title-screen demo), fighter B the match's bot.
  */
-export class Spectate {
+export class Spectate implements Watch {
   match!: Match;
   brainA!: BotBrain;
   readonly score: [number, number] = [0, 0];
@@ -55,6 +87,39 @@ export class Spectate {
   }
   get nameB(): string {
     return this.a.id === this.b.id ? `${this.b.name} (2)` : this.b.name;
+  }
+
+  get colorA(): string {
+    return this.a.color;
+  }
+  get colorB(): string {
+    return this.b.color;
+  }
+
+  title(): string {
+    return `${this.kit.name} · Round ${this.round} · ${this.score[0]} – ${this.score[1]}`;
+  }
+
+  help(camName: string): string {
+    return `V / 1–5 camera: ${camName}  ·  [ ] speed: ${this.speed}×${this.paused ? ' (paused)' : ''}  ·  Space pause  ·  R new round  ·  Esc leave`;
+  }
+
+  progress(): null {
+    return null;
+  }
+
+  resultText(r: RoundResult): string {
+    const name = r.winner === 'a' ? this.nameA : this.nameB;
+    return r.timeout ? `${name} wins on health` : `${name} wins!`;
+  }
+
+  restart(): boolean {
+    this.newRound();
+    return true;
+  }
+
+  togglePause() {
+    this.paused = !this.paused;
   }
 
   fighter(side: 'a' | 'b'): Fighter {

@@ -451,6 +451,22 @@ follow either bot, or through either bot's eyes), `[` `]` change the speed (¼×
 `R` starts a new round and `Esc` leaves. A round with no kill after 3 minutes goes to whoever has more
 health (and totems) left.
 
+### Replays
+
+Every duel you finish against a bot is saved as a **replay**. Click **Watch Replay** on the results
+screen, or **Replays** on the title screen for the last 12 (★ keeps one for good; the oldest of the
+rest make room for new ones). Watch through your own eyes, the bot's, behind either of you or orbiting
+the fight: `V` or `1`–`5` switch the camera, `[` `]` change the speed (¼× to 4×), `Space` pauses,
+`←` `→` jump 5 seconds, `R` starts over and `Esc` leaves.
+
+A replay is tiny because it isn't a video: the game is deterministic (every random number comes
+from the match's seed), so it stores the seed and what you did each tick (keys, mouse, clicks, the
+shop, chests and your inventory) and re-runs the duel. The bot, knockback, explosions and blocks
+come out the same, every time. A checksum every second notices a replay recorded by an older game
+version that no longer plays out the same ("drifted from the original"). Duels changed by commands
+(reach, attributes, /tick…) and online duels aren't recorded; `/weather`, `/time` and `/gamerule`
+are.
+
 ### First to N and My Tiers
 
 **First to** (title screen, next to the tier picker) turns a duel into a series: you fight the same
