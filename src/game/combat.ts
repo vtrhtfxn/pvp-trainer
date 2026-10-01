@@ -340,6 +340,7 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
       attacker.pos.x - target.pos.x,
       attacker.pos.z - target.pos.z,
       target.onGround,
+      target.world.rng,
     );
   }
   if (kbLevel > 0) {
@@ -351,6 +352,7 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
         Math.sin(attacker.yaw),
         Math.cos(attacker.yaw),
         target.onGround,
+        target.world.rng,
       );
     }
     attacker.vel.x *= C.SPRINT_HIT_SLOWDOWN;
@@ -461,8 +463,8 @@ function performLegacyAttack(attacker: Fighter, target: Fighter, picked: number 
     let dz = attacker.pos.z - target.pos.z;
     let len = Math.hypot(dx, dz);
     if (len < 1e-4) {
-      dx = (Math.random() - Math.random()) * 0.01;
-      dz = (Math.random() - Math.random()) * 0.01;
+      dx = (target.world.rng.next() - target.world.rng.next()) * 0.01;
+      dz = (target.world.rng.next() - target.world.rng.next()) * 0.01;
       len = Math.hypot(dx, dz) || 1;
     }
     if (resist > 0) {
@@ -531,7 +533,7 @@ function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: num
     target.lastHurt = 0;
     target.invulnerableTime = C.INVULNERABLE_TICKS;
     // The server still knocks its own copy back; it is simply never sent to the client.
-    applyKnockback(target.serverVel, C.BASE_KNOCKBACK, attacker.pos.x - target.pos.x, attacker.pos.z - target.pos.z, target.onGround);
+    applyKnockback(target.serverVel, C.BASE_KNOCKBACK, attacker.pos.x - target.pos.x, attacker.pos.z - target.pos.z, target.onGround, target.world.rng);
   }
   const disabled = !!weapon.disablesShield;
   if (disabled) {
@@ -559,7 +561,7 @@ export function knockbackOnly(target: Fighter, attacker: Fighter | null, dirX: n
   target.lastHurt = 0;
   target.hurtTime = target.hurtDuration = C.HURT_DURATION;
   const v = target.serverVel.clone();
-  applyKnockback(v, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), -dirX, -dirZ, true);
+  applyKnockback(v, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), -dirX, -dirZ, true, target.world.rng);
   target.vel.set(v.x, v.y, v.z);
   target.serverVel.set(v.x, v.y, v.z);
   target.events.push({ type: 'hurt', attacker, damage: 0, crit: false, fire: false });

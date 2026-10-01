@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { lerp } from '../core/math';
+import { LookSmoother } from './lookSmooth';
 import { rayDistanceToTarget } from '../game/combat';
 import { Fighter } from '../game/Fighter';
 import type { World } from '../game/World';
@@ -63,9 +64,13 @@ export interface ViewExtras {
   /** BetterHurtCam: tilt strength and classic (one-way) tilt; null = vanilla Damage Tilt. */
   hurtcam: { strength: number; classic: boolean } | null;
   sky: SkyState;
+  /** Spectating a bot: smooth its look angles (it turns once per tick, you render many frames). */
+  smoothLook: boolean;
+  /** Spectator free camera (CameraMode 'free'): where it is and where it looks. */
+  freeCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null;
 }
 
-export type CameraMode = 'first' | 'third' | 'orbit';
+export type CameraMode = 'first' | 'third' | 'orbit' | 'free';
 
 /** Owns the WebGL renderer, the world scene, both fighter models and the first-person view. */
 export class SceneRenderer {
@@ -123,7 +128,11 @@ export class SceneRenderer {
     freelook: null,
     hurtcam: null,
     sky: { dayTime: 6000, rain: 0, thunder: 0, flash: 0 },
+    smoothLook: false,
+    freeCam: null,
   };
+  /** Smoothed look of the followed fighter (spectating): reset when the camera moves to another. */
+  private readonly look = new LookSmoother();
 
   constructor(canvas: HTMLCanvasElement, world: World, assets: Assets, opts: { antialias: boolean } = { antialias: true }) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: opts.antialias, powerPreference: 'high-performance' });
@@ -351,7 +360,14 @@ export class SceneRenderer {
     }
 
     const free = this.extras.freelook;
-    tmpEuler.set(free ? free.pitch : p.pitch, free ? free.yaw : p.yaw, 0, 'YXZ');
+    let yaw = p.yaw;
+    let pitch = p.pitch;
+    if (this.extras.smoothLook) {
+      this.look.update(p, p.prevYaw, p.yaw, p.prevPitch, p.pitch, a, this.frameDt);
+      yaw = this.look.yaw;
+      pitch = this.look.pitch;
+    } else this.look.reset();
+    tmpEuler.set(free ? free.pitch : pitch, free ? free.yaw : yaw, 0, 'YXZ');
     const orient = orientMat.makeRotationFromEuler(tmpEuler);
     const camWorld = camMat;
     if (this.cameraMode === 'third' || free) {
@@ -448,6 +464,18 @@ export class SceneRenderer {
     this.arena.clouds.visible = clouds;
   }
 
+  /** Seconds the last frame took (for smoothing that has to work at any frame rate). */
+  private frameDt = 1 / 60;
+
+  /** The spectator's own camera: no body, no collision. */
+  private placeFreeCamera(view: ViewSettings) {
+    const f = this.extras.freeCam;
+    if (!f) return;
+    this.camera.position.set(f.x, f.y, f.z);
+    this.camera.quaternion.setFromEuler(tmpEuler.set(f.pitch, f.yaw, 0, 'YXZ'));
+    this.setFov(view.fov);
+  }
+
   render(
     player: Fighter,
     bot: Fighter,
@@ -458,8 +486,10 @@ export class SceneRenderer {
     tag: { name: string; color: string; status: string } | null,
   ) {
     this.adaptResolution(dt, view.renderScale);
-    const orbit = this.cameraMode === 'orbit';
-    if (orbit) this.placeOrbitCamera(time, player, bot, alpha);
+    this.frameDt = Math.max(1e-3, dt);
+    const orbit = this.cameraMode === 'orbit' || this.cameraMode === 'free';
+    if (this.cameraMode === 'orbit') this.placeOrbitCamera(time, player, bot, alpha);
+    else if (this.cameraMode === 'free') this.placeFreeCamera(view);
     else this.placePlayerCamera(player, alpha, view);
 
     this.applyEnvironment(orbit ? null : player, view, view.clouds);
@@ -502,7 +532,7 @@ export class SceneRenderer {
     this.glowBot.update(bot, alpha, true);
     this.arrows.update(player.world.arrows, alpha);
     this.thrown.update(player.world.thrown, player.world.orbs, alpha, time, player.world.items);
-    this.blocks.update(player.world.blocks, player.world.fighters, player, this.cameraMode !== 'orbit', time);
+    this.blocks.update(player.world.blocks, player.world.fighters, player, !orbit, time);
     // Crystal brings its own diggable ground; every other kit stands on the arena's grass.
     this.arena.floor.visible = player.world.blocks.depth === 0 && !player.world.blocks.voidWorld;
     this.arena.scenery.visible = !player.world.blocks.voidWorld;

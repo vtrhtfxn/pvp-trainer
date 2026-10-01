@@ -127,8 +127,9 @@ export class Input {
     return document.pointerLockElement === this.target;
   }
 
-  async lock() {
-    this.holdShortcuts();
+  /** `shortcuts` false: just the mouse (no fullscreen / keyboard lock), e.g. a spectator camera. */
+  async lock(shortcuts = true) {
+    if (shortcuts) this.holdShortcuts();
     if (this.locked) return;
     try {
       const req = this.target.requestPointerLock as unknown as (opts?: { unadjustedMovement?: boolean }) => Promise<void> | void;

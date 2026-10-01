@@ -8,6 +8,7 @@ import type { KitDef } from './kits';
 import { World } from './World';
 import type { GameMode } from './modes/GameMode';
 import { createMode } from './modes';
+import { runAction, type ReplayAction, type ReplayRecorder } from './replay';
 
 export type Phase = 'countdown' | 'fight' | 'ended';
 export const COUNTDOWN_TICKS = 60;
@@ -51,6 +52,8 @@ export class Match {
    * is frozen). Your hits still land and their knockback waits until the world runs again.
    */
   frozen = false;
+  /** Records this match for a replay (offline duels only). */
+  recorder: ReplayRecorder | null = null;
 
   constructor(
     readonly kit: KitDef,
@@ -127,11 +130,33 @@ export class Match {
     this.queuedSlot = i;
   }
 
+  /** A shop / chest / item action from a screen: runs it, and puts it in the replay. */
+  act(a: ReplayAction): string | null | undefined {
+    this.recorder?.act(a);
+    return runAction(this, a);
+  }
+
   get countdownSeconds(): number {
     return Math.max(0, Math.ceil((COUNTDOWN_TICKS - this.phaseTicks) / 20));
   }
 
   tick() {
+    const rec = this.recorder;
+    if (rec) {
+      rec.capture(this.player, {
+        clicks: this.queuedClicks,
+        slot: this.queuedSlot,
+        use: this.queuedUse,
+        swap: this.queuedSwap,
+        useHeld: this.useHeld,
+        attackHeld: this.attackHeld,
+      });
+    }
+    this.step();
+    rec?.after(this.player, this.bot);
+  }
+
+  private step() {
     this.tickCount++;
     const p = this.player;
     const b = this.bot;

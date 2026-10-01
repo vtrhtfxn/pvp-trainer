@@ -222,7 +222,7 @@ export class Arrow {
     }
     if (res.fullHit) {
       // Projectile knockback pushes along the arrow's flight, not away from the shooter.
-      applyKnockback(kbVel, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), -this.vel.x, -this.vel.z, target.onGround);
+      applyKnockback(kbVel, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), -this.vel.x, -this.vel.z, target.onGround, target.world.rng);
       const vy = target.onGround ? kbVel.y : target.vel.y;
       target.vel.set(kbVel.x, vy, kbVel.z);
       target.serverVel.set(kbVel.x, vy, kbVel.z);

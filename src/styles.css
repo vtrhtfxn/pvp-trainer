@@ -1705,6 +1705,77 @@ body {
   }
 }
 
+.btn-row.five {
+  grid-template-columns: repeat(5, 1fr);
+}
+@media (max-width: 720px) {
+  .btn-row.five {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---- Replays */
+.replay-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+.replay-empty {
+  text-align: center;
+  color: #888;
+  padding: 18px 0;
+}
+.replay-row {
+  display: grid;
+  grid-template-columns: 34px 24px 44px 1fr 74px 34px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid #000;
+}
+.replay-row canvas {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+.replay-row .mc-btn {
+  min-height: 0;
+  height: 30px;
+  padding: 0 6px;
+}
+.replay-star.on {
+  color: #ffd700;
+}
+.replay-result {
+  font-weight: 700;
+}
+.replay-result.won {
+  color: #55ff55;
+}
+.replay-result.lost {
+  color: #ff5555;
+}
+.replay-vs {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.replay-meta {
+  color: #aaa;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.replay-info {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
 /* ---- My Tiers */
 .tiers-total {
   text-align: center;
@@ -1874,6 +1945,32 @@ body {
   .spec-score {
     top: 90px;
   }
+}
+
+.spec-progress {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 80vw);
+  height: 14px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+.spec-progress-fill {
+  height: 100%;
+  width: 0;
+  background: #55ff55;
+  opacity: 0.75;
+}
+.spec-progress-text {
+  position: absolute;
+  inset: -1px 0 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 14px;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
 }
 
 /* ---- Bot vs Bot menu */
