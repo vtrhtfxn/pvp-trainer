@@ -7,6 +7,7 @@ const CAM_NAMES: Record<SpecCam, string> = {
   followB: 'Follow ▶',
   povA: 'Eyes ◀',
   povB: 'Eyes ▶',
+  free: 'Free',
 };
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement): HTMLElementTagNameMap[K] {

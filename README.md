@@ -446,18 +446,23 @@ behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and ch
 ### Bot vs Bot
 
 **Bot vs Bot** lets any tier fight any tier in any kit while you watch — round after round, with both
-health bars, the score and each bot's current plan on screen. `V` or `1`–`5` switch the camera (orbit,
-follow either bot, or through either bot's eyes), `[` `]` change the speed (¼× to 4×), `Space` pauses,
-`R` starts a new round and `Esc` leaves. A round with no kill after 3 minutes goes to whoever has more
-health (and totems) left.
+health bars, the score and each bot's current plan on screen. You start in a **free camera**: fly
+anywhere with `W` `A` `S` `D` (`W` goes where you look), `Space` up, `Shift` down, `Ctrl` faster. It
+has no body, so you can't touch, hit, place or break anything. Click to grab the mouse for looking
+around (`Esc` lets go of it). `V` or `1`–`6` switch the camera (orbit, follow either bot, through
+either bot's eyes, or free); the bot-eye views are smoothed, so they glide instead of snapping at
+the bots' 20 turns a second. `[` `]` change the speed (¼× to 4×), `P` pauses (`Space` too, outside
+the free camera), `R` starts a new round and `Esc` leaves. A round with no kill after 3 minutes goes
+to whoever has more health (and totems) left.
 
 ### Replays
 
 Every duel you finish against a bot is saved as a **replay**. Click **Watch Replay** on the results
 screen, or **Replays** on the title screen for the last 12 (★ keeps one for good; the oldest of the
 rest make room for new ones). Watch through your own eyes, the bot's, behind either of you or orbiting
-the fight: `V` or `1`–`5` switch the camera, `[` `]` change the speed (¼× to 4×), `Space` pauses,
-`←` `→` jump 5 seconds, `R` starts over and `Esc` leaves.
+the fight, or fly around it in the free camera: `V` or `1`–`6` switch the camera (as in Bot vs Bot),
+`[` `]` change the speed (¼× to 4×), `P` pauses, `←` `→` jump 5 seconds, `R` starts over and `Esc`
+leaves.
 
 A replay is tiny because it isn't a video: the game is deterministic (every random number comes
 from the match's seed), so it stores the seed and what you did each tick (keys, mouse, clicks, the

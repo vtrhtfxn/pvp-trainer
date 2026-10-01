@@ -32,8 +32,13 @@ describe('Bot vs Bot', () => {
 
   it('cycles cameras and clamps speed', () => {
     const s = new Spectate(kitById('axe'), DIFFICULTIES.ht3, DIFFICULTIES.lt2, 3);
+    // Starts in the free camera; the cameras wrap around in both directions.
+    expect(s.cam).toBe('free');
+    s.cycleCam();
+    expect(s.cam).toBe('orbit');
     s.cycleCam();
     expect(s.cam).toBe('followA');
+    s.cycleCam(-1);
     s.cycleCam(-1);
     s.cycleCam(-1);
     expect(s.cam).toBe('povB');

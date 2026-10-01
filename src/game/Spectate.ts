@@ -7,8 +7,8 @@ import type { KitDef } from './kits';
 import { Match } from './Match';
 
 /** Where the spectator camera is: circling the fight, behind a fighter, or through their eyes. */
-export type SpecCam = 'orbit' | 'followA' | 'followB' | 'povA' | 'povB';
-export const SPEC_CAMS: SpecCam[] = ['orbit', 'followA', 'followB', 'povA', 'povB'];
+export type SpecCam = 'orbit' | 'followA' | 'followB' | 'povA' | 'povB' | 'free';
+export const SPEC_CAMS: SpecCam[] = ['orbit', 'followA', 'followB', 'povA', 'povB', 'free'];
 export const SPEC_SPEEDS = [0.25, 0.5, 1, 2, 4];
 
 /** A round with no winner after this long goes to whoever has more health (and totems) left. */
@@ -63,7 +63,7 @@ export class Spectate implements Watch {
   brainA!: BotBrain;
   readonly score: [number, number] = [0, 0];
   round = 0;
-  cam: SpecCam = 'orbit';
+  cam: SpecCam = 'free';
   speed = 1;
   paused = false;
   /** Set when a round has just been decided (for the announcement), cleared by the caller. */
@@ -101,7 +101,7 @@ export class Spectate implements Watch {
   }
 
   help(camName: string): string {
-    return `V / 1–5 camera: ${camName}  ·  [ ] speed: ${this.speed}×${this.paused ? ' (paused)' : ''}  ·  Space pause  ·  R new round  ·  Esc leave`;
+    return `V / 1–6 camera: ${camName}${this.cam === 'free' ? ' (WASD, Space/Shift)' : ''}  ·  [ ] speed: ${this.speed}×${this.paused ? ' (paused)' : ''}  ·  P pause  ·  R new round  ·  Esc leave`;
   }
 
   progress(): null {

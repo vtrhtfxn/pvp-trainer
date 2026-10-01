@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { BotBrain } from '../ai/BotBrain';
 import { DIFFICULTIES, type DifficultyId } from '../ai/difficulty';
 import { Sound, type HitKind } from '../audio/Sound';
@@ -47,7 +48,7 @@ function blockSound(block: number): 'wood' | 'stone' | 'web' {
   return block === B.PLANKS ? 'wood' : block === B.COBWEB ? 'web' : 'stone';
 }
 import { Match } from './Match';
-import { Spectate, type Watch } from './Spectate';
+import { Spectate, type SpecCam, type Watch } from './Spectate';
 import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
 import { ReplayWatch } from './ReplayWatch';
 import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
@@ -300,6 +301,7 @@ export class Game {
     });
     canvas.addEventListener('click', () => {
       if (this.state === 'playing' && !this.input.locked && !this.screenOpen && !this.chat.open) void this.input.lock();
+      else if (this.state === 'spectating' && this.spec?.cam === 'free' && !this.input.locked) void this.input.lock(false);
     });
     window.addEventListener('keydown', (e) => {
       if (this.state === 'spectating') {
@@ -1001,9 +1003,7 @@ export class Game {
     this.damage.clear();
     this.sound.muted = false;
     this.acc = 0;
-    this.input.enabled = false;
-    this.input.closeGuard = false;
-    this.input.unlock();
+    this.enterSpectateCam(null);
   }
 
   private tickSpectate(spec: Watch) {
@@ -1034,12 +1034,13 @@ export class Game {
   private spectateKey(e: KeyboardEvent) {
     const spec = this.spec;
     if (!spec || e.repeat) return;
-    const cams = { Digit1: 'orbit', Digit2: 'followA', Digit3: 'followB', Digit4: 'povA', Digit5: 'povB' } as const;
+    const cams = { Digit1: 'orbit', Digit2: 'followA', Digit3: 'followB', Digit4: 'povA', Digit5: 'povB', Digit6: 'free' } as const;
+    const was = spec.cam;
     if (e.code in cams) spec.cam = cams[e.code as keyof typeof cams];
     else if (e.code === 'KeyV' || e.code === 'F5') spec.cycleCam(e.shiftKey ? -1 : 1);
     else if (e.code === 'BracketLeft' || e.code === 'Minus') spec.changeSpeed(-1);
     else if (e.code === 'BracketRight' || e.code === 'Equal') spec.changeSpeed(1);
-    else if (e.code === 'Space') spec.togglePause();
+    else if (e.code === 'KeyP' || (e.code === 'Space' && spec.cam !== 'free')) spec.togglePause();
     else if (e.code === 'KeyR' || ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && spec.seekBy)) {
       const replaced = e.code === 'KeyR' ? spec.restart() : spec.seekBy!(e.code === 'ArrowLeft' ? -5 : 5);
       if (replaced) {
@@ -1052,9 +1053,84 @@ export class Game {
       const back = this.spec instanceof ReplayWatch && this.replayFromList;
       this.toMenu();
       if (back) this.menus.show('replays');
+    } else if (e.code === 'Space' || e.code.startsWith('Arrow')) {
+      // Space flies up in the free camera; the arrow keys belong to the page otherwise.
+      e.preventDefault();
+      return;
     } else return;
+    if (spec.cam !== was) this.enterSpectateCam(was);
     e.preventDefault();
     this.sound.ui();
+  }
+
+  // ------------------------------------------------------------------ free camera
+
+  private readonly free = { x: 0, y: 4, z: 12, yaw: 0, pitch: -0.2, vx: 0, vy: 0, vz: 0 };
+
+  /** A new camera was picked: the free one starts where the last view was, so nothing jumps. */
+  private enterSpectateCam(was: SpecCam | null) {
+    const spec = this.spec;
+    if (!spec) return;
+    if (spec.cam === 'free' && was !== 'free') {
+      const f = this.free;
+      const cam = this.view.camera;
+      if (was === null) {
+        // A fresh watch: stand back from the fight, looking at it.
+        const m = spec.match;
+        const cx = (m.player.pos.x + m.bot.pos.x) / 2;
+        const cz = (m.player.pos.z + m.bot.pos.z) / 2;
+        f.x = cx;
+        f.y = Math.max(m.player.pos.y, m.bot.pos.y) + 4;
+        f.z = cz + 11;
+        f.yaw = 0;
+        f.pitch = -0.28;
+      } else {
+        f.x = cam.position.x;
+        f.y = cam.position.y;
+        f.z = cam.position.z;
+        const e = new THREE.Euler().setFromQuaternion(cam.quaternion, 'YXZ');
+        f.yaw = e.y;
+        f.pitch = e.x;
+      }
+      f.vx = f.vy = f.vz = 0;
+    }
+    // Only the free camera needs the mouse and keys (they never reach the fight).
+    const wantInput = spec.cam === 'free';
+    this.input.enabled = wantInput;
+    this.input.closeGuard = false;
+    if (wantInput) void this.input.lock(false);
+    else this.input.unlock();
+  }
+
+  /** WASD + mouse fly the spectator camera: Space up, Shift down, sprint (Ctrl) faster. */
+  private updateFreeCam(dt: number) {
+    const f = this.free;
+    const [dyaw, dpitch] = this.input.consumeLook();
+    f.yaw += dyaw;
+    f.pitch = clamp(f.pitch + dpitch, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
+    const inp = this.input.moveInput();
+    const speed = inp.sprint ? 26 : 9;
+    // Forward follows where you look (up and down included); strafe stays level.
+    const cp = Math.cos(f.pitch);
+    const fx = -Math.sin(f.yaw) * cp;
+    const fy = Math.sin(f.pitch);
+    const fz = -Math.cos(f.yaw) * cp;
+    const rx = Math.cos(f.yaw);
+    const rz = -Math.sin(f.yaw);
+    const tx = (fx * inp.forward + rx * inp.strafe) * speed;
+    const ty = (fy * inp.forward + (inp.jump ? 1 : 0) - (inp.sneak ? 1 : 0)) * speed;
+    const tz = (fz * inp.forward + rz * inp.strafe) * speed;
+    // Ease in and out, like a camera on a rail.
+    const k = 1 - Math.exp(-dt * 12);
+    f.vx += (tx - f.vx) * k;
+    f.vy += (ty - f.vy) * k;
+    f.vz += (tz - f.vz) * k;
+    f.x = clamp(f.x + f.vx * dt, -160, 160);
+    f.z = clamp(f.z + f.vz * dt, -160, 160);
+    // Not under the grass (unless the map has no floor), not out of the sky.
+    const voidMap = this.match.world.blocks.voidWorld;
+    f.y = clamp(f.y + f.vy * dt, voidMap ? -30 : 0.4, 140);
+    this.view.extras.freeCam = { x: f.x, y: f.y, z: f.z, yaw: f.yaw, pitch: f.pitch };
   }
 
   // ------------------------------------------------------------------ online
@@ -1358,9 +1434,7 @@ export class Game {
     this.damage.clear();
     this.sound.muted = false;
     this.acc = 0;
-    this.input.enabled = false;
-    this.input.closeGuard = false;
-    this.input.unlock();
+    this.enterSpectateCam(null);
   }
 
   private starReplay(id: string) {
@@ -1450,7 +1524,8 @@ export class Game {
       m.useHeld = this.input.useHeld && !this.screenOpen;
       m.attackHeld = this.input.attackHeld && !this.screenOpen;
     } else {
-      this.input.consumeLook();
+      // The spectator camera uses the mouse; everywhere else it is thrown away.
+      if (!(this.state === 'spectating' && this.spec?.cam === 'free')) this.input.consumeLook();
       // Paused online the world goes on: let go of every key, or we would keep walking,
       // blocking, eating or mining through the pause.
       if (this.online) {
@@ -1510,7 +1585,11 @@ export class Game {
     if (spec) {
       // Watching: the camera belongs to whichever fighter it follows (A is the match's player).
       const onB = spec.cam === 'followB' || spec.cam === 'povB';
-      this.view.cameraMode = spec.cam === 'orbit' ? 'orbit' : spec.cam.startsWith('pov') ? 'first' : 'third';
+      this.view.cameraMode = spec.cam === 'orbit' ? 'orbit' : spec.cam === 'free' ? 'free' : spec.cam.startsWith('pov') ? 'first' : 'third';
+      if (spec.cam === 'free') this.updateFreeCam(dt);
+      else this.view.extras.freeCam = null;
+      // A bot turns once per tick: without smoothing its eyes judder at 20 fps.
+      this.view.extras.smoothLook = true;
       const [cp, cb] = onB ? [m.bot, m.player] : [m.player, m.bot];
       tag.name = cb.name;
       tag.color = onB ? spec.colorA : spec.colorB;
@@ -1519,8 +1598,10 @@ export class Game {
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);
       this.specHud.update(spec, dt);
       const cam = this.view.camera.position;
-      Object.assign(this.sound.listener, { x: cam.x, y: cam.y, z: cam.z, yaw: onB ? m.bot.yaw : p.yaw });
+      Object.assign(this.sound.listener, { x: cam.x, y: cam.y, z: cam.z, yaw: spec.cam === 'free' ? this.free.yaw : onB ? m.bot.yaw : p.yaw });
     } else {
+      this.view.extras.smoothLook = false;
+      this.view.extras.freeCam = null;
       this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;
       tag.name = m.bot.name;
       tag.color = m.profile.color;

@@ -101,7 +101,7 @@ export class ReplayWatch implements Watch {
   }
 
   help(camName: string): string {
-    return `V / 1–5 camera: ${camName}  ·  [ ] speed: ${this.speed}×${this.paused ? ' (paused)' : ''}  ·  Space pause  ·  ← → 5 s  ·  R restart  ·  Esc leave`;
+    return `V / 1–6 camera: ${camName}${this.cam === 'free' ? ' (WASD, Space/Shift)' : ''}  ·  [ ] speed: ${this.speed}×${this.paused ? ' (paused)' : ''}  ·  P pause  ·  ← → 5 s  ·  R restart  ·  Esc leave`;
   }
 
   progress(): { at: number; total: number; text: string } {
