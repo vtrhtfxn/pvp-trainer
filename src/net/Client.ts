@@ -17,6 +17,8 @@ export interface SocketLike {
   onclose: (() => void) | null;
   /** Why it failed, when the transport knows better than "could not reach". */
   failure?: string;
+  /** Online play: whether the game went straight between the players or through a relay. */
+  route?: () => 'direct' | 'relay' | null;
 }
 
 const OPEN = 1;
@@ -44,6 +46,11 @@ export class NetClient {
     }
     // file:// pages and the macOS app (pvp://) have no usable host of their own.
     return 'ws://localhost:4180/ws';
+  }
+
+  /** How the current online game is connected, once WebRTC knows (null for LAN or unknown). */
+  get route(): 'direct' | 'relay' | null {
+    return this.ws?.route?.() ?? null;
   }
 
   get connected(): boolean {

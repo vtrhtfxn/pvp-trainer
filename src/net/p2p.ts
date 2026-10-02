@@ -1,13 +1,15 @@
 import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
 import { Lobby, type Conn } from '../server/lobby';
 import type { SocketLike } from './Client';
+import { iceConfig, routeOf, type Route } from './relay';
 
 /**
  * Online play over the internet, with no server to run: whoever hosts runs the game's server
  * (the same Lobby the Node server uses) inside their own game, and their friend connects to it
  * directly over WebRTC — which gets through ordinary home routers (NAT) with the help of public
- * STUN servers. A free signalling service (PeerJS's public server) only introduces the two
- * games to each other; the duel itself goes straight between them.
+ * STUN servers, and falls back to a TURN relay where networks block direct connections (see
+ * relay.ts). A free signalling service (PeerJS's public server) only introduces the two games
+ * to each other; the duel itself goes straight between them, or through the relay.
  *
  * The host's friend finds them by a short code: the host registers as PEER_PREFIX + code.
  */
@@ -17,13 +19,6 @@ const PEER_PREFIX = 'pvp-trainer-duel-';
 const ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ23456789';
 export const ONLINE_CODE_LENGTH = 5;
 
-const ICE: RTCConfiguration = {
-  iceServers: [
-    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-  ],
-};
-
 /** Where the signalling server is (tests point this at a local one). */
 let signalling: Partial<PeerOptions> = {};
 export function setSignalling(opts: Partial<PeerOptions>) {
@@ -31,7 +26,8 @@ export function setSignalling(opts: Partial<PeerOptions>) {
 }
 
 function peerOptions(): PeerOptions {
-  return { config: ICE, debug: 0, ...signalling };
+  // Read each time: a relay the player just set applies to the next game.
+  return { config: iceConfig(), debug: 0, ...signalling };
 }
 
 export function onlineCode(rng: () => number = Math.random): string {
@@ -45,7 +41,7 @@ export function normalizeOnlineCode(s: string): string {
 }
 
 const NO_DIRECT =
-  'Could not connect directly to your friend. Some networks block direct connections (strict school or office Wi-Fi, some mobile hotspots). Try the other person hosting, or another network.';
+  'Could not connect to your friend, not even through the relay server. Check both of you are online, try the other person hosting, or add your own relay in Multiplayer → Relay server.';
 
 /** A dropped "disconnected" ICE state often comes back; give it this long before giving up. */
 const ICE_GRACE_MS = 6000;
@@ -83,25 +79,18 @@ function channelConn(c: DataConnection): Conn {
     onMessage: null,
     onClose: null,
     rtt: () => rtt,
+    route: () => route,
   };
-  // The network round trip, from WebRTC's own connectivity checks (once a second).
+  // The network round trip and the route, from WebRTC's own connectivity checks (once a second).
   let rtt: number | null = null;
+  let route: Route | null = null;
   const poll = setInterval(() => {
-    const pc = c.peerConnection;
-    if (closed || !pc) return;
-    pc.getStats()
-      .then((stats) => {
-        let sel: string | null = null;
-        stats.forEach((s) => {
-          if (s.type === 'transport' && s.selectedCandidatePairId) sel = s.selectedCandidatePairId;
-        });
-        stats.forEach((s) => {
-          if (s.type === 'candidate-pair' && (s.id === sel || (!sel && s.nominated)) && typeof s.currentRoundTripTime === 'number') {
-            rtt = Math.round(s.currentRoundTripTime * 1000);
-          }
-        });
-      })
-      .catch(() => {});
+    if (closed) return;
+    void routeOf(c.peerConnection).then((r) => {
+      if (!r) return;
+      route = r.route;
+      if (r.rtt !== null) rtt = r.rtt;
+    });
   }, 1000);
   const finish = () => {
     clearInterval(poll);
@@ -168,6 +157,16 @@ function loopback(onClosed: () => void): { client: SocketLike; server: Conn } {
 export class OnlineHost {
   readonly lobby = new Lobby({ maxClients: 4, maxRooms: 1 });
   private destroyed = false;
+  private readonly guests = new Set<Conn & { route(): Route | null }>();
+
+  /** How the friend reached this game (null until known, or with nobody connected). */
+  route(): Route | null {
+    for (const g of this.guests) {
+      const r = g.route();
+      if (r) return r;
+    }
+    return null;
+  }
 
   private constructor(
     readonly code: string,
@@ -183,7 +182,12 @@ export class OnlineHost {
       c.on('open', () => {
         if (joined || this.destroyed) return;
         joined = true;
-        this.lobby.connect(channelConn(c));
+        const conn = channelConn(c) as Conn & { route(): Route | null };
+        this.guests.add(conn);
+        const gone = () => this.guests.delete(conn);
+        c.on('close', gone);
+        c.on('error', gone);
+        this.lobby.connect(conn);
       });
     });
     // Losing the signalling server keeps running duels going; reconnect so friends can still join.
@@ -224,6 +228,7 @@ export class OnlineHost {
   /** The host's own connection to the game it hosts. Closing it stops hosting. */
   localSocket(): SocketLike {
     const { client, server } = loopback(() => this.destroy());
+    client.route = () => this.route();
     this.lobby.connect(server);
     return client;
   }
@@ -241,7 +246,9 @@ export function joinOnline(code: string): SocketLike {
   const peer = new Peer(peerOptions());
   let channel: DataConnection | null = null;
   let done = false;
+  let route: Route | null = null;
   const sock: SocketLike = {
+    route: () => route,
     readyState: 0,
     send(text) {
       if (channel?.open) void channel.send(text);
@@ -274,6 +281,10 @@ export function joinOnline(code: string): SocketLike {
       if (done || sock.readyState !== 0) return;
       (sock as { readyState: number }).readyState = 1;
       sock.onopen?.();
+      const poll = setInterval(() => {
+        if (done) clearInterval(poll);
+        else void routeOf(c.peerConnection).then((r) => r && (route = r.route));
+      }, 1000);
     });
     c.on('data', (d) => {
       if (typeof d === 'string') sock.onmessage?.({ data: d });
@@ -293,5 +304,5 @@ export function joinOnline(code: string): SocketLike {
 }
 
 /** How long a join may take: finding a route through two routers can take a while. */
-export const JOIN_TIMEOUT_MS = 20000;
+export const JOIN_TIMEOUT_MS = 30000;
 export const JOIN_TIMEOUT_TEXT = NO_DIRECT;

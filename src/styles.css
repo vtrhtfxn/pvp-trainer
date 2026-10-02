@@ -1746,15 +1746,6 @@ body {
   }
 }
 
-.btn-row.five {
-  grid-template-columns: repeat(5, 1fr);
-}
-@media (max-width: 720px) {
-  .btn-row.five {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 /* ---- Replays */
 .replay-list {
   display: grid;
@@ -2875,13 +2866,8 @@ body {
     right: 4px;
     bottom: 10px;
   }
-  .mm-actions .btn-row.five,
   .mm-actions .btn-row.four {
     grid-template-columns: 1fr 1fr;
-  }
-  /* Five play buttons in two columns: Multiplayer takes the whole last row. */
-  .mm-actions .btn-row.five > :last-child {
-    grid-column: span 2;
   }
   .mm-panel .kit-icon {
     width: 40px;
@@ -3181,4 +3167,117 @@ body {
   .center-text.show.pop {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------------------- title screen: beginner path, groups */
+.mm-path {
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(85, 255, 85, 0.1), rgba(0, 0, 0, 0.35));
+  border: 2px solid rgba(85, 255, 85, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: rise-in 380ms ease-out both;
+}
+.mm-path-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.mm-path-title {
+  color: var(--green);
+  font-size: 16px;
+}
+.mm-path-dots {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.mm-path-dots > span {
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid #000;
+}
+.mm-path-dots > span.done {
+  background: var(--green);
+}
+.mm-path-dots > span.next {
+  background: var(--gold);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.mm-path-step,
+.mm-path-blurb {
+  font-size: 14px;
+  line-height: 1.45;
+  color: #d8d8d8;
+}
+.mm-path-step b {
+  color: #fff;
+  font-weight: normal;
+}
+.mm-path-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.mc-btn.path-go {
+  color: var(--green);
+}
+.mc-btn.path-hide {
+  width: auto;
+  padding-left: 16px;
+  padding-right: 16px;
+  color: #bdbdbd;
+}
+
+.mm-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mm-group-label {
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9a9a9a;
+}
+.btn-row.n3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.mm-extras .mc-btn {
+  font-size: 14px;
+  padding: 7px 8px;
+}
+@media (min-width: 1080px) and (min-height: 600px) {
+  .mm-actions .btn-row.mm-extras {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .mm-extras .mc-btn {
+    font-size: 13px;
+    padding: 7px 4px;
+  }
+}
+@media (max-width: 520px) {
+  .btn-row.n3 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .btn-row.n3 > :last-child {
+    grid-column: span 2;
+  }
+}
+
+.starter-tag {
+  margin-left: 8px;
+  padding: 1px 5px;
+  font-size: 11px;
+  color: #000;
+  background: var(--green);
+  vertical-align: middle;
 }

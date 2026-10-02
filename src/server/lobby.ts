@@ -20,6 +20,8 @@ export interface Conn {
    * it does not include waiting for either game to finish drawing a frame.
    */
   rtt?(): number | null;
+  /** Online play: whether this player reached the host directly or through a relay. */
+  route?(): 'direct' | 'relay' | null;
 }
 
 const TICK_MS = 1000 / NET_TPS;

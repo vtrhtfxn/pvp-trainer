@@ -202,10 +202,23 @@ public signalling service ([PeerJS](https://peerjs.com)'s cloud server) only int
 games by code; public STUN servers (Google, Cloudflare) help each side find its public address.
 After that the duel goes straight between the two computers, with nothing in between.
 
-Limits, honestly: a direct connection fails on some networks (strict school or office Wi-Fi,
-some mobile hotspots and carrier-NAT connections), with no relay server to fall back on. The game
-then says so; try the other person hosting, or another network. It also depends on the PeerJS
-cloud server being up. Both players need a build with online play (it fails with "Version
+**Relay fallback.** Some networks block direct connections (strict school or office Wi-Fi, some
+mobile hotspots, carrier NAT on both sides). Then WebRTC falls back to a **TURN relay**, a server that
+passes the game's packets along: the free public [Open Relay](https://www.metered.ca/tools/openrelay/)
+by Metered is built in, on ports 80 and 443 over UDP, TCP and TLS so it gets through firewalls that
+only allow web traffic (`src/net/relay.ts`). A direct route is always preferred; the relay is used only
+when nothing else works and adds a little ping. Once the duel starts, the chat says which one you got
+("Connected directly to your opponent." or "Connected through the relay server…").
+
+If the free relay is busy or blocked as well, add your own under **Multiplayer → Relay server**: any
+TURN server's URL (`turn:host:3478`, `turns:host:443?transport=tcp`, several separated by spaces),
+username and password, e.g. from a free Metered or Cloudflare TURN account. It is saved on that
+computer and tried alongside the free one; only one of the two players needs it.
+
+Limits, honestly: the free relay is a shared public service with a monthly bandwidth cap, so it can
+be slow or full; it was tested here only with a local TURN server (a game forced through it connects
+and reports "relay"), not against Open Relay itself. Online play also depends on the PeerJS cloud
+server being up. Both players need a build with online play (it fails with "Version
 mismatch" otherwise), and the host's game must stay open: closing it or pressing Disconnect ends
 the duel. Whoever hosts plays the kit picked on their main menu.
 
@@ -463,6 +476,17 @@ from LT5 to LT2. `tests/tiers.test.ts` checks the low steps stay small and that 
 in every kit.
 
 Old saved difficulties map onto the ladder (Easy → LT5, Normal → LT3, Hard → LT2, Expert → LT1).
+
+### Getting started
+
+New players see a **Getting started** card under the logo: six steps that teach the basics in order,
+each launched with one button — the Full-charge hits, Sprint hits (W-tap) and Jump crits drills, a
+first duel against the Practice bot (win or lose), the Spacing (S-tap) drill, and a win against an
+LT5 bot. The dots fill in as you pass each one (from your drill results and duel records), and the
+Trainer opens on the next drill, marked **Start here**. **Hide** puts it away; **Trainer → Show
+Getting started** brings it back. The rest of the title screen is grouped: **Start Duel**, then
+**Improve** (Trainer, Replays & Coach), **Play** (Multiplayer, Bot vs Bot, Subtiers), and the extras
+(Settings, Controls, My Tiers, Marketplace).
 
 ### Trainer
 
@@ -856,7 +880,7 @@ src/mods      the Marketplace's mods: registry + settings, HUD widgets, damage i
 src/input     keyboard/mouse input and the rebindable key map
 src/assets/pack  the resource-pack textures the game uses (items, armor, shield, arrows, blocks, HUD)
 src/render/Hitboxes.ts   F3+B-style debug boxes
-src/net       protocol, authoritative Duel, client NetMatch/NetClient
+src/net       protocol, authoritative Duel, client NetMatch/NetClient, online play (p2p, relay)
 src/server    Node multiplayer server + dependency-free WebSocket implementation
 scripts/      pack-server.mjs builds the standalone server folder
 electron/     macOS app shell (main + preload), icon generator, packager script
