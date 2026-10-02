@@ -3281,3 +3281,39 @@ body {
   background: var(--green);
   vertical-align: middle;
 }
+
+/* ---------------------------------------------------------------- Trainer: practice speed, mistakes */
+.drill-speed {
+  display: grid;
+  grid-template-columns: auto repeat(3, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.drill-speed-label {
+  font-size: 13px;
+  color: #bdbdbd;
+  margin-right: 4px;
+}
+.mc-btn.drill-speed-btn {
+  font-size: 14px;
+  padding: 5px 4px;
+}
+.mc-btn.drill-speed-btn.selected {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+  color: var(--green);
+}
+.drill-mistake {
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #e6e6e6;
+  background: rgba(0, 0, 0, 0.35);
+  border-left: 3px solid var(--gold);
+}
+.drill-mistake b {
+  color: var(--gold);
+  font-weight: normal;
+}

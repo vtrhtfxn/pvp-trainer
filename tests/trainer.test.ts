@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DIFFICULTIES } from '../src/ai/difficulty';
 import { kitById } from '../src/game/kits';
 import { Match } from '../src/game/Match';
-import { DRILLS, DrillRun, drillById } from '../src/trainer/drills';
+import { DRILLS, DrillRun, drillById, loadDrillSpeed, saveDrillSpeed } from '../src/trainer/drills';
 
 /** Runs a drill with a scripted "player" until it finishes or times out. */
 function play(id: string, player: (run: DrillRun, m: Match) => void, maxTicks = 20 * 120) {
@@ -335,3 +335,60 @@ describe('trainer drills can be completed', () => {
   });
 });
 
+
+describe('trainer coaching', () => {
+  it('p-crit and re-totem use the NethPot kit (netherite: less knockback)', () => {
+    expect(drillById('pcrit')!.kit).toBe('neth_pot');
+    expect(drillById('retotem')!.kit).toBe('neth_pot');
+  });
+
+  it('the bot starts slow, speeds up with successes and eases off after two misses', () => {
+    const def = drillById('cooldown')!;
+    const run = new DrillRun(def, new Match(kitById(def.kit), DIFFICULTIES.practice, 1));
+    expect(run.pace).toBeCloseTo(0.6);
+    run.success('a');
+    run.success('b');
+    expect(run.pace).toBeCloseTo(0.8);
+    run.fail('Too early — x');
+    expect(run.pace).toBeCloseTo(0.8);
+    run.fail('Too early — y');
+    expect(run.pace).toBeCloseTo(0.7);
+    // Timed drills keep their full pace, or the score would mean less.
+    const aim = drillById('aim')!;
+    expect(new DrillRun(aim, new Match(kitById(aim.kit), DIFFICULTIES.practice, 1)).pace).toBe(1);
+  });
+
+  it('explains a missed swing and names the most common mistake', () => {
+    const def = drillById('cooldown')!;
+    const m = new Match(kitById(def.kit), DIFFICULTIES.practice, 1);
+    const run = new DrillRun(def, m);
+    // Turned away from the bot, looking level: the swing hits nothing.
+    lookAt(m);
+    m.player.yaw += Math.PI;
+    m.player.pitch = 0;
+    m.queueClick();
+    m.tick();
+    run.update();
+    expect(run.feed.some((f) => f.text.includes('crosshair was off'))).toBe(true);
+    run.fail('Too early — only 40% charged. Wait for the bar.');
+    run.fail('Too early — only 63% charged. Wait for the bar.');
+    run.fail('Not a crit — something');
+    run.finish();
+    expect(run.result!.topMistake).toEqual({ text: 'Too early — only 40% charged. Wait for the bar.', count: 2 });
+    expect(run.result!.speed).toBe(1);
+  });
+
+  it('practice speed is remembered and only offers 50 / 75 / 100%', () => {
+    const store = new Map<string, string>();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+    expect(loadDrillSpeed()).toBe(1);
+    saveDrillSpeed(0.5);
+    expect(loadDrillSpeed()).toBe(0.5);
+    store.set('pvp-trainer.drills.speed', '7');
+    expect(loadDrillSpeed()).toBe(1);
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+});

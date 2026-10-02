@@ -10,7 +10,7 @@ import { MAX_FIRST_TO, TIER_POINTS, clampFirstTo, totalPoints, type MyTiers } fr
 import type { ReplayData } from '../game/replay';
 import type { CoachReport } from '../game/coach';
 import logoUrl from '../assets/logo.png';
-import { DRILLS, DRILL_GROUPS, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
+import { DRILLS, DRILL_GROUPS, DRILL_SPEEDS, loadDrillSpeed, saveDrillSpeed, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 import { loadRelay, parseRelayUrls, saveRelay } from '../net/relay';
 import { BEGINNER_STEPS, beginnerHidden, beginnerProgress, setBeginnerHidden, stepDone, type BeginnerStep } from './beginner';
 
@@ -1114,6 +1114,26 @@ export class Menus {
     }
     box.append(h('ol', {}, ...d.how.map((s) => h('li', {}, s))));
     box.append(h('div', { class: 'trainer-why' }, h('b', {}, 'Why it works: '), d.why));
+    // Practice speed: slow motion for learning a timing (jump resets, P-crits), then full speed.
+    const speeds = h('div', { class: 'drill-speed' }, h('span', { class: 'drill-speed-label' }, 'Practice speed'));
+    const slowNote = h('div', { class: 'trainer-meta' }, 'Slow motion is for learning the timing — only a pass at 100% ticks the drill off.');
+    const btns = DRILL_SPEEDS.map((v) => {
+      const b = this.button(`${Math.round(v * 100)}%`, () => {
+        saveDrillSpeed(v);
+        mark();
+      }, 'drill-speed-btn');
+      speeds.append(b);
+      return b;
+    });
+    // Updated in place: re-rendering the screen would replay its entrance animation.
+    const mark = () => {
+      const speed = loadDrillSpeed();
+      btns.forEach((b, i) => b.classList.toggle('selected', DRILL_SPEEDS[i] === speed));
+      slowNote.style.display = speed < 1 ? '' : 'none';
+    };
+    mark();
+    box.append(speeds, slowNote);
+    box.append(h('div', { class: 'trainer-meta' }, 'The bot starts slow and speeds up as you succeed. Missed swings tell you why they missed.'));
     box.append(this.button('Start drill', () => this.cb.onDrill(d.id), 'big'));
     return box;
   }
@@ -1124,7 +1144,8 @@ export class Menus {
     root.classList.toggle('won', r.passed);
     root.classList.toggle('lost', !r.passed);
     const panel = h('div', { class: 'menu-panel' });
-    panel.append(h('div', { class: 'result-title' }, r.passed ? 'Drill passed!' : 'Keep practising'));
+    const slow = r.speed < 1;
+    panel.append(h('div', { class: 'result-title' }, r.passed ? (slow ? `Passed at ${Math.round(r.speed * 100)}% speed` : 'Drill passed!') : 'Keep practising'));
     panel.append(h('div', { class: 'result-sub' }, `${d.name} · ${kitById(d.kit).name} kit`));
     const table = h('div', { class: 'stats-table' });
     const rows: [string, string][] = r.score !== undefined
@@ -1139,7 +1160,19 @@ export class Menus {
     for (const [a, b] of rows) table.append(h('span', {}, a), h('span', {}, b), h('span', {}, ''));
     panel.append(table);
     if (newBest) panel.append(h('div', { class: 'result-tier' }, 'New personal best!'));
-    panel.append(this.button('Try again (R)', onRetry, 'big'));
+    // The one thing to fix next time.
+    if (r.topMistake && r.topMistake.count >= 2) {
+      panel.append(h('div', { class: 'drill-mistake' }, h('b', {}, `Most common mistake (${r.topMistake.count}×): `), r.topMistake.text));
+    }
+    if (slow && r.passed) {
+      panel.append(h('div', { class: 'drill-mistake' }, 'Timing learned — now pass it at full speed to tick it off.'));
+      panel.append(
+        this.button('Try at 100% speed', () => {
+          saveDrillSpeed(1);
+          onRetry();
+        }, 'big'),
+      );
+    } else panel.append(this.button('Try again (R)', onRetry, 'big'));
     panel.append(h('div', { class: 'btn-row' }, this.button('All drills', () => this.show('trainer')), this.button('Title Screen', () => this.cb.onQuit())));
     root.append(panel);
     this.show('results');
