@@ -1,7 +1,8 @@
 name: Desktop app
 
 # Builds the desktop apps on every push (and checks the Mac app starts on a real Mac), and on
-# every push to main publishes them as a GitHub Release. The app downloads new game builds from the
+# every push to main publishes them as a GitHub Release (the Windows app is built, installed and
+# started on a real Windows machine too). The app downloads new game builds from the
 # latest release by itself (electron/main.cjs), so it only has to be installed once:
 #   https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-mac.zip
 on:
@@ -74,41 +75,126 @@ jobs:
       - name: Zip the Mac app
         run: ditto -c -k --sequesterRsrc --keepParent "$APP" PvP-Trainer-mac.zip
 
-      - name: Package the Windows app
+      - name: Keep the Mac app and the game for the release
         run: |
-          node electron/build-app.mjs --win
-          mv "dist-app/PvP Trainer (Windows).zip" PvP-Trainer-windows.zip
+          mkdir -p out
+          mv PvP-Trainer-mac.zip out/
+          cp dist/index.html out/game.html
+          cp dist/build.json out/build.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: out/
+          retention-days: 7
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      BUILD: ${{ github.run_number }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Build the game
+        run: |
+          npm run build
+          node -e "require('fs').writeFileSync('dist/build.json', JSON.stringify({ build: Number(process.env.BUILD), shell: require('./electron/shell-version.json').shell }))"
+
+      - name: Package the Windows app
+        run: node electron/build-app.mjs --win
+
+      - name: Smoke test — the app starts and the game loads (on Windows)
+        env:
+          PVP_SMOKE_NO_GPU_OK: '1'
+          PVP_SMOKE_OUT: smoke.txt
+        run: |
+          "dist-app/PvP Trainer/PvP Trainer.exe" --smoke-test || true
+          cat smoke.txt
+          grep -q '^SMOKE OK' smoke.txt
+
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc electron\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test the installer — install, start, uninstall
+        shell: pwsh
+        run: |
+          Start-Process dist-app\PvP-Trainer-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          $dir = "$env:LOCALAPPDATA\Programs\PvP Trainer"
+          if (-not (Test-Path "$dir\PvP Trainer.exe")) { throw "not installed to $dir" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\PvP Trainer.lnk")) { throw "no Start menu shortcut" }
+          $env:PVP_SMOKE_NO_GPU_OK = '1'
+          $env:PVP_SMOKE_OUT = "$PWD\smoke-installed.txt"
+          Start-Process "$dir\PvP Trainer.exe" -ArgumentList '--smoke-test' -Wait
+          Get-Content smoke-installed.txt
+          if (-not (Select-String -Path smoke-installed.txt -Pattern '^SMOKE OK' -Quiet)) { throw "installed app did not start" }
+          Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\PvP Trainer.exe") { throw "uninstall left the app behind" }
+
+      - name: Zip the portable version
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Move-Item dist-app\PvP-Trainer-Setup.exe out\
+          Compress-Archive -Path "dist-app\PvP Trainer" -DestinationPath out\PvP-Trainer-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: out/
+          retention-days: 7
+
+  release:
+    needs: [app, windows]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      BUILD: ${{ github.run_number }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
 
       - name: Publish the release
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          cp dist/index.html game.html
-          cp dist/build.json build.json
+          cd out
+          ls -la
           MSG="$(git log -1 --pretty=%s)"
           cat > notes.md <<NOTES
           **$MSG**
 
           ### Install (once)
+          - **Windows:** download **PvP-Trainer-Setup.exe** and run it. It installs for you only (no admin
+            password), with a Start menu entry and a desktop shortcut. If Windows says "Windows protected
+            your PC", click **More info → Run anyway** (the app is not signed with a paid certificate).
+            No install wanted? **PvP-Trainer-windows.zip** is the same app to extract and run.
           - **Mac:** download **PvP-Trainer-mac.zip**, open it, and drag **PvP Trainer** into **Applications**.
             The first time, macOS says it can't check the app: open **System Settings → Privacy & Security**,
             scroll down and click **Open Anyway** (on older macOS: right-click the app → **Open**). After that it opens with a click.
-          - **Windows:** download **PvP-Trainer-windows.zip**, extract it, run **PvP Trainer.exe**.
 
           The app updates the game by itself from here on.
           NOTES
-          gh release create "build-$BUILD" PvP-Trainer-mac.zip PvP-Trainer-windows.zip game.html build.json \
-            --title "PvP Trainer — build $BUILD" --notes-file notes.md --target "$GITHUB_SHA" --latest
+          gh release create "build-$BUILD" PvP-Trainer-Setup.exe PvP-Trainer-windows.zip PvP-Trainer-mac.zip game.html build.json \
+            --repo "$GITHUB_REPOSITORY" --title "PvP Trainer — build $BUILD" --notes-file notes.md --target "$GITHUB_SHA" --latest
           # Keep the five newest builds.
-          gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^build-' | tail -n +6 | while read -r tag; do
-            gh release delete "$tag" --cleanup-tag --yes
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | grep '^build-' | tail -n +6 | while read -r tag; do
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
           done
-
-      - name: Keep the build (not main)
-        if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: PvP-Trainer-mac
-          path: PvP-Trainer-mac.zip
-          retention-days: 7

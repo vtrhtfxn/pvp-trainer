@@ -79,7 +79,7 @@ const paths = await packager({
     /^\/New Folder With Items($|\/)/,
     /^\/[^/]+\.glb$/,
     /^\/(index\.html|vite\.config\.ts|vite\.server\.config\.ts|tsconfig\.json|package-lock\.json|README\.md)$/,
-    /^\/electron\/build-app\.mjs$/,
+    /^\/electron\/(build-app\.mjs|installer\.iss)$/,
   ],
   win32metadata: { ProductName: 'PvP Trainer', FileDescription: 'PvP Trainer', CompanyName: 'PvP Trainer' },
   extendInfo: {
@@ -103,6 +103,11 @@ if (win) {
   const staged = path.join(ROOT, 'dist-app', folder);
   fs.rmSync(staged, { recursive: true, force: true });
   fs.renameSync(dir, staged);
+  // On Windows (CI) the folder is what the installer packs; the workflow zips it itself.
+  if (process.platform === 'win32') {
+    console.log(`app folder → ${path.relative(process.cwd(), staged)}`);
+    process.exit(0);
+  }
   execFileSync('zip', ['-qry9', zip, folder], { cwd: path.join(ROOT, 'dist-app') });
   console.log(`zip → ${path.relative(process.cwd(), zip)} (${(fs.statSync(zip).size / 1e6).toFixed(0)} MB)`);
 }

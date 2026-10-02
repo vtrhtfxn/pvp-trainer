@@ -288,7 +288,16 @@ app.on('window-all-closed', () => app.quit());
 /** Loads the game and reports whether it started (the build workflow runs this on a Mac). */
 function smokeTest() {
   const done = (ok, msg) => {
-    console.log(`SMOKE ${ok ? 'OK' : 'FAIL'}: ${msg}`);
+    const line = `SMOKE ${ok ? 'OK' : 'FAIL'}: ${msg}`;
+    console.log(line);
+    // Windows GUI apps have no console to print to: CI reads the result from this file instead.
+    if (process.env.PVP_SMOKE_OUT) {
+      try {
+        require('node:fs').writeFileSync(process.env.PVP_SMOKE_OUT, `${line}\n`);
+      } catch {
+        /* the console line is still there */
+      }
+    }
     app.exit(ok ? 0 : 1);
   };
   const giveUp = setTimeout(() => done(false, 'timed out after 90 s'), 90000);
