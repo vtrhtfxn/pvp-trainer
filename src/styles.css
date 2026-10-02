@@ -72,8 +72,30 @@ body {
   transition: opacity 0.5s;
 }
 #loading.done {
+  transition: opacity 300ms ease;
   opacity: 0;
   pointer-events: none;
+}
+.loading-logo {
+  width: 150px;
+  height: 150px;
+  margin: 0 auto;
+  image-rendering: auto;
+  animation: logo-breathe 1.6s ease-in-out infinite alternate;
+}
+@keyframes logo-breathe {
+  from {
+    transform: scale(0.96);
+    filter: drop-shadow(0 0 0 rgba(85, 255, 85, 0));
+  }
+  to {
+    transform: scale(1.02);
+    filter: drop-shadow(0 0 18px rgba(85, 255, 85, 0.45));
+  }
+}
+#loading.done .loading-logo {
+  transform: scale(1.15);
+  transition: transform 300ms ease;
 }
 .loading-title {
   font-size: 44px;
@@ -2796,4 +2818,367 @@ body {
 }
 .dh-deg {
   margin-top: calc(var(--u) * 1);
+}
+
+/* ============================================================ title screen layout */
+.mm-head,
+.mm-setup,
+.mm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.start-btn {
+  font-size: 22px !important;
+  padding: 13px 12px !important;
+  letter-spacing: 1px;
+}
+
+/* Wide windows: logo and the play buttons on the left, the game setup on the right. */
+@media (min-width: 1080px) and (min-height: 600px) {
+  .mm-panel {
+    width: min(1120px, 100%);
+    display: grid;
+    grid-template-columns: minmax(300px, 0.8fr) 1.25fr;
+    grid-template-areas:
+      'head setup'
+      'actions setup';
+    grid-template-rows: auto 1fr;
+    column-gap: 28px;
+    row-gap: 14px;
+    padding: 26px 30px 22px;
+  }
+  .mm-head {
+    grid-area: head;
+    justify-content: center;
+  }
+  .mm-setup {
+    grid-area: setup;
+    padding-left: 28px;
+    border-left: 2px solid rgba(255, 255, 255, 0.08);
+  }
+  .mm-actions {
+    grid-area: actions;
+    justify-content: flex-end;
+  }
+  .mm-panel .logo-img,
+  .main-menu .mm-panel .logo-img {
+    width: 176px;
+    height: 176px;
+  }
+  .main-menu .mm-panel .logo {
+    height: auto;
+    margin: 0;
+  }
+  .mm-panel .splash {
+    right: 4px;
+    bottom: 10px;
+  }
+  .mm-actions .btn-row.five,
+  .mm-actions .btn-row.four {
+    grid-template-columns: 1fr 1fr;
+  }
+  /* Five play buttons in two columns: Multiplayer takes the whole last row. */
+  .mm-actions .btn-row.five > :last-child {
+    grid-column: span 2;
+  }
+  .mm-panel .kit-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .mm-panel .record {
+    text-align: center;
+  }
+}
+@media (min-width: 1080px) and (min-height: 600px) and (max-height: 760px) {
+  .mm-panel .logo-img,
+  .main-menu .mm-panel .logo-img {
+    width: 120px;
+    height: 120px;
+  }
+}
+
+/* ============================================================ motion */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes logo-float {
+  from {
+    transform: translateY(0) rotate(-0.6deg);
+  }
+  to {
+    transform: translateY(-6px) rotate(0.6deg);
+  }
+}
+@keyframes icon-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 2px 2px 0 rgba(255, 255, 255, 0.35),
+      inset -2px -3px 0 rgba(0, 0, 0, 0.35),
+      0 0 0 0 var(--glow, rgba(182, 255, 143, 0.0));
+  }
+  50% {
+    box-shadow:
+      inset 2px 2px 0 rgba(255, 255, 255, 0.35),
+      inset -2px -3px 0 rgba(0, 0, 0, 0.35),
+      0 0 14px 1px var(--glow, rgba(182, 255, 143, 0.55));
+  }
+}
+@keyframes title-drop {
+  0% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Every menu panel eases in when its screen opens (display none → shown restarts it). */
+.screen > .menu-panel {
+  animation: panel-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* The title screen's cards and buttons follow, one after another. */
+.main-menu .kit-card {
+  animation: rise-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(60ms + var(--i, 0) * 22ms);
+}
+.main-menu .mm-actions > * {
+  animation: rise-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.main-menu .mm-actions > :nth-child(1) {
+  animation-delay: 120ms;
+}
+.main-menu .mm-actions > :nth-child(2) {
+  animation-delay: 170ms;
+}
+.main-menu .mm-actions > :nth-child(3) {
+  animation-delay: 220ms;
+}
+.main-menu .logo-img {
+  animation: logo-float 3.2s ease-in-out infinite alternate;
+  transition: transform 200ms ease;
+}
+
+/* Buttons: they lift a little under the pointer and press down when clicked. */
+.mc-btn,
+.kit-card,
+.diff-btn {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease,
+    filter 120ms ease;
+}
+.mc-btn:hover,
+.diff-btn:hover,
+.kit-card:not(.locked):hover {
+  transform: translateY(-1px);
+}
+.mc-btn:active,
+.diff-btn:active,
+.kit-card:not(.locked):active {
+  transform: translateY(1px);
+  filter: brightness(0.92);
+  transition-duration: 40ms;
+}
+.mc-btn:focus-visible,
+.diff-btn:focus-visible,
+.kit-card:focus-visible {
+  outline: 2px solid #ffff55;
+  outline-offset: -2px;
+}
+.kit-card:not(.locked):hover .kit-icon {
+  animation: icon-bob 600ms ease-in-out infinite;
+}
+.kit-card.selected {
+  --glow: rgba(182, 255, 143, 0.55);
+  animation-name: rise-in, glow-pulse;
+  animation-duration: 260ms, 2.4s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1), ease-in-out;
+  animation-iteration-count: 1, infinite;
+  animation-fill-mode: both, none;
+}
+.kit-card.selected .kit-icon {
+  animation: icon-bob 1.6s ease-in-out infinite;
+}
+.start-btn {
+  background: linear-gradient(90deg, #4a8a2c, #5ea83a, #4a8a2c);
+  background-size: 200% 100%;
+  color: #fff;
+}
+.start-btn:hover {
+  background: linear-gradient(90deg, #5ea83a, #7bd04c, #5ea83a);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  color: #fffbd0;
+}
+
+/* Results: the title lands, the stats follow row by row. */
+.results .result-title {
+  animation: title-drop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.results .stats-table > * {
+  animation: rise-in 240ms ease-out both;
+  animation-delay: 180ms;
+}
+.results .result-tier {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2.2s linear infinite;
+}
+
+/* Lists that open with a screen fill in from the top. */
+.replay-row,
+.coach-tip,
+.tiers-row,
+.coach-stat {
+  animation: rise-in 240ms ease-out both;
+}
+.replay-row:nth-child(2),
+.coach-tip:nth-child(2),
+.tiers-row:nth-child(2),
+.coach-stat:nth-child(2) {
+  animation-delay: 40ms;
+}
+.replay-row:nth-child(3),
+.coach-tip:nth-child(3),
+.tiers-row:nth-child(3),
+.coach-stat:nth-child(3) {
+  animation-delay: 80ms;
+}
+.replay-row:nth-child(n + 4),
+.coach-tip:nth-child(n + 4),
+.tiers-row:nth-child(n + 4),
+.coach-stat:nth-child(n + 4) {
+  animation-delay: 120ms;
+}
+
+/* Settings tabs slide their underline across. */
+.settings-tab,
+.mk-tab {
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 120ms ease;
+}
+
+/* People who asked their system for less motion get none of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* In-game titles: each countdown number pops in, VICTORY / YOU DIED slam down. */
+@keyframes center-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes center-slam {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.6);
+    letter-spacing: 12px;
+  }
+  45% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.9);
+    letter-spacing: 2px;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -30%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+.center-text.show.pop {
+  animation: center-pop 360ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.center-text.show.pop.win,
+.center-text.show.pop.lose {
+  animation: center-slam 620ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+}
+.center-text.show.pop.win {
+  text-shadow:
+    5px 5px 0 #3f3f3f,
+    0 0 26px rgba(255, 210, 63, 0.55);
+}
+.center-text.show.pop.lose {
+  text-shadow:
+    5px 5px 0 #3f3f3f,
+    0 0 26px rgba(255, 60, 60, 0.5);
+}
+.center-text.show.pop.toast {
+  animation: toast-in 200ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .center-text.show.pop {
+    animation: none;
+  }
 }

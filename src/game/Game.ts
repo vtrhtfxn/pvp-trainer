@@ -1662,7 +1662,7 @@ export class Game {
       tag.name = m.bot.name;
       tag.color = m.profile.color;
       tag.status = this.state === 'menu' ? '' : m.brain.label;
-      this.view.crosshairOn = this.state !== 'menu' && this.hud.crosshairShown;
+      this.view.crosshairOn = (this.state === 'playing' || this.state === 'paused') && this.hud.crosshairShown;
       this.view.crosshairGui = this.hud.guiScale;
       this.view.render(p, m.bot, alpha, this.time, dt, s, tag);
     }

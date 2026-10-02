@@ -23,8 +23,14 @@ latest release; a newer game is downloaded in the background and a banner offers
 now** (or it is used next time). Only when the app shell itself changes does the banner ask you
 to download the app again. The title screen shows the build you are on.
 
-**Windows:** download **[PvP-Trainer-windows.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-windows.zip)**,
-extract it and run `PvP Trainer.exe`.
+**Windows:** download **[PvP-Trainer-Setup.exe](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-Setup.exe)**
+and run it. It installs for you only (no admin password) into `%LOCALAPPDATA%\Programs\PvP Trainer`,
+with a Start menu entry, a desktop shortcut and an uninstaller (Settings → Apps). The app isn't
+signed with a paid certificate, so Windows may say "Windows protected your PC": click **More info →
+Run anyway**. Rather not install? **[PvP-Trainer-windows.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-windows.zip)**
+is the same app: extract it and run `PvP Trainer.exe`. It updates itself like the Mac app. The build
+workflow builds the Windows app on a Windows machine, starts it, then installs it silently, starts the
+installed copy and uninstalls it, before anything is published.
 
 **From the source** (for working on the game): `npm install`, then `npm run app` runs the desktop
 shell on your own build (it never self-updates), `npm run dev` runs it in the browser, and

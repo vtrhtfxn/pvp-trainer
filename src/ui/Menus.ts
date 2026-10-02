@@ -206,17 +206,23 @@ export class Menus {
 
   private buildMain(): HTMLDivElement {
     const root = h('div', { class: 'screen main-menu' });
-    const panel = h('div', { class: 'menu-panel' });
+    const panel = h('div', { class: 'menu-panel mm-panel' });
+    // Three groups, so a wide window can lay them out in two columns (see .mm-panel).
+    const head = h('div', { class: 'mm-head' });
+    const setup = h('div', { class: 'mm-setup' });
+    const actions = h('div', { class: 'mm-actions' });
+    panel.append(head, setup, actions);
     const logo = h(
       'div',
       { class: 'logo' },
       h('img', { class: 'logo-img', src: logoUrl, alt: 'PvP Trainer', draggable: 'false' }),
       h('div', { class: 'splash' }, 'Now with 1.8 PvP!'),
     );
-    panel.append(logo);
+    head.append(logo);
 
-    panel.append(h('div', { class: 'section-title' }, 'Game mode'));
+    setup.append(h('div', { class: 'section-title' }, 'Game mode'));
     const grid = h('div', { class: 'kit-grid' });
+    let cardIndex = 0;
     for (const kit of KITS.filter((k) => !k.subtier)) {
       const icon = this.kitIcons[kit.icon];
       const iconEl = h('canvas', { class: 'kit-icon', width: '16', height: '16' });
@@ -231,6 +237,7 @@ export class Menus {
         iconEl,
         h('span', { class: 'kit-name' }, kit.name),
       );
+      card.style.setProperty('--i', String(cardIndex++));
       if (!kit.available) card.append(h('span', { class: 'soon' }, 'SOON'));
       card.addEventListener('click', () => {
         if (!kit.available) return;
@@ -259,12 +266,13 @@ export class Menus {
       saveSettings(this.settings);
       this.refreshMain();
     });
+    customCard.style.setProperty('--i', String(cardIndex++));
     grid.append(customCard);
-    panel.append(grid);
+    setup.append(grid);
     this.kitInfo = h('div', { class: 'kit-info' });
-    panel.append(this.kitInfo);
+    setup.append(this.kitInfo);
 
-    panel.append(h('div', { class: 'section-title' }, 'Bot tier'));
+    setup.append(h('div', { class: 'section-title' }, 'Bot tier'));
     const diffs = h('div', { class: 'diff-row' });
     for (const id of DIFFICULTY_ORDER) {
       const d = DIFFICULTIES[id];
@@ -278,9 +286,9 @@ export class Menus {
       });
       diffs.append(b);
     }
-    panel.append(diffs);
+    setup.append(diffs);
     this.diffDesc = h('div', { class: 'diff-desc' });
-    panel.append(this.diffDesc);
+    setup.append(this.diffDesc);
 
     // First to N: rounds against the same bot until one side has N wins.
     const setFt = (n: number) => {
@@ -289,7 +297,7 @@ export class Menus {
       this.refreshMain();
     };
     this.ftValue = h('div', { class: 'ft-value' });
-    panel.append(
+    setup.append(
       h(
         'div',
         { class: 'ft-row', title: `Rounds against the same bot until one side has this many wins (up to ${MAX_FIRST_TO}). Win a series against a tier bot to earn that tier in My Tiers.` },
@@ -300,8 +308,8 @@ export class Menus {
       ),
     );
 
-    panel.append(this.button('Start Duel', () => this.cb.onStart(), 'big'));
-    panel.append(
+    actions.append(this.button('Start Duel', () => this.cb.onStart(), 'big start-btn'));
+    actions.append(
       h(
         'div',
         { class: 'btn-row five' },
@@ -317,7 +325,7 @@ export class Menus {
       this.cb.onMarketplace();
     }, 'market-btn');
     this.marketBtns.push(market);
-    panel.append(
+    actions.append(
       h(
         'div',
         { class: 'btn-row four' },
@@ -328,7 +336,7 @@ export class Menus {
       ),
     );
     this.recordEl = h('div', { class: 'record' });
-    panel.append(this.recordEl);
+    actions.append(this.recordEl);
     root.append(panel);
     root.append(
       h(

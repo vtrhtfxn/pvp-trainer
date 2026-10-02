@@ -320,7 +320,10 @@ export class HUD {
 
   showCenter(text: string, cls = '', ticks = 30) {
     this.center.textContent = text;
-    this.center.className = `center-text show ${cls}`;
+    // Restart the pop for every new text (each countdown number lands on its own).
+    this.center.className = 'center-text';
+    void this.center.offsetWidth;
+    this.center.className = `center-text show pop ${cls}`;
     this.centerTimer = ticks;
   }
 

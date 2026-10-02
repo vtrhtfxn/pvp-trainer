@@ -32,24 +32,15 @@ install. Ctrl+W, Ctrl+R and the other browser shortcuts do nothing here,
 so sprinting can never close the game. F11 = fullscreen.
 
 
-PLAYING WITH FRIENDS (same Wi-Fi / network)
--------------------------------------------
-One person hosts. On the host's Mac, run the server
-("Start Server.command" in the project, or "npm run server").
-Its window prints an address such as  http://192.168.1.23:4180
+PLAYING WITH FRIENDS (anywhere, over the internet)
+-------------------------------------------------
+1. One of you: Multiplayer -> Host online game. A 5-letter code appears.
+2. The other: Multiplayer -> type the code next to Join.
+That's it - no server to run, different homes and Wi-Fi are fine.
 
-Everyone else:
-  1. Open PvP Trainer -> Multiplayer.
-  2. In "Server", type the host's address, e.g.  192.168.1.23
-  3. Create a room: "Host a new room" - you get a 4-letter code.
-     Join a room: type the code in "Room code" -> "Join room code".
-
-Hosting a room uses the kit you picked on the main menu; joining plays
-the room's kit. Two players per room, as many rooms as you like.
-
-If it cannot connect: check the host's server window is still open, that
-you are on the same network, and that the host allowed the server through
-their firewall.
+The host's kit (picked on the main menu) is the one you both play.
+If it cannot connect, some networks block direct connections (strict
+school or office Wi-Fi, some phone hotspots): try the other person hosting.
 
 Not affiliated with Mojang or Microsoft.
 `;
@@ -79,7 +70,7 @@ const paths = await packager({
     /^\/New Folder With Items($|\/)/,
     /^\/[^/]+\.glb$/,
     /^\/(index\.html|vite\.config\.ts|vite\.server\.config\.ts|tsconfig\.json|package-lock\.json|README\.md)$/,
-    /^\/electron\/build-app\.mjs$/,
+    /^\/electron\/(build-app\.mjs|installer\.iss)$/,
   ],
   win32metadata: { ProductName: 'PvP Trainer', FileDescription: 'PvP Trainer', CompanyName: 'PvP Trainer' },
   extendInfo: {
@@ -103,6 +94,11 @@ if (win) {
   const staged = path.join(ROOT, 'dist-app', folder);
   fs.rmSync(staged, { recursive: true, force: true });
   fs.renameSync(dir, staged);
+  // On Windows (CI) the folder is what the installer packs; the workflow zips it itself.
+  if (process.platform === 'win32') {
+    console.log(`app folder → ${path.relative(process.cwd(), staged)}`);
+    process.exit(0);
+  }
   execFileSync('zip', ['-qry9', zip, folder], { cwd: path.join(ROOT, 'dist-app') });
   console.log(`zip → ${path.relative(process.cwd(), zip)} (${(fs.statSync(zip).size / 1e6).toFixed(0)} MB)`);
 }
