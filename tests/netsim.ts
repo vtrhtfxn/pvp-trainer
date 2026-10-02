@@ -57,7 +57,7 @@ export interface SimResult {
   frames: number;
 }
 
-class Link {
+export class Link {
   private last = 0;
   private stalls: [number, number][] = [];
   readonly queue: { at: number; msg: string }[] = [];
@@ -92,7 +92,7 @@ class Link {
   }
 }
 
-class FakeNet {
+export class FakeNet {
   connected = true;
   out: ClientMsg[] = [];
   send(m: ClientMsg) {

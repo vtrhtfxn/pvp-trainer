@@ -262,6 +262,21 @@ instead of snapped. `tests/netsim.ts` models it — both clients' frame loops, t
 and links with latency, jitter and stalls — and `tests/netsmooth.test.ts` holds it to no visible
 jumps or freezes on ordinary Wi-Fi.
 
+**Hit registration.** A swing is resolved by the server the moment it arrives, not on its next
+tick, and the result goes straight back to both players, so you see your hit about one round trip
+after the click (no extra 0–50 ms). Your attack cooldown and hotbar slot are your own, as in
+vanilla: taking the server's copy (a round trip old) used to refill the cooldown bar right after
+every click, so the next swing landed in the opponent's hurt immunity and did nothing. A click
+that hit the opponent on your screen is never turned into punching the wall behind them.
+`tests/hitreg.test.ts` (with `tests/hitregsim.ts`) has a perfect player fight over simulated 20 ms
+and 60 ms links: every on-screen hit must land, and be seen within one round trip plus jitter.
+
+**Ping** in online games is the network round trip that WebRTC measures on the connection itself,
+like Minecraft's ping: it does not include waiting for either game to finish drawing a frame. It
+cannot go below the physical distance between the two homes: a direct connection (no server in
+between) is already the shortest path there is. The host plays on their own computer, so they see
+about 0–1 ms.
+
 **Hits are lag-compensated.** Each swing tells the server which of the opponent's ticks was on
 your screen, and the server tests it against where they were at that tick (interpolated from the
 moves it logged), so a swing that connected on your screen connects there. It never rewinds more

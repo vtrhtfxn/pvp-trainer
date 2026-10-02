@@ -444,6 +444,62 @@ export class Duel {
     this.sendChest(i, false);
   }
 
+  /**
+   * Resolves player i's queued clicks the moment they arrive instead of on the next tick (up to
+   * 50 ms sooner), when every one of them is a plain swing at the opponent: anything else (an
+   * item in use, a block or an end crystal in the way) is left for the tick, which keeps the
+   * exact Match order for those. Returns the knockback to send at once; `hit` says whether
+   * anything was resolved (then the caller sends a state straight away too).
+   */
+  resolveClicksNow(i: number): { hit: boolean; events: DuelEvent[] } {
+    const none = { hit: false, events: [] };
+    const f = this.fighters[i];
+    const other = this.fighters[1 - i];
+    if (this.phase !== 'fight' || f.dead || f.usingItem || this.pendingAttacks[i] === 0) return none;
+    if (this.world.crystals.length || this.world.carts.length) return none;
+    const vel = this.fighters.map((g) => [g.vel.x, g.vel.y, g.vel.z]);
+    const slot = this.pendingSlot[i];
+    if (slot !== null) {
+      f.selectSlot(slot);
+      this.pendingSlot[i] = null;
+    }
+    while (this.pendingSwap[i] > 0) {
+      this.pendingSwap[i]--;
+      f.swapHands();
+    }
+    let hit = false;
+    while (this.pendingAttacks[i] > 0) {
+      const view = this.attackViews[i][0] ?? null;
+      const claim = this.attackClaims[i][0] ?? null;
+      const unwind = (view !== null && this.rewindToView(1 - i, view)) || this.rewind(1 - i, this.rewindTicks(i));
+      const yaw = f.yaw;
+      const pitch = f.pitch;
+      if (claim) {
+        f.yaw = claim.yaw;
+        f.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, claim.pitch));
+      }
+      const judged = this.judgeClaim(f, other, claim);
+      const plain = (judged !== undefined && judged >= 0) || !f.crosshairBlock(f.blockReach(), true);
+      if (plain) {
+        this.pendingAttacks[i]--;
+        this.attackViews[i].shift();
+        this.attackClaims[i].shift();
+        performAttack(f, other, judged);
+        hit = true;
+      }
+      unwind();
+      f.yaw = yaw;
+      f.pitch = pitch;
+      if (!plain) break;
+    }
+    const events: DuelEvent[] = [];
+    for (let k = 0; k < 2; k++) {
+      const g = this.fighters[k];
+      if (g.vel.x !== vel[k][0] || g.vel.y !== vel[k][1] || g.vel.z !== vel[k][2]) events.push({ motion: { to: k, vx: g.vel.x, vy: g.vel.y, vz: g.vel.z } });
+    }
+    return { hit, events };
+  }
+
   /** Mirrors Match.handlePlayerActions, but for a remote player's queued inputs. */
   private handleActions(i: number) {
     const f = this.fighters[i];
@@ -487,12 +543,17 @@ export class Duel {
         restore();
         continue;
       }
-      if (!mined && f.tickMining(true, true)) {
+      // A hit on the attacker's screen, which the server accepts, is an attack even if the
+      // rewound opponent sits a hair beside the ray and a block (an arena wall) is behind them:
+      // their screen showed the opponent in front of it.
+      const judged = this.judgeClaim(f, other, claim);
+      const onScreenHit = judged !== undefined && judged >= 0;
+      if (!onScreenHit && !mined && f.tickMining(true, true)) {
         restore();
         mined = true;
         continue;
       }
-      performAttack(f, other, this.judgeClaim(f, other, claim));
+      performAttack(f, other, judged);
       restore();
     }
     if (!mined) f.tickMining(this.mineHeld[i], false);

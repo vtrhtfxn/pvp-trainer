@@ -14,6 +14,12 @@ export interface Conn {
   close(code?: number): void;
   onMessage: ((text: string) => void) | null;
   onClose: (() => void) | null;
+  /**
+   * The network round trip as the connection itself measures it, ms (WebRTC does, from its own
+   * keep-alives), or null. Shown as the player's ping: unlike the ping/pong the lobby measures,
+   * it does not include waiting for either game to finish drawing a frame.
+   */
+  rtt?(): number | null;
 }
 
 const TICK_MS = 1000 / NET_TPS;
@@ -72,6 +78,12 @@ export class LobbyClient {
     if (this.chatTokens < 1) return false;
     this.chatTokens--;
     return true;
+  }
+
+  /** The ping shown to players: the connection's own network round trip when it has one. */
+  get shownPing(): number {
+    const r = this.ws.rtt?.();
+    return r === null || r === undefined ? this.ping : r;
   }
 
   gotPong(id: number) {
@@ -187,7 +199,7 @@ class Room {
       if (e.motion) this.seats[e.motion.to]?.send({ t: 'motion', vx: e.motion.vx, vy: e.motion.vy, vz: e.motion.vz });
       if (e.teleport) this.seats[e.teleport.to]?.send({ t: 'teleport', id: e.teleport.id, x: e.teleport.x, y: e.teleport.y, z: e.teleport.z, yaw: e.teleport.yaw });
     }
-    this.broadcast(duel.stateMessage(this.tick, [this.seats[0]?.ping ?? 0, this.seats[1]?.ping ?? 0]));
+    this.broadcast(duel.stateMessage(this.tick, [this.seats[0]?.shownPing ?? 0, this.seats[1]?.shownPing ?? 0]));
     // Bed Wars / SkyWars: scoreboards, announcements, chest contents, shop answers.
     for (const { to, msg } of duel.takeOutbox()) {
       if (to < 0) this.broadcast(msg);
@@ -197,6 +209,19 @@ class Room {
     if (duel.phase === 'ended' && duel.phaseTicks === 1) {
       this.broadcast({ t: 'end', winner: duel.winner });
       this.lobby.log(`room ${this.code}: duel over — winner ${duel.winner ?? 'draw'}`);
+    }
+  }
+
+  resolveNow(seat: number) {
+    const duel = this.duel;
+    if (!duel) return;
+    try {
+      const { hit, events } = duel.resolveClicksNow(seat);
+      if (!hit) return;
+      for (const e of events) if (e.motion) this.seats[e.motion.to]?.send({ t: 'motion', vx: e.motion.vx, vy: e.motion.vy, vz: e.motion.vz });
+      this.broadcast(duel.stateMessage(this.tick, [this.seats[0]?.shownPing ?? 0, this.seats[1]?.shownPing ?? 0]));
+    } catch (err) {
+      this.lobby.log(`room ${this.code}: swing failed — ${(err as Error)?.stack ?? err}`);
     }
   }
 
@@ -353,6 +378,9 @@ export class Lobby {
         // Moves go straight on to the opponent: waiting for the next tick would re-time them to
         // the server's clock, which is what made fighters stutter and jump on each other's screens.
         if (relay && room) room.seats[1 - client.seat]?.send(relay);
+        // A swing is resolved as it arrives and both players get the result at once, rather
+        // than up to a tick (50 ms) later.
+        if (msg.t === 'attack' && room) room.resolveNow(client.seat);
         return;
       }
       case 'rematch':

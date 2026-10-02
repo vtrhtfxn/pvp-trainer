@@ -204,9 +204,15 @@ export class NetMatch {
     this.net.send({ t: 'attack', v, p: picked < 0 ? -1 : r2(picked), yaw: Math.round(this.player.yaw * 1e4) / 1e4, pitch: Math.round(this.player.pitch * 1e4) / 1e4 });
   }
 
+  /** A hotbar switch the server has not confirmed yet (and how many states we waited). */
+  private pendingSlot: number | null = null;
+  private pendingSlotAge = 0;
+
   queueSlot(i: number) {
     if (i === this.player.selected) return;
     this.player.selectSlot(i);
+    this.pendingSlot = i;
+    this.pendingSlotAge = 0;
     this.net.send({ t: 'slot', i });
   }
 
@@ -429,8 +435,23 @@ export class NetMatch {
     f.hurtTime = s.ht;
     f.invulnerableTime = s.iv;
     f.hurtDir = s.hd;
-    f.attackStrengthTicker = s.ast;
-    f.selected = s.sel;
+    // Your own attack cooldown and hotbar slot are yours, like in vanilla: the server's copy is a
+    // round trip old, and taking it undid every click (the bar refilled at once, so the next
+    // swing landed in the opponent's hurt immunity) and every slot switch still in flight
+    // (the held item flipped back and reset the cooldown).
+    if (f !== this.player) {
+      f.attackStrengthTicker = s.ast;
+      f.selected = s.sel;
+    } else if (this.pendingSlot === null || s.sel === this.pendingSlot || ++this.pendingSlotAge > 40) {
+      this.pendingSlot = null;
+      this.pendingSlotAge = 0;
+      if (f.selected !== s.sel) {
+        // The server put us elsewhere (a refused switch): follow it, keeping the cooldown.
+        const t = f.attackStrengthTicker;
+        f.selected = s.sel;
+        f.attackStrengthTicker = t;
+      }
+    }
     if (Array.isArray(s.inv) && !(f === this.player && this.holdInventory)) {
       for (let k = 0; k < SLOT_COUNT; k++) f.setSlot(k, fromSlot(s.inv[k]));
     }

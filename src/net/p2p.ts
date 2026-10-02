@@ -77,12 +77,34 @@ function channelConn(c: DataConnection): Conn {
     close() {
       if (closed) return;
       closed = true;
+      clearInterval(poll);
       c.close();
     },
     onMessage: null,
     onClose: null,
+    rtt: () => rtt,
   };
+  // The network round trip, from WebRTC's own connectivity checks (once a second).
+  let rtt: number | null = null;
+  const poll = setInterval(() => {
+    const pc = c.peerConnection;
+    if (closed || !pc) return;
+    pc.getStats()
+      .then((stats) => {
+        let sel: string | null = null;
+        stats.forEach((s) => {
+          if (s.type === 'transport' && s.selectedCandidatePairId) sel = s.selectedCandidatePairId;
+        });
+        stats.forEach((s) => {
+          if (s.type === 'candidate-pair' && (s.id === sel || (!sel && s.nominated)) && typeof s.currentRoundTripTime === 'number') {
+            rtt = Math.round(s.currentRoundTripTime * 1000);
+          }
+        });
+      })
+      .catch(() => {});
+  }, 1000);
   const finish = () => {
+    clearInterval(poll);
     if (closed && !conn.onClose) return;
     closed = true;
     const cb = conn.onClose;

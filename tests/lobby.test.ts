@@ -51,6 +51,22 @@ describe('Lobby (shared by the LAN server and online hosting)', () => {
     vi.useRealTimers();
   });
 
+  it('shows the connection’s own network round trip as the ping when it has one', () => {
+    vi.useFakeTimers();
+    const lobby = new Lobby();
+    const a = conn();
+    const b = Object.assign(conn(), { rtt: () => 12 });
+    lobby.connect(a);
+    lobby.connect(b);
+    a.say({ t: 'join', room: 'PING', name: 'Host', v: PROTOCOL_VERSION });
+    b.say({ t: 'join', room: 'PING', name: 'Guest', v: PROTOCOL_VERSION });
+    vi.advanceTimersByTime(200);
+    const st = b.got.filter((m) => m.t === 'state').at(-1) as Extract<ServerMsg, { t: 'state' }>;
+    expect(st.players.find((p) => p.i === 1)!.ping).toBe(12);
+    lobby.closeAll();
+    vi.useRealTimers();
+  });
+
   it('turns away an older game version', () => {
     const lobby = new Lobby();
     const a = conn();
