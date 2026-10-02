@@ -25,6 +25,9 @@ export interface MenuCallbacks {
   onSettingsChanged(): void;
   onUiSound(): void;
   onConnect(url: string, room: string, name: string): void;
+  /** Online over the internet: host a game in this window / join a friend's by its code. */
+  onHostOnline(name: string): void;
+  onJoinOnline(code: string, name: string): void;
   onLeaveOnline(): void;
   /** Opens the Marketplace (mods and resource packs). */
   onMarketplace(): void;
@@ -831,61 +834,72 @@ export class Menus {
     const root = h('div', { class: 'screen multiplayer' });
     const panel = h('div', { class: 'menu-panel' });
     panel.append(h('div', { class: 'screen-title' }, 'Multiplayer'));
+
+    const field = (parent: HTMLElement, label: string, value: string, placeholder: string, maxLength = 32) => {
+      const input = h('input', { class: 'mc-input', type: 'text', placeholder, maxlength: String(maxLength) });
+      input.value = value;
+      parent.append(h('label', { class: 'mp-field' }, h('span', {}, label), input));
+      return input;
+    };
+    const name = () => {
+      const n = this.nameInput.value.trim() || 'Player';
+      saveNetName(n);
+      return n;
+    };
+
+    // ---- over the internet (the host's game is the server; WebRTC straight between the two)
     panel.append(
       h(
         'div',
         { class: 'mp-intro' },
-        'Real 1v1 over your network. One of you runs the server, everyone connects to it — then share a room code.',
+        'Play a friend anywhere over the internet — different homes, different Wi-Fi. One of you hosts and reads out the code, the other types it in. Nothing to install or run.',
       ),
     );
-    // Opened by double-clicking game.html there is no server behind the page, so the address
-    // below defaults to this computer — which is wrong for everyone except the host.
+    this.nameInput = field(panel, 'Your name', loadNetName(), 'Steve', 16);
+    this.netRoomEl = h('div', { class: 'mp-room' });
+    this.netStatusEl = h('div', { class: 'mp-status' });
+    panel.append(this.netRoomEl, this.netStatusEl);
+    panel.append(this.button('Host online game', () => this.cb.onHostOnline(name()), 'big online'));
+    const code = h('input', { class: 'mc-input mp-code', type: 'text', placeholder: 'Friend\u2019s code', maxlength: '8', autocomplete: 'off', spellcheck: 'false' });
+    const join = () => this.cb.onJoinOnline(code.value, name());
+    code.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') join();
+    });
+    panel.append(h('div', { class: 'mp-join' }, code, this.button('Join', join, 'big')));
+    panel.append(h('div', { class: 'mp-hint' }, 'The host\u2019s kit (picked on the main menu) is the one you both play.'));
+
+    // ---- same network: the Node server (rooms, many players, browsers without the app)
+    const lan = h('details', { class: 'mp-lan' });
+    lan.append(h('summary', {}, 'Same network (LAN server)'));
     if (location.protocol !== 'http:' && location.protocol !== 'https:') {
-      panel.append(
-        h(
-          'div',
-          { class: 'mp-warn' },
-          'Not the host? Type the host\u2019s address in ',
-          h('b', {}, 'Server'),
-          ' (the one their server window prints, for example 192.168.1.23).',
-        ),
+      lan.append(
+        h('div', { class: 'mp-warn' }, 'Not the host? Type the host\u2019s address in ', h('b', {}, 'Server'), ' (the one their server window prints, for example 192.168.1.23).'),
       );
     }
-
-    const field = (label: string, value: string, placeholder: string, maxLength = 32) => {
-      const input = h('input', { class: 'mc-input', type: 'text', placeholder, maxlength: String(maxLength) });
-      input.value = value;
-      const wrap = h('label', { class: 'mp-field' }, h('span', {}, label), input);
-      panel.append(wrap);
-      return input;
-    };
-
-    panel.append(
-      h('div', { class: 'mp-hint' }, 'Hosting uses the kit you picked on the main menu (every kit works online); joining plays the host\u2019s kit.'),
-    );
-    this.nameInput = field('Your name', loadNetName(), 'Steve', 16);
-    this.roomInput = field('Room code', '', 'blank = create a new one', 8);
-    this.serverInput = field('Server', loadNetServer(), '192.168.1.23 (the host\u2019s address)', 120);
-    panel.append(
-      h('div', { class: 'mp-hint' }, 'Server = the host\u2019s machine. Joining someone else? Type their address, e.g. 192.168.1.23.'),
-    );
-
-    this.netStatusEl = h('div', { class: 'mp-status' });
-    this.netRoomEl = h('div', { class: 'mp-room' });
-    panel.append(this.netRoomEl, this.netStatusEl);
-
+    this.roomInput = field(lan, 'Room code', '', 'blank = create a new one', 8);
+    this.serverInput = field(lan, 'Server', loadNetServer(), '192.168.1.23 (the host\u2019s address)', 120);
     const go = (room: string) => {
-      const name = this.nameInput.value.trim() || 'Player';
       const server = this.serverInput.value.trim() || defaultServerUrl();
-      saveNetName(name);
       saveNetServer(server);
-      this.cb.onConnect(server, room, name);
+      this.cb.onConnect(server, room, name());
     };
-    panel.append(this.button('Host a new room', () => go(''), 'big'));
-    panel.append(this.button('Join room code', () => go(this.roomInput.value.trim()), 'big'));
+    lan.append(
+      h('div', { class: 'btn-row' }, this.button('Host a new room', () => go('')), this.button('Join room code', () => go(this.roomInput.value.trim()))),
+    );
     this.roomInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') go(this.roomInput.value.trim());
     });
+    lan.append(
+      h(
+        'div',
+        { class: 'mp-help' },
+        'Run the server (',
+        h('code', {}, 'npm run server'),
+        ', or the START launcher). Players type the address it prints in Server — or open that http:// address in a browser.',
+      ),
+    );
+    panel.append(lan);
+
     panel.append(
       h(
         'div',
@@ -894,24 +908,16 @@ export class Menus {
         this.button('Back', () => this.show('main')),
       ),
     );
-    panel.append(
-      h(
-        'div',
-        { class: 'mp-help' },
-        'To host: run the server (',
-        h('code', {}, 'npm run server'),
-        ', or the START launcher). Players type the address it prints in Server — or open that http:// address in a browser. Same network only.',
-      ),
-    );
     root.append(panel);
     return root;
   }
+
 
   setNetStatus(status: string, detail: string, room: string) {
     if (!this.netStatusEl) return;
     this.netStatusEl.textContent = detail;
     this.netStatusEl.className = `mp-status ${status}`;
-    this.netRoomEl.textContent = room ? `Room code: ${room}` : '';
+    this.netRoomEl.textContent = room ? `Game code: ${room}` : '';
     this.netRoomEl.style.display = room ? '' : 'none';
     if (room && this.roomInput && !this.roomInput.value) this.roomInput.value = room;
   }

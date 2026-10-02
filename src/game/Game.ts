@@ -51,6 +51,7 @@ import { Match } from './Match';
 import { Spectate, type SpecCam, type Watch } from './Spectate';
 import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
 import { ReplayWatch } from './ReplayWatch';
+import { JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT, OnlineHost, joinOnline, normalizeOnlineCode } from '../net/p2p';
 import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
 import type { ScoreLine } from './modes/GameMode';
 import { Bedwars } from './modes/Bedwars';
@@ -239,6 +240,8 @@ export class Game {
         this.sound.ui();
       },
       onConnect: (url, room, name) => this.startOnline(url, room, name),
+      onHostOnline: (name) => this.hostOnline(name),
+      onJoinOnline: (code, name) => this.joinOnline(code, name),
       onLeaveOnline: () => this.leaveOnline(),
       onMarketplace: () => this.openMarket(),
       installedMods: () => this.mods.installedCount,
@@ -885,8 +888,7 @@ export class Game {
     this.input.closeGuard = false;
     this.input.unlock();
     this.input.releaseShortcuts();
-    this.netMatch = null;
-    this.net.close();
+    this.leaveOnline(false);
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
     this.view.cameraMode = 'orbit';
@@ -900,8 +902,7 @@ export class Game {
   private startDuel(nextRound = false, drillId: string | null = null) {
     this.sound.unlock();
     this.inventory.hide();
-    this.netMatch = null;
-    this.net.close();
+    this.leaveOnline(false);
     const drillDef = drillId ? drillById(drillId) ?? null : null;
     this.lastDrill = drillDef ? drillDef.id : null;
     const kit = kitById(drillDef ? drillDef.kit : this.settings.kit);
@@ -989,8 +990,7 @@ export class Game {
   private startSpectate(kitId: KitId, a: DifficultyId, b: DifficultyId) {
     this.sound.unlock();
     this.inventory.hide();
-    this.netMatch = null;
-    this.net.close();
+    this.leaveOnline(false);
     this.series = null;
     this.spec = new Spectate(kitById(kitId), DIFFICULTIES[a], DIFFICULTIES[b]);
     this.match = this.spec.match;
@@ -1149,7 +1149,49 @@ export class Game {
     this.net.connect(url, room, name, offline ? 'sword' : this.settings.kit);
   }
 
+  /** Online over the internet: this game hosts, a friend joins with the code it shows. */
+  private hostOnline(name: string) {
+    this.sound.unlock();
+    this.leaveOnline(false);
+    const attempt = ++this.onlineAttempt;
+    this.menus.setNetStatus('connecting', 'Setting up your game…', '');
+    const kit = isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit;
+    OnlineHost.start().then(
+      (host) => {
+        // Cancelled (Disconnect, Back, another attempt) while it was being set up.
+        if (attempt !== this.onlineAttempt) {
+          host.destroy();
+          return;
+        }
+        this.onlineHost = host;
+        this.net.connectVia(host.localSocket(), host.code, name, kit, 'Starting…', 8000, 'Could not start the game you are hosting.');
+      },
+      (err: Error) => {
+        if (attempt === this.onlineAttempt) this.menus.setNetStatus('error', err.message, '');
+      },
+    );
+  }
+
+  private joinOnline(code: string, name: string) {
+    this.sound.unlock();
+    this.leaveOnline(false);
+    const c = normalizeOnlineCode(code);
+    if (!c) {
+      this.menus.setNetStatus('error', 'Type the code your friend sees on their screen.', '');
+      return;
+    }
+    this.net.connectVia(joinOnline(c), c, name, 'sword', `Connecting to game ${c}…`, JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT);
+  }
+
+  /** The online game this player hosts, or null. */
+  private onlineHost: OnlineHost | null = null;
+  /** Bumped on every connect/leave, so a slow host setup that was cancelled is thrown away. */
+  private onlineAttempt = 0;
+
   leaveOnline(toMenu = true) {
+    this.onlineAttempt++;
+    this.onlineHost?.destroy();
+    this.onlineHost = null;
     this.net.close();
     this.netMatch = null;
     this.lobbyNames = [];
@@ -1413,8 +1455,7 @@ export class Game {
   private watchReplay(data: ReplayData, fromList: boolean) {
     this.sound.unlock();
     this.inventory.hide();
-    this.netMatch = null;
-    this.net.close();
+    this.leaveOnline(false);
     this.series = null;
     this.drill = null;
     this.lastDrill = null;

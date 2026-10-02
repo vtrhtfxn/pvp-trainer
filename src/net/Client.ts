@@ -3,6 +3,24 @@ import { PROTOCOL_VERSION, type ClientMsg, type ServerMsg } from './protocol';
 
 export type NetStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error';
 
+/**
+ * What NetClient needs from a connection: the WebSocket API's subset it uses. A WebRTC data
+ * channel (online play, see p2p.ts) or an in-memory pipe (the host's own client) provide it too.
+ */
+export interface SocketLike {
+  readonly readyState: number;
+  send(text: string): void;
+  close(): void;
+  onopen: (() => void) | null;
+  onmessage: ((e: { data: unknown }) => void) | null;
+  onerror: (() => void) | null;
+  onclose: (() => void) | null;
+  /** Why it failed, when the transport knows better than "could not reach". */
+  failure?: string;
+}
+
+const OPEN = 1;
+
 export interface NetHandlers {
   onStatus(status: NetStatus, detail: string): void;
   onMessage(msg: ServerMsg): void;
@@ -10,7 +28,7 @@ export interface NetHandlers {
 
 /** Thin WebSocket wrapper: reconnect is deliberately manual — a dropped duel is over. */
 export class NetClient {
-  private ws: WebSocket | null = null;
+  private ws: SocketLike | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   status: NetStatus = 'idle';
   you = -1;
@@ -29,7 +47,7 @@ export class NetClient {
   }
 
   get connected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
+    return this.ws?.readyState === OPEN;
   }
 
   /** The kit of the room we are in (from the lobby / start messages). */
@@ -46,17 +64,31 @@ export class NetClient {
       this.setStatus('error', `"${url}" is not a valid address. It should look like ws://192.168.1.23:4180/ws`);
       return;
     }
+    this.attach(ws as unknown as SocketLike, room, name, kit, 8000, () => this.unreachable(url));
+  }
+
+  /**
+   * Plays over a connection made elsewhere (online play: a WebRTC data channel, or the host's
+   * in-memory pipe to the game it hosts).
+   */
+  connectVia(ws: SocketLike, room: string, name: string, kit: string, status: string, timeoutMs: number, unreachable: string) {
+    this.close();
+    this.setStatus('connecting', status);
+    this.attach(ws, room, name, kit, timeoutMs, () => unreachable);
+  }
+
+  private attach(ws: SocketLike, room: string, name: string, kit: string, timeoutMs: number, unreachable: () => string) {
     this.ws = ws;
     this.room = '';
     this.you = -1;
     // A wrong IP just hangs until the OS gives up, which looks like the game is broken.
     const timeout = setTimeout(() => {
       // Only for this attempt: a later connect or a Disconnect must not be kicked by it.
-      if (this.ws === ws && ws.readyState !== WebSocket.OPEN) {
-        this.setStatus('error', this.unreachable(url));
+      if (this.ws === ws && ws.readyState !== OPEN) {
+        this.setStatus('error', ws.failure ?? unreachable());
         this.close();
       }
-    }, 8000);
+    }, timeoutMs);
     this.connectTimer = timeout;
     const clearTimer = () => clearTimeout(timeout);
     ws.onopen = () => {
@@ -93,17 +125,20 @@ export class NetClient {
     };
     ws.onerror = () => {
       clearTimer();
-      if (this.status === 'connecting') this.setStatus('error', this.unreachable(url));
+      if (this.status === 'connecting') {
+        this.setStatus('error', ws.failure ?? unreachable());
+        this.close();
+      }
     };
     ws.onclose = () => {
       clearTimer();
-      if (this.status !== 'error') this.setStatus('closed', 'Disconnected from the server.');
+      if (this.status !== 'error') this.setStatus('closed', ws.failure ?? 'Disconnected from the server.');
       this.ws = null;
     };
   }
 
   send(msg: ClientMsg) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+    if (this.ws?.readyState === OPEN) this.ws.send(JSON.stringify(msg));
   }
 
   close() {

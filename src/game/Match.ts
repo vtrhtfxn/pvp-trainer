@@ -249,7 +249,8 @@ export class Match {
         // The crosshair picks whatever is nearest: an end crystal in front of the opponent
         // gets hit (and blows up) instead of them.
         if (hitNearerEntity(p, onScreen ?? rayDistanceToTarget(p, this.bot))) continue;
-        if (!mined && p.tickMining(true, true)) mined = true;
+        // The opponent on screen in front of a block is an attack, not a dig.
+        if (!mined && !(onScreen !== undefined && onScreen >= 0) && p.tickMining(true, true)) mined = true;
         else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot, onScreen);
       }
       this.queuedClicks.length = 0;
