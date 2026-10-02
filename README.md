@@ -509,6 +509,29 @@ version that no longer plays out the same ("drifted from the original"). Duels c
 (reach, attributes, /tick…) and online duels aren't recorded; `/weather`, `/time` and `/gamerule`
 are.
 
+### Coach
+
+**Coach** (on the results screen, and next to every saved replay) re-runs the duel's replay and
+looks at how you fought: every swing with its cooldown, crit and sprint, every miss, every hit you
+took and what you were doing when it landed. It shows your numbers (accuracy, full-charge hits,
+crits, sprint hits, jump resets, best combo) and the biggest things to fix:
+
+| Tip | When it shows |
+| --- | --- |
+| Spam clicks | 25%+ of your hits came before the attack cooldown refilled (weak, no crit, no sprint knockback) |
+| Close-range misses | 30%+ of your swings missed while the opponent was in reach |
+| Few crits | under 15% of your full hits were crits, with chances to jump first |
+| No W-tap | under 30% of your full hits had sprint knockback |
+| Trading | 40%+ of the hits you took came right after you landed one (no spacing) |
+| No jump resets | you jumped on under 20% of the hits you took on the ground |
+| Eating in reach | hit twice or more while eating |
+
+…and what went well (cooldown timing, crit rate, jump resets, long combos). Each tip has
+**Watch** buttons: the replay opens through your eyes three seconds before that moment, and `Esc`
+brings you back to the Coach. Tips point at the Trainer drill that practises the fix.
+`tests/coach.test.ts` checks a spam-clicker, a patient crit-jumper and a player eating next to the
+bot each get the right verdict.
+
 ### First to N and My Tiers
 
 **First to** (title screen, next to the tier picker) turns a duel into a series: you fight the same

@@ -8,6 +8,7 @@ import type { Sprite } from './sprites';
 import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
 import { MAX_FIRST_TO, TIER_POINTS, clampFirstTo, totalPoints, type MyTiers } from '../game/series';
 import type { ReplayData } from '../game/replay';
+import type { CoachReport } from '../game/coach';
 import logoUrl from '../assets/logo.png';
 import { DRILLS, DRILL_GROUPS, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 
@@ -37,6 +38,8 @@ export interface MenuCallbacks {
   myTiers(): MyTiers;
   /** Replays: watch, star (keep for good) or delete a saved duel. */
   onWatchReplay(r: ReplayData): void;
+  /** Match Coach for a saved replay. */
+  onCoachReplay(r: ReplayData): void;
   onStarReplay(id: string): void;
   onDeleteReplay(id: string): void;
 }
@@ -54,7 +57,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers' | 'replays';
+type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers' | 'replays' | 'coach';
 
 export interface ResultData {
   won: boolean;
@@ -140,6 +143,7 @@ export class Menus {
       kits: h('div', { class: 'screen kit-editor' }),
       subtiers: h('div', { class: 'screen subtiers' }),
       replays: h('div', { class: 'screen replays' }),
+      coach: h('div', { class: 'screen coach' }),
     };
     this.kitEditor = new KitEditor(this.screens.kits, customKits, {
       onUiSound: () => this.cb.onUiSound(),
@@ -1196,16 +1200,52 @@ export class Menus {
       const del = this.button('✕', () => this.cb.onDeleteReplay(r.id), 'replay-del');
       del.title = 'Delete';
       const watch = this.button('Watch', () => this.cb.onWatchReplay(r), 'replay-watch');
-      list.append(h('div', { class: 'replay-row' }, star, iconEl, result, h('div', { class: 'replay-info' }, vs, meta), watch, del));
+      const coach = this.button('Coach', () => this.cb.onCoachReplay(r), 'replay-coach');
+      coach.title = 'What to improve, from this duel';
+      list.append(h('div', { class: 'replay-row' }, star, iconEl, result, h('div', { class: 'replay-info' }, vs, meta), coach, watch, del));
     }
     panel.append(list);
     panel.append(this.button('Done', () => this.show('main'), 'big'));
     root.append(panel);
   }
 
+  // ------------------------------------------------------------------ coach
+
+  /** Match Coach: the duel's numbers and what to work on, each tip with moments to watch. */
+  showCoach(report: CoachReport, onWatch: (tick: number) => void, onBack: () => void) {
+    const root = this.screens.coach;
+    root.replaceChildren();
+    const panel = h('div', { class: 'menu-panel' });
+    panel.append(h('div', { class: 'screen-title' }, 'Coach'));
+    const stats = h('div', { class: 'coach-stats' });
+    for (const s of report.stats) stats.append(h('div', { class: 'coach-stat' }, h('b', {}, s.value), h('span', {}, s.label)));
+    panel.append(stats);
+    const list = h('div', { class: 'coach-tips' });
+    const problems = report.tips.filter((t) => !t.good);
+    const shown = [...problems.slice(0, 4), ...report.tips.filter((t) => t.good).slice(0, 2)];
+    for (const t of shown) {
+      const head = h('div', { class: 'coach-tip-title' }, h('span', { class: `coach-mark ${t.good ? 'good' : 'fix'}` }, t.good ? '✔' : '!'), t.title);
+      const tip = h('div', { class: `coach-tip ${t.good ? 'good' : 'fix'}` }, head, h('div', { class: 'coach-tip-detail' }, t.detail));
+      if (t.moments.length) {
+        const moments = h('div', { class: 'coach-moments' }, h('span', {}, 'Watch:'));
+        for (const k of t.moments) {
+          const secs = Math.max(0, Math.floor((k - 60) / 20));
+          moments.append(this.button(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, () => onWatch(k), 'coach-moment'));
+        }
+        tip.append(moments);
+      }
+      list.append(tip);
+    }
+    if (!shown.length) list.append(h('div', { class: 'replay-empty' }, 'Nothing to report.'));
+    panel.append(list);
+    panel.append(this.button('Back', onBack, 'big'));
+    root.append(panel);
+    this.show('coach');
+  }
+
   // ------------------------------------------------------------------ results
 
-  showResults(r: ResultData, onRematch: () => void, onReplay?: () => void) {
+  showResults(r: ResultData, onRematch: () => void, onReplay?: () => void, onCoach?: () => void) {
     const root = this.screens.results;
     root.replaceChildren();
     root.classList.toggle('won', r.won);
@@ -1264,7 +1304,10 @@ export class Menus {
     panel.append(table);
     panel.append(this.button(r.online ? 'Rematch (R) — both must agree' : 'Rematch (R)', onRematch, 'big'));
     if (onReplay) {
-      panel.append(h('div', { class: 'btn-row' }, this.button('Watch Replay', onReplay, 'replay-btn'), this.button('Title Screen', () => this.cb.onQuit())));
+      const row = h('div', { class: `btn-row${onCoach ? ' three' : ''}` });
+      if (onCoach) row.append(this.button('Coach', onCoach, 'coach-btn'));
+      row.append(this.button('Watch Replay', onReplay, 'replay-btn'), this.button('Title Screen', () => this.cb.onQuit()));
+      panel.append(row);
     } else panel.append(this.button('Title Screen', () => this.cb.onQuit()));
     root.append(panel);
     this.show('results');
