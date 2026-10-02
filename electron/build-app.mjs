@@ -79,7 +79,7 @@ const paths = await packager({
     /^\/New Folder With Items($|\/)/,
     /^\/[^/]+\.glb$/,
     /^\/(index\.html|vite\.config\.ts|vite\.server\.config\.ts|tsconfig\.json|package-lock\.json|README\.md)$/,
-    /^\/electron\/(make-icon|build-app)\.mjs$/,
+    /^\/electron\/build-app\.mjs$/,
   ],
   win32metadata: { ProductName: 'PvP Trainer', FileDescription: 'PvP Trainer', CompanyName: 'PvP Trainer' },
   extendInfo: {

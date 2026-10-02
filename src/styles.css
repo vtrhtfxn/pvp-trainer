@@ -153,21 +153,13 @@ body {
   line-height: 0.9;
   margin: 2px 0 8px;
 }
-.logo-top,
-.logo-bottom {
-  font-weight: 700;
-  letter-spacing: 4px;
-  color: #e6e6e6;
-  text-shadow:
-    4px 4px 0 #3a3a3a,
-    6px 6px 0 #1e1e1e;
-}
-.logo-top {
-  font-size: 30px;
-  color: #bfe3ff;
-}
-.logo-bottom {
-  font-size: 58px;
+.logo-img {
+  display: block;
+  margin: 0 auto;
+  width: 132px;
+  height: 132px;
+  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.55));
+  user-select: none;
 }
 .splash {
   position: absolute;
@@ -783,8 +775,9 @@ body {
   .settings-grid {
     grid-template-columns: 1fr;
   }
-  .logo-bottom {
-    font-size: 42px;
+  .logo-img {
+    width: 100px;
+    height: 100px;
   }
 }
 
@@ -2380,9 +2373,12 @@ body {
   }
   .main-menu .logo {
     margin: 0 0 2px;
-    transform: scale(0.8);
-    transform-origin: center top;
-    height: 70px;
+    transform: none;
+    height: 64px;
+  }
+  .main-menu .logo-img {
+    width: 64px;
+    height: 64px;
   }
   .main-menu .kit-card {
     padding: 5px 4px 4px;

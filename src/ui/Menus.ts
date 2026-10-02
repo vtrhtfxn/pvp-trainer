@@ -8,6 +8,7 @@ import type { Sprite } from './sprites';
 import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
 import { MAX_FIRST_TO, TIER_POINTS, clampFirstTo, totalPoints, type MyTiers } from '../game/series';
 import type { ReplayData } from '../game/replay';
+import logoUrl from '../assets/logo.png';
 import { DRILLS, DRILL_GROUPS, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 
 export interface MenuCallbacks {
@@ -202,8 +203,7 @@ export class Menus {
     const logo = h(
       'div',
       { class: 'logo' },
-      h('div', { class: 'logo-top' }, 'PVP'),
-      h('div', { class: 'logo-bottom' }, 'TRAINER'),
+      h('img', { class: 'logo-img', src: logoUrl, alt: 'PvP Trainer', draggable: 'false' }),
       h('div', { class: 'splash' }, 'Now with 1.8 PvP!'),
     );
     panel.append(logo);
