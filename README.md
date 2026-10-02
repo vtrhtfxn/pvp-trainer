@@ -183,6 +183,28 @@ until nothing overlaps. The **Resource Packs** tab shows the active pack; more a
 
 ## Multiplayer
 
+### Online — play a friend anywhere
+
+**Multiplayer → Host online game** shows a 5-character code (e.g. `Z3BM8`). Your friend opens
+**Multiplayer**, types the code next to **Join**, and you are in a duel. It works across different
+homes and networks, and nobody runs a server.
+
+How: the host's game *is* the server. It runs the same room/duel code as the LAN server
+(`src/server/lobby.ts`), and the friend's game connects to it directly over **WebRTC**
+(`src/net/p2p.ts`), the browser technology video calls use to get through home routers. A free
+public signalling service ([PeerJS](https://peerjs.com)'s cloud server) only introduces the two
+games by code; public STUN servers (Google, Cloudflare) help each side find its public address.
+After that the duel goes straight between the two computers, with nothing in between.
+
+Limits, honestly: a direct connection fails on some networks (strict school or office Wi-Fi,
+some mobile hotspots and carrier-NAT connections), with no relay server to fall back on. The game
+then says so; try the other person hosting, or another network. It also depends on the PeerJS
+cloud server being up. Both players need a build with online play (it fails with "Version
+mismatch" otherwise), and the host's game must stay open: closing it or pressing Disconnect ends
+the duel. Whoever hosts plays the kit picked on their main menu.
+
+### Same network (LAN server)
+
 Double-click **`Start Server.command`** in this folder, or:
 
 ```bash
@@ -256,8 +278,8 @@ The host plays too — hosting just means running the process; open `http://loca
 and join like anyone else.
 
 Everyone must be on the same network as the host. Different SSIDs, a phone hotspot or
-anything behind carrier NAT will not reach it; for that, put every machine on
-[Tailscale](https://tailscale.com) and use the host's Tailscale IP.
+anything behind carrier NAT will not reach it; for that, use **Host online game** (above), or put
+every machine on [Tailscale](https://tailscale.com) and use the host's Tailscale IP.
 
 Because movement is trusted, a modified client could move in ways it shouldn't — it's a
 play-with-friends server, not a hardened one.

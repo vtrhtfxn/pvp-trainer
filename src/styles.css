@@ -804,6 +804,32 @@ body {
 .mc-btn.online {
   color: var(--aqua);
 }
+.mp-join {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+.mp-code {
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  font-size: 18px;
+  text-align: center;
+}
+.mp-lan {
+  margin: 10px 0;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #000;
+}
+.mp-lan > summary {
+  cursor: pointer;
+  color: #c6c6c6;
+  padding: 2px 0;
+}
+.mp-lan[open] > summary {
+  margin-bottom: 8px;
+}
 .mp-intro {
   font-size: 14px;
   color: #cfcfcf;
