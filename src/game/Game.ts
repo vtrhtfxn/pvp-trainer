@@ -1185,6 +1185,28 @@ export class Game {
     this.net.connectVia(joinOnline(c), c, name, 'sword', `Connecting to game ${c}…`, JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT);
   }
 
+  /** Whether the chat already said how this online game is connected. */
+  private routeAnnounced = -1;
+
+  /**
+   * Says once per connection whether the game goes straight to the friend or through the relay
+   * (WebRTC knows a moment after connecting). LAN games never report a route, so stay quiet.
+   */
+  private announceRoute(attempt: number, tries = 0) {
+    if (attempt !== this.onlineAttempt || this.routeAnnounced === attempt) return;
+    const route = this.net.route;
+    if (!route) {
+      if (tries < 20) setTimeout(() => this.announceRoute(attempt, tries + 1), 500);
+      return;
+    }
+    this.routeAnnounced = attempt;
+    this.chat.print(
+      route === 'relay'
+        ? [{ t: 'Connected through the relay server — your networks block a direct connection, so expect a little more ping.', c: COLOR.yellow }]
+        : [{ t: 'Connected directly to your opponent.', c: COLOR.green }],
+    );
+  }
+
   /** The online game this player hosts, or null. */
   private onlineHost: OnlineHost | null = null;
   /** Bumped on every connect/leave, so a slow host setup that was cancelled is thrown away. */
@@ -1272,6 +1294,7 @@ export class Game {
   }
 
   private beginOnlineRound() {
+    this.announceRoute(this.onlineAttempt);
     this.view.firstPerson.reset();
     this.view.particles.clear();
     this.hud.resetRound(this.match.player);

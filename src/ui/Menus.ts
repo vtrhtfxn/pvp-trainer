@@ -11,6 +11,8 @@ import type { ReplayData } from '../game/replay';
 import type { CoachReport } from '../game/coach';
 import logoUrl from '../assets/logo.png';
 import { DRILLS, DRILL_GROUPS, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
+import { loadRelay, parseRelayUrls, saveRelay } from '../net/relay';
+import { BEGINNER_STEPS, beginnerHidden, beginnerProgress, setBeginnerHidden, stepDone, type BeginnerStep } from './beginner';
 
 export interface MenuCallbacks {
   onStart(): void;
@@ -104,6 +106,7 @@ export class Menus {
   private readonly screens: Record<ScreenName, HTMLDivElement>;
   private settingsReturn: 'main' | 'pause' = 'main';
   private recordEl!: HTMLDivElement;
+  private pathEl!: HTMLDivElement;
   private readonly settingsRepaint: (() => void)[] = [];
   private netStatusEl!: HTMLDivElement;
   private netRoomEl!: HTMLDivElement;
@@ -219,6 +222,10 @@ export class Menus {
       h('div', { class: 'splash' }, 'Now with 1.8 PvP!'),
     );
     head.append(logo);
+    // New players get a short path through the drills that matter (until finished or hidden),
+    // right under the logo so it is the first thing they see on any window size.
+    this.pathEl = h('div', { class: 'mm-path' });
+    head.append(this.pathEl);
 
     setup.append(h('div', { class: 'section-title' }, 'Game mode'));
     const grid = h('div', { class: 'kit-grid' });
@@ -309,15 +316,20 @@ export class Menus {
     );
 
     actions.append(this.button('Start Duel', () => this.cb.onStart(), 'big start-btn'));
+    // The rest in two labelled groups — getting better, and other ways to play — then the extras.
+    const group = (label: string, ...btns: HTMLElement[]) =>
+      h('div', { class: 'mm-group' }, h('span', { class: 'mm-group-label' }, label), h('div', { class: `btn-row n${btns.length}` }, ...btns));
     actions.append(
-      h(
-        'div',
-        { class: 'btn-row five' },
+      group(
+        'Improve',
         this.button('Trainer', () => this.show('trainer'), 'trainer-btn'),
-        this.button('Subtiers', () => this.show('subtiers'), 'subtier-btn'),
-        this.button('Bot vs Bot', () => this.show('versus')),
-        this.button('Replays', () => this.show('replays'), 'replay-btn'),
+        this.button('Replays & Coach', () => this.show('replays'), 'replay-btn'),
+      ),
+      group(
+        'Play',
         this.button('Multiplayer', () => this.show('multiplayer'), 'online'),
+        this.button('Bot vs Bot', () => this.show('versus')),
+        this.button('Subtiers', () => this.show('subtiers'), 'subtier-btn'),
       ),
     );
     const market = this.button('Marketplace', () => {
@@ -328,7 +340,7 @@ export class Menus {
     actions.append(
       h(
         'div',
-        { class: 'btn-row four' },
+        { class: 'btn-row four mm-extras' },
         this.button('Settings', () => this.openSettings('main')),
         this.button('Controls', () => this.show('controls')),
         this.button('My Tiers', () => this.show('tiers')),
@@ -407,6 +419,66 @@ export class Menus {
     this.recordEl.textContent = r
       ? `Record vs ${d.name}: ${r.wins}W – ${r.losses}L · best combo ${r.bestCombo}`
       : `No duels vs ${d.name} yet`;
+    this.renderPath();
+  }
+
+  /** Runs a beginner step: its drill, or a sword duel against its tier. */
+  private runStep(s: BeginnerStep) {
+    if (s.drill) {
+      this.cb.onDrill(s.drill);
+      return;
+    }
+    if (!s.duel) return;
+    this.settings.kit = 'sword';
+    this.settings.difficulty = s.duel.tier;
+    saveSettings(this.settings);
+    this.cb.onStart();
+  }
+
+  /** The Getting started card on the title screen. */
+  private renderPath() {
+    const el = this.pathEl;
+    el.replaceChildren();
+    if (beginnerHidden()) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+    const drills = this.cb.drillProgress();
+    const { done, next } = beginnerProgress(drills, this.records);
+    const hide = () => {
+      setBeginnerHidden(true);
+      this.renderPath();
+    };
+    const dots = h('div', { class: 'mm-path-dots' });
+    BEGINNER_STEPS.forEach((s) => {
+      const dot = h('span', { class: stepDone(s, drills, this.records) ? 'done' : s === next ? 'next' : '' });
+      dot.title = s.title;
+      dots.append(dot);
+    });
+    if (!next) {
+      el.append(
+        h('div', { class: 'mm-path-head' }, h('span', { class: 'mm-path-title' }, 'Basics done!'), dots),
+        h('div', { class: 'mm-path-blurb' }, 'Next: the rest of the Trainer, the Match Coach after a duel (Replays & Coach), and climbing the tiers.'),
+        h('div', { class: 'btn-row n2' }, this.button('Open Trainer', () => this.show('trainer'), 'trainer-btn'), this.button('Close', hide)),
+      );
+      return;
+    }
+    el.append(
+      h(
+        'div',
+        { class: 'mm-path-head' },
+        h('span', { class: 'mm-path-title' }, done ? 'Keep going' : 'New here? Start with the basics'),
+        dots,
+      ),
+      h('div', { class: 'mm-path-step' }, h('b', {}, `Step ${done + 1} of ${BEGINNER_STEPS.length}: ${next.title}`), ' — ', next.blurb),
+      h(
+        'div',
+        { class: 'mm-path-actions' },
+        this.button(next.drill ? 'Start drill' : 'Start duel', () => this.runStep(next), 'path-go'),
+        this.button('Hide', hide, 'path-hide'),
+      ),
+    );
   }
 
   // ------------------------------------------------------------------ pause
@@ -879,6 +951,7 @@ export class Menus {
     });
     panel.append(h('div', { class: 'mp-join' }, code, this.button('Join', join, 'big')));
     panel.append(h('div', { class: 'mp-hint' }, 'The host\u2019s kit (picked on the main menu) is the one you both play.'));
+    panel.append(this.buildRelay(field));
 
     // ---- same network: the Node server (rooms, many players, browsers without the app)
     const lan = h('details', { class: 'mp-lan' });
@@ -925,6 +998,48 @@ export class Menus {
   }
 
 
+  /**
+   * Online games that cannot connect directly (strict school/office Wi-Fi, carrier NAT on both
+   * sides) go through a relay. A free public one is built in; a player can add their own here.
+   */
+  private buildRelay(field: (parent: HTMLElement, label: string, value: string, placeholder: string, maxLength?: number) => HTMLInputElement) {
+    const box = h('details', { class: 'mp-lan mp-relay' });
+    box.append(h('summary', {}, 'Relay server (if you cannot connect)'));
+    box.append(
+      h(
+        'div',
+        { class: 'mp-help' },
+        'Most games connect straight between you and your friend. When a network blocks that, the game goes through a free public relay automatically (a little more ping). If that relay is busy or blocked too, add your own TURN server — for example a free Metered or Cloudflare account. Only the player who adds it needs it.',
+      ),
+    );
+    const own = loadRelay();
+    const urls = field(box, 'TURN URL', own?.urls ?? '', 'turn:relay.example.com:3478', 300);
+    const user = field(box, 'Username', own?.username ?? '', 'from your TURN provider', 200);
+    const pass = field(box, 'Password', own?.credential ?? '', 'from your TURN provider', 200);
+    pass.type = 'password';
+    const note = h('div', { class: 'mp-status' });
+    const show = (msg: string, kind: string) => {
+      note.textContent = msg;
+      note.className = `mp-status ${kind}`;
+    };
+    const save = () => {
+      const text = urls.value.trim();
+      if (text && !parseRelayUrls(text).length) {
+        show('A TURN URL starts with turn: or turns: — for example turn:relay.example.com:3478', 'error');
+        return;
+      }
+      const used = saveRelay(text ? { urls: text, username: user.value.trim(), credential: pass.value } : null);
+      show(used ? 'Saved. Your relay is tried next to the free one from the next game on.' : 'Using the free public relay only.', 'lobby');
+    };
+    const clear = () => {
+      urls.value = user.value = pass.value = '';
+      save();
+    };
+    box.append(h('div', { class: 'btn-row' }, this.button('Save relay', save), this.button('Remove', clear)), note);
+    show(own ? 'Using your relay and the free public one.' : 'Using the free public relay.', 'lobby');
+    return box;
+  }
+
   setNetStatus(status: string, detail: string, room: string) {
     if (!this.netStatusEl) return;
     this.netStatusEl.textContent = detail;
@@ -937,11 +1052,17 @@ export class Menus {
   // ------------------------------------------------------------------ Trainer
 
   private trainerPick = DRILLS[0].id;
+  /** Until the player picks a drill, the Trainer opens on the next Getting started one. */
+  private trainerPicked = false;
 
   private renderTrainer() {
     const root = this.screens.trainer;
     root.replaceChildren();
     const progress = this.cb.drillProgress();
+    if (!this.trainerPicked) {
+      const starter = BEGINNER_STEPS.find((s) => s.drill && !progress[s.drill]?.passed)?.drill;
+      if (starter) this.trainerPick = starter;
+    }
     const panel = h('div', { class: 'menu-panel trainer-panel' });
     const passed = DRILLS.filter((d) => progress[d.id]?.passed).length;
     panel.append(h('div', { class: 'screen-title' }, 'Trainer'));
@@ -956,15 +1077,27 @@ export class Menus {
         const best = progress[d.id];
         const b = this.button('', () => {
           this.trainerPick = d.id;
+          this.trainerPicked = true;
           this.renderTrainer();
         }, `trainer-drill${this.trainerPick === d.id ? ' selected' : ''}`);
-        b.replaceChildren(h('span', {}, d.name), h('span', { class: best?.passed ? 'done' : '' }, best?.passed ? '✔' : '★'.repeat(d.level)));
+        const starter = BEGINNER_STEPS.some((s) => s.drill === d.id);
+        b.replaceChildren(
+          h('span', {}, d.name, ...(starter && !best?.passed ? [h('span', { class: 'starter-tag' }, 'Start here')] : [])),
+          h('span', { class: best?.passed ? 'done' : '' }, best?.passed ? '✔' : '★'.repeat(d.level)),
+        );
         list.append(b);
       }
     }
     cols.append(list, this.drillDetail(DRILLS.find((d) => d.id === this.trainerPick) ?? DRILLS[0], progress));
     panel.append(cols);
-    panel.append(this.button('Back', () => this.show('main')));
+    const back = this.button('Back', () => this.show('main'));
+    if (beginnerHidden()) {
+      const again = this.button('Show Getting started', () => {
+        setBeginnerHidden(false);
+        this.show('main');
+      });
+      panel.append(h('div', { class: 'btn-row n2' }, again, back));
+    } else panel.append(back);
     root.append(panel);
   }
 
