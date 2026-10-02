@@ -1748,7 +1748,7 @@ body {
 }
 .replay-row {
   display: grid;
-  grid-template-columns: 34px 24px 44px 1fr 74px 34px;
+  grid-template-columns: 34px 24px 44px 1fr 74px 74px 34px;
   gap: 8px;
   align-items: center;
   padding: 4px 8px;
@@ -1793,6 +1793,84 @@ body {
   display: grid;
   min-width: 0;
   line-height: 1.2;
+}
+
+/* ---- Coach */
+.coach-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.coach-stat {
+  display: grid;
+  text-align: center;
+  padding: 6px 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid #000;
+}
+.coach-stat b {
+  font-size: 20px;
+  color: #ffff55;
+}
+.coach-stat span {
+  font-size: 12px;
+  color: #aaa;
+}
+.coach-tips {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.coach-tip {
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid #000;
+  border-left: 4px solid #ff5555;
+}
+.coach-tip.good {
+  border-left-color: #55ff55;
+}
+.coach-tip-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.coach-mark {
+  display: inline-block;
+  width: 18px;
+  margin-right: 6px;
+  text-align: center;
+}
+.coach-mark.fix {
+  color: #ff5555;
+}
+.coach-mark.good {
+  color: #55ff55;
+}
+.coach-tip-detail {
+  font-size: 13px;
+  color: #ccc;
+  line-height: 1.35;
+}
+.coach-moments {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #aaa;
+}
+.coach-moments .mc-btn {
+  width: auto;
+  padding: 2px 10px;
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .coach-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 /* ---- My Tiers */

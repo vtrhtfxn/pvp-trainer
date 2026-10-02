@@ -51,6 +51,7 @@ import { Match } from './Match';
 import { Spectate, type SpecCam, type Watch } from './Spectate';
 import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
 import { ReplayWatch } from './ReplayWatch';
+import { analyze } from './coach';
 import { JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT, OnlineHost, joinOnline, normalizeOnlineCode } from '../net/p2p';
 import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
 import type { ScoreLine } from './modes/GameMode';
@@ -77,8 +78,8 @@ export class Game {
   private spec: Watch | null = null;
   /** Saved replays, newest first. */
   private replays: ReplayData[] = loadReplays();
-  /** The replay being watched came from the Replays screen (Esc goes back there). */
-  private replayFromList = false;
+  /** Where Esc goes from a replay (the Replays list or the Coach), or null for the title screen. */
+  private replayBack: (() => void) | null = null;
   private readonly specHud: SpectatorHud;
   /** Trainer: the drill being played (and the last one, for Try again). */
   private drill: DrillRun | null = null;
@@ -223,7 +224,8 @@ export class Game {
     this.menus = new Menus(uiRoot, settings, this.records, kitIcons, {
       onStart: () => this.startDuel(),
       onSpectate: (kit, a, b) => this.startSpectate(kit, a, b),
-      onWatchReplay: (r) => this.watchReplay(r, true),
+      onWatchReplay: (r) => this.watchReplay(r, () => this.menus.show('replays')),
+      onCoachReplay: (r) => this.openCoach(r, () => this.menus.show('replays')),
       onStarReplay: (id) => this.starReplay(id),
       onDeleteReplay: (id) => this.deleteReplay(id),
       onDrill: (id) => this.startDrill(id),
@@ -1050,9 +1052,9 @@ export class Game {
         this.acc = 0;
       }
     } else if (e.code === 'Escape') {
-      const back = this.spec instanceof ReplayWatch && this.replayFromList;
+      const back = this.spec instanceof ReplayWatch ? this.replayBack : null;
       this.toMenu();
-      if (back) this.menus.show('replays');
+      back?.();
     } else if (e.code === 'Space' || e.code.startsWith('Arrow')) {
       // Space flies up in the free camera; the arrow keys belong to the page otherwise.
       e.preventDefault();
@@ -1401,7 +1403,8 @@ export class Game {
         tierBlocked: outcome === 'you' && series.modified && m.profile.id !== 'practice',
       },
       () => this.startDuel(),
-      this.lastReplay ? () => this.watchReplay(this.lastReplay!, false) : undefined,
+      this.lastReplay ? () => this.watchReplay(this.lastReplay!, null) : undefined,
+      this.lastReplay ? () => this.openCoach(this.lastReplay!, () => this.menus.show('results')) : undefined,
     );
   }
 
@@ -1452,7 +1455,15 @@ export class Game {
     this.menus.setReplays(this.replays);
   }
 
-  private watchReplay(data: ReplayData, fromList: boolean) {
+  /** Match Coach: analyses a replay; each tip's moments open the replay just before them. */
+  private openCoach(data: ReplayData, back: () => void) {
+    this.sound.unlock();
+    const report = analyze(data);
+    this.menus.showCoach(report, (tick) => this.watchReplay(data, () => this.openCoach(data, back), tick), back);
+  }
+
+  /** `at`: start a few seconds before this tick (a Coach moment) instead of the countdown. */
+  private watchReplay(data: ReplayData, back: (() => void) | null, at?: number) {
     this.sound.unlock();
     this.inventory.hide();
     this.leaveOnline(false);
@@ -1463,8 +1474,12 @@ export class Game {
     this.scoreboard.hide();
     this.closeModeScreens();
     this.hud.setVisible(false);
-    this.replayFromList = fromList;
+    this.replayBack = back;
     const w = new ReplayWatch(data);
+    if (at !== undefined) {
+      w.seek(Math.max(w.start, at - 60));
+      w.cam = 'povA';
+    }
     this.spec = w;
     this.match = w.match;
     this.state = 'spectating';
