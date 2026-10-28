@@ -4,6 +4,7 @@ import sweepUrl from '../assets/sounds/sweep.ogg?url';
 import totemUrl from '../assets/sounds/totem.ogg?url';
 import smashUrl from '../assets/sounds/smash.ogg?url';
 import explodeUrl from '../assets/sounds/explode.ogg?url';
+import lungeUrl from '../assets/sounds/lunge.ogg?url';
 
 /**
  * Small WebAudio synth for combat feedback, plus recorded samples for crits, knockback hits,
@@ -11,7 +12,7 @@ import explodeUrl from '../assets/sounds/explode.ogg?url';
  * or if the browser can't decode Ogg).
  */
 
-type SampleName = 'crit' | 'knockback' | 'sweep' | 'totem' | 'smash' | 'explode';
+type SampleName = 'crit' | 'knockback' | 'sweep' | 'totem' | 'smash' | 'explode' | 'lunge';
 
 export interface Listener {
   x: number;
@@ -91,6 +92,7 @@ export class Sound {
       ['totem', totemUrl],
       ['smash', smashUrl],
       ['explode', explodeUrl],
+      ['lunge', lungeUrl],
     ] as const;
     for (const [name, url] of list) {
       fetch(url)
@@ -536,6 +538,14 @@ export class Sound {
       const at = t + 0.35 + Math.random() * 0.8;
       this.noiseBurst(d, at, 0.04, 'highpass', 4000 + Math.random() * 3000, 2500, 1, 0.25);
     }
+  }
+
+  /** item.spear.lunge: the recorded whoosh (a synth swish until it is loaded). */
+  lunge(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    if (this.sample('lunge', d, 0.9)) return;
+    this.noiseBurst(d, this.ctx!.currentTime, 0.3, 'bandpass', 600, 2200, 1.2, 0.6);
   }
 
   /** A low growl that rises and falls: the Dragon's Breath finisher. */

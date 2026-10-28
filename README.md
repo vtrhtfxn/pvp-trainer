@@ -981,6 +981,6 @@ HUD sprites in `src/assets/pack/`; team leather armor is dyed the vanilla way) �
 for private practice; Mojang's terms don't allow redistributing their assets.
 The UI font is Minecraft's own, built from the pack's glyph sheets by `scripts/build-font.py`.
 Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005.
-Sounds: crits, knockback, sweeps, the totem pop, the mace smash and explosions are Minecraft's own
+Sounds: crits, knockback, sweeps, the totem pop, the mace smash, explosions and the spear lunge are Minecraft's own
 sound effects (`src/assets/sounds/`, trimmed and converted to mono Ogg) — © Mojang; the rest are
 synthesised in `src/audio/Sound.ts`. Not affiliated with Mojang or Microsoft.

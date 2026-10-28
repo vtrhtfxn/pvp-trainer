@@ -2327,8 +2327,7 @@ export class Game {
           this.sound.equipArmor(f.pos, e.id === 'elytra');
           break;
         case 'lunge':
-          this.sound.swing(f.pos);
-          this.sound.windBurst(f.pos, 0.6);
+          this.sound.lunge(f.pos);
           break;
         case 'spearCharge':
           this.sound.hit('knockback', e.target.pos);
