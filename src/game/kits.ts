@@ -394,7 +394,8 @@ function diamondSmpLoadout(): Loadout {
 
 /**
  * The Cart subtier, laid out as in the reference inventory: sword, axe, gapples, webs, a TNT
- * minecart, the Flame bow, pearls and rails in the hotbar; totems, eight more carts, two red
+ * minecart, the Flame bow, a crossbow (shot through fire for a burning bolt), pearls and rails
+ * in the hotbar; totems, eight more carts, two red
  * shulker boxes full of carts, Strength, Speed, arrows, flint and steel and more gapples in the
  * inventory; a totem in the off hand.
  */
@@ -417,7 +418,7 @@ function cartLoadout(): Loadout {
     { id: 'cobweb', count: 64 },
     cart(),
     { id: 'bow', count: 1, ench: { power: 5, flame: 1, unbreaking: 3 } },
-    null,
+    { id: 'crossbow', count: 1, ench: { quickCharge: 3, ...keep } },
     { id: 'ender_pearl', count: 16 },
     { id: 'rail', count: 64 },
   ];
@@ -635,7 +636,7 @@ export const KITS: KitDef[] = [
     summary: 'TNT minecart PvP: rail, cart, then a Flame arrow into it — or fire and a cold arrow through it.',
     contents: [
       'Netherite Armor — Prot IV, Unbreaking III, Mending',
-      'Netherite Sword & Axe — Sharp V · Bow — Power V, Flame · 64× Arrow',
+      'Netherite Sword & Axe — Sharp V · Bow — Power V, Flame · Crossbow — Quick Charge III · 64× Arrow',
       '9× Minecart with TNT + 2 Red Shulker Boxes with 27 more each (63 carts) · 64× Rail',
       'Flint and Steel · 64× Cobweb',
       '8× Totem (one in the off hand) · 183× Golden Apple · 16× Ender Pearl',

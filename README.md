@@ -374,7 +374,7 @@ Sources for rules and prices: [Hypixel Wiki — Bed Wars](https://hypixel.fandom
 
 | Subtier | Kit |
 | --- | --- |
-| **Cart** | Netherite armor (Prot IV, Unbreaking III, Mending), Netherite Sword and Axe (Sharp V), Bow (Power V, Flame), 64 arrows, 9 minecarts with TNT plus 2 red shulker boxes holding 27 more each (63 carts), 64 rails, flint and steel, 64 cobwebs, 8 totems (one in the off hand), 183 golden apples, 16 ender pearls, 5× Strength II and 1× Speed II splash · diggable ground |
+| **Cart** | Netherite armor (Prot IV, Unbreaking III, Mending), Netherite Sword and Axe (Sharp V), Bow (Power V, Flame), Crossbow (Quick Charge III, Unbreaking III, Mending), 64 arrows, 9 minecarts with TNT plus 2 red shulker boxes holding 27 more each (63 carts), 64 rails, flint and steel, 64 cobwebs, 8 totems (one in the off hand), 183 golden apples, 16 ender pearls, 5× Strength II and 1× Speed II splash · diggable ground |
 | **Diamond SMP** | Diamond Sword (Sharp V, Fire Aspect II, Unbreaking III), Diamond Axe (Sharp V, Unbreaking III), Shield (Unbreaking III, Mending), Diamond armor (Prot IV, Unbreaking III, Mending; boots Feather Falling IV + Depth Strider III, leggings Swift Sneak III), 128 golden apples, Netherite Pickaxe (Silk Touch, Efficiency V, Unbreaking III, Mending), 64 oak logs, 48 cobwebs, 4 water buckets, 64 XP bottles, 12 ender pearls, 3 chorus fruit, 1 totem, 15× Strength II, 3× Speed I (8:00) and 3× Fire Resistance (8:00) splash |
 
 What's new for them:
@@ -384,8 +384,10 @@ What's new for them:
   4 + random × 1.5 × min(5, arrow speed) — a full-draw Flame arrow makes a blast of up to 8.5. A blast
   or fire lights it with a short fuse (0–38 ticks, so carts chain), a fall of 3+ blocks sets it off,
   and a plain hit (sword, cold arrow) on a cart at rest just breaks it.
-- **Flame** bows shoot burning arrows; an arrow **shot through fire** catches too (and water puts it
-  out). Burning arrows set players alight for 5 s.
+- **Flame** bows shoot burning arrows; an arrow or crossbow bolt **shot through fire** (or lava)
+  catches too — anywhere along its flight, even a 1-block fire right in front of a cart that a fast
+  bolt crosses in the same tick it hits — and water puts it out. Burning arrows set players alight
+  for 5 s.
 - **Red shulker boxes** hold 27 Minecarts with TNT each. Place one and right-click it to take the carts
   (they fill your empty slots, hotbar first); break it and it drops with whatever is still inside.
   The kit editor has a "TNT carts inside" field for them.
@@ -914,4 +916,7 @@ Textures: the official **Minecraft default** resource pack (items, armor, shield
 HUD sprites in `src/assets/pack/`; team leather armor is dyed the vanilla way) — © Mojang, used here
 for private practice; Mojang's terms don't allow redistributing their assets.
 The UI font is Minecraft's own, built from the pack's glyph sheets by `scripts/build-font.py`.
-Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005. Not affiliated with Mojang or Microsoft.
+Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005.
+Sounds: crits, knockback, sweeps, the totem pop, the mace smash and explosions are Minecraft's own
+sound effects (`src/assets/sounds/`, trimmed and converted to mono Ogg) — © Mojang; the rest are
+synthesised in `src/audio/Sound.ts`. Not affiliated with Mojang or Microsoft.

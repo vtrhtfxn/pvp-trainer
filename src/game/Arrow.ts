@@ -161,6 +161,10 @@ export class Arrow {
         }
       }
     }
+    // Through fire (or lava) it catches, anywhere along this tick's flight: a crossbow bolt
+    // covers ~3 blocks a tick, so checking only where it ends up would skip a 1-block fire — and
+    // an arrow shot through fire into a cart must already be burning when it reaches the cart.
+    if (speed > 1e-6 && world.blocks.count && this.passesFire(world, travel)) this.fireTicks = Math.max(this.fireTicks, 100);
     if (cart) {
       this.pos.set(this.pos.x + v.x * travel, this.pos.y + v.y * travel, this.pos.z + v.z * travel);
       this.removed = true;
@@ -182,16 +186,39 @@ export class Arrow {
       return;
     }
     this.pos.set(this.pos.x + v.x, this.pos.y + v.y, this.pos.z + v.z);
-    // Through fire (or lava) it catches; through water it goes out.
+    // In water it goes out; otherwise it burns down (fire along the way was handled above).
     const cell = world.blocks.count ? world.blocks.get(Math.floor(this.pos.x), Math.floor(this.pos.y), Math.floor(this.pos.z)) : B.AIR;
-    if (cell === B.FIRE || cell === B.LAVA) this.fireTicks = Math.max(this.fireTicks, 100);
-    else if (cell === B.WATER) this.fireTicks = 0;
-    else if (this.fireTicks > 0) this.fireTicks--;
+    if (cell === B.WATER) this.fireTicks = 0;
+    else if (this.fireTicks > 0 && cell !== B.FIRE && cell !== B.LAVA) this.fireTicks--;
     v.x *= C.ARROW_DRAG;
     v.y *= C.ARROW_DRAG;
     v.z *= C.ARROW_DRAG;
     v.y -= C.ARROW_GRAVITY;
     this.updateRotation();
+  }
+
+  /** Whether this tick's flight (the first `travel` of it) passes through a fire or lava cell. */
+  private passesFire(world: World, travel: number): boolean {
+    const v = this.vel;
+    const len = Math.hypot(v.x, v.y, v.z) * travel;
+    // Steps of at most a quarter block, ends included: no cell on the way is skipped.
+    const n = Math.max(1, Math.ceil(len / 0.25));
+    let lx = NaN;
+    let ly = NaN;
+    let lz = NaN;
+    for (let i = 0; i <= n; i++) {
+      const f = (travel * i) / n;
+      const x = Math.floor(this.pos.x + v.x * f);
+      const y = Math.floor(this.pos.y + v.y * f);
+      const z = Math.floor(this.pos.z + v.z * f);
+      if (x === lx && y === ly && z === lz) continue;
+      lx = x;
+      ly = y;
+      lz = z;
+      const id = world.blocks.get(x, y, z);
+      if (id === B.FIRE || id === B.LAVA) return true;
+    }
+    return false;
   }
 
   private hitEntity(target: Fighter, speed: number, world: World) {

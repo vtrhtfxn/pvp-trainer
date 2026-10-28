@@ -16,6 +16,18 @@ export function itemTextureName(s: Pick<ItemStack, 'id' | 'charged' | 'potion'>)
   return `item/${s.id}`;
 }
 
+/**
+ * Builds every texture made at runtime (one per potion for splash potions, bottles and tipped
+ * arrows; the ender chest face), so the pixel read-back at startup covers them too.
+ */
+export function registerAllItemTextures() {
+  for (const id of Object.keys(ITEMS) as ItemStack['id'][]) {
+    if (id === 'splash_potion' || id === 'tipped_arrow' || id === 'potion') {
+      for (const potion of Object.keys(POTIONS) as PotionId[]) itemTextureName({ id, potion });
+    } else itemTextureName({ id });
+  }
+}
+
 /** Block items drawn as a little isometric cube (the vanilla GUI block model). */
 export function isCubeItem(id: string): boolean {
   return id === 'oak_planks' || id === 'oak_log' || id === 'red_shulker_box' || id === 'red_wool' || id === 'blue_wool' || id === 'end_stone' || id === 'tnt' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';

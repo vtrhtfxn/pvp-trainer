@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { preloadPixels } from './pack';
+import { registerAllItemTextures } from './itemIcons';
 import { lerp } from '../core/math';
 import { LookSmoother } from './lookSmooth';
 import { rayDistanceToTarget } from '../game/combat';
@@ -291,6 +293,8 @@ export class SceneRenderer {
    * stall a frame — worst on Windows, where ANGLE translates each shader to Direct3D.
    */
   prewarm() {
+    registerAllItemTextures();
+    preloadPixels();
     const shown: THREE.Object3D[] = [];
     const reveal = (root: THREE.Object3D) =>
       root.traverse((o) => {
@@ -301,13 +305,76 @@ export class SceneRenderer {
       });
     reveal(this.scene);
     reveal(this.firstPerson.scene);
+    // Effects that only build their meshes when they first happen (a crystal, fire, a cart, a
+    // thrown pearl, a placed rail…) aren't in the scene yet: stand-ins with their materials are.
+    const standIns = this.standIns();
+    this.scene.add(standIns);
+    // A transparent double-sided material is drawn in two passes, back faces then front faces,
+    // each its own program: compile it once as each.
+    const twoPass: THREE.Material[] = [];
+    standIns.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (m && m.transparent && m.side === THREE.DoubleSide && !m.forceSinglePass) twoPass.push(m);
+    });
     try {
       this.renderer.compile(this.scene, this.camera);
       this.renderer.compile(this.firstPerson.scene, this.firstPerson.camera);
+      for (const side of [THREE.BackSide, THREE.FrontSide]) {
+        for (const m of twoPass) m.side = side;
+        this.renderer.compile(standIns, this.camera, this.scene);
+      }
     } catch {
       /* best effort */
+    } finally {
+      for (const m of twoPass) m.side = THREE.DoubleSide;
+      this.scene.remove(standIns);
+      standIns.traverse((o) => {
+        if (o instanceof THREE.Mesh || o instanceof THREE.Sprite) o.geometry.dispose();
+      });
     }
     for (const o of shown) o.visible = false;
+  }
+
+  /**
+   * One tiny object per material the effect views keep ready (read off the views themselves, so
+   * a new material is covered without listing it here), plus the sprite kinds made per item.
+   * three.js caches a shader program by a material's settings, so compiling a stand-in compiles
+   * the program the real effect will use.
+   */
+  private standIns(): THREE.Group {
+    const group = new THREE.Group();
+    const views: object[] = [this.blocks, this.crystals, this.carts, this.arrows, this.thrown, this.explosions, this.playerFire];
+    const mats = new Set<THREE.Material>();
+    const take = (v: unknown) => {
+      if (v instanceof THREE.Material) mats.add(v);
+      else if (v instanceof THREE.Mesh || v instanceof THREE.Sprite) for (const m of [v.material].flat()) mats.add(m);
+    };
+    for (const view of views) {
+      for (const v of Object.values(view)) {
+        if (Array.isArray(v)) v.forEach(take);
+        else if (v instanceof Map) v.forEach(take);
+        else take(v);
+      }
+    }
+    // Position, uv and colour; with and without normals (block faces like fire and lava have
+    // none, and that changes the program).
+    const geo = new THREE.PlaneGeometry(0.01, 0.01);
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(new Array(12).fill(1), 3));
+    const flat = geo.clone();
+    flat.deleteAttribute('normal');
+    const tex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    tex.needsUpdate = true;
+    for (const m of mats) {
+      if (m instanceof THREE.SpriteMaterial) group.add(new THREE.Sprite(m));
+      else if (!(m instanceof THREE.LineBasicMaterial)) group.add(new THREE.Mesh(geo, m), new THREE.Mesh(flat, m));
+    }
+    // Sprites made per item or particle (ThrownView: pearls, potions, orbs, dropped items;
+    // CrystalView: blast and smoke puffs).
+    group.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaTest: 0.1 })));
+    group.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false })));
+    group.add(new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, fog: false })));
+    group.position.copy(this.camera.position);
+    return group;
   }
 
   resize() {

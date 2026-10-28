@@ -83,6 +83,36 @@ describe('Cart', () => {
     expect(ar.fireTicks).toBeGreaterThan(0);
   });
 
+  it('a fast crossbow bolt catches fire in a 1-block fire it would skip between ticks', () => {
+    const { world, a } = setup();
+    world.blocks.set(0, 0, 3, B.FIRE);
+    // 3.15 blocks a tick from z = 7.5: it is at z = 4.35, then 1.2 — never inside the fire cell.
+    const ar = new Arrow(a, 0.5, 0.4, 7.5, true);
+    ar.shoot(0, 0, -1, 3.15, 0, world.rng);
+    world.spawnArrow(ar);
+    run(world, 2);
+    expect(ar.fireTicks).toBeGreaterThan(0);
+  });
+
+  it('a crossbow bolt shot through fire into a cart sets it off', () => {
+    const { world, a, b } = setup();
+    world.blocks.set(0, 0, 2, B.RAIL);
+    const cart = placeCart(world, a, 0, 0, 2);
+    // Fire on the block in front of the cart: the bolt reaches the cart in the same tick.
+    world.blocks.set(0, 0, 3, B.FIRE);
+    const ar = new Arrow(a, 0.5, 0.35, 7.5, true);
+    ar.shoot(0, 0, -1, 3.15, 0, world.rng);
+    world.spawnArrow(ar);
+    run(world, 3);
+    expect(cart.removed).toBe(true);
+    expect(b.stats.damageTaken).toBeGreaterThan(5); // it blew up, not just broke
+  });
+
+  it('the Cart kit has its crossbow', () => {
+    const { a } = setup();
+    expect(a.inventory.slice(0, 9).some((s) => s?.id === 'crossbow')).toBe(true);
+  });
+
   it('a blast lights carts nearby with a short fuse, and they go off in turn', () => {
     const { world, a } = setup();
     world.blocks.set(5, 0, -5, B.RAIL);
