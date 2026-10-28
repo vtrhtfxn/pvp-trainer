@@ -30,6 +30,8 @@ const CHAT_BURST = 5;
 const CHAT_REFILL_MS = 1500;
 /** Messages a client may send per second (moves and clicks run at ~20–40); the rest are dropped. */
 const MSG_RATE = 150;
+/** Largest message we bother parsing (characters). */
+const MAX_MSG_CHARS = 64 * 1024;
 const MSG_BURST = 300;
 
 export class LobbyClient {
@@ -282,7 +284,9 @@ export class Lobby {
     const client = new LobbyClient(ws);
     this.clients.add(client);
     ws.onMessage = (text) => {
-      if (!client.takeMsgToken()) return;
+      // The biggest real message (a whole custom kit) is a few kilobytes. Anything far larger is
+      // a flood meant to stall this page parsing it — the P2P path has no size cap of its own.
+      if (text.length > MAX_MSG_CHARS || !client.takeMsgToken()) return;
       let msg: ClientMsg;
       try {
         msg = JSON.parse(text) as ClientMsg;
@@ -357,6 +361,9 @@ export class Lobby {
           if (room.players.length === 0) this.rooms.delete(room.code);
           return;
         }
+        // Two people can't share a name in a room, or one could speak (and leave) as the other.
+        const taken = new Set(room.seats.filter((c): c is LobbyClient => !!c && c !== client).map((c) => c.name.toLowerCase()));
+        for (let n = 2; taken.has(client.name.toLowerCase()); n++) client.name = `${client.name.replace(/ \(\d+\)$/, '')} (${n})`;
         room.seats[seat] = client;
         client.room = room;
         client.seat = seat;

@@ -75,7 +75,9 @@ export class Crosshair {
   render(renderer: THREE.WebGLRenderer, guiScale: number) {
     const w = renderer.domElement.width;
     const h = renderer.domElement.height;
-    const cssW = renderer.domElement.clientWidth || w;
+    // The canvas fills the window. Reading its clientWidth here forced a full layout every frame,
+    // right after the HUD had written to the DOM.
+    const cssW = window.innerWidth || w;
     this.fit(w, h, guiScale * (w / cssW));
     renderer.render(this.scene, this.camera);
   }

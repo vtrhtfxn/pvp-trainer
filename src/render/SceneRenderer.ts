@@ -326,6 +326,10 @@ export class SceneRenderer {
         for (const m of twoPass) m.side = side;
         this.renderer.compile(standIns, this.camera, this.scene);
       }
+      // compile() only starts the link: three.js waits for it (and reads the info logs) on the
+      // program's first draw, which stalled a frame for each new effect mid-fight. Finish
+      // every link now, behind the loading screen.
+      for (const prog of this.renderer.info.programs ?? []) (prog as unknown as { getUniforms?: () => unknown }).getUniforms?.();
     } catch {
       /* best effort */
     } finally {

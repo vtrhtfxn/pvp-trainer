@@ -728,7 +728,7 @@ export class Menus {
           ],
           () => s.antialias,
           (v) => (s.antialias = v),
-          'Anti-aliasing (MSAA). Auto turns it off on high-density screens, where it costs a lot. Applies after a restart',
+          'Anti-aliasing (MSAA). Auto turns it off on high-density screens and low-end PCs, where it costs a lot. Applies after a restart',
         );
         toggle('Entity Shadows', () => s.entityShadows, (v) => (s.entityShadows = v));
         toggle('Clouds', () => s.clouds, (v) => (s.clouds = v));

@@ -171,6 +171,8 @@ export class Game {
   private fps = 0;
   private frameMs = 16;
   private menuDrawn = 0;
+  /** What the inventory's player preview last showed: it is only redrawn when that changes. */
+  private previewKey = '';
   // ---- weather (fades like vanilla's rain level)
   private rainLevel = 0;
   private thunderLevel = 0;
@@ -194,8 +196,11 @@ export class Game {
     });
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
-    // MSAA on a 2× screen draws 4× the samples for edges you can barely see: Auto skips it there.
-    const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && (window.devicePixelRatio || 1) < 2);
+    // MSAA on a 2× screen draws 4× the samples for edges you can barely see: Auto skips it there,
+    // and on low-end machines (under 8 GB or 4 cores), where its framebuffers (~90 MB) hurt more.
+    const nav = navigator as Navigator & { deviceMemory?: number };
+    const lowEnd = (nav.deviceMemory ?? 8) < 8 || (navigator.hardwareConcurrency || 4) < 4;
+    const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && (window.devicePixelRatio || 1) < 2 && !lowEnd);
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
     const packIcon = (id: ItemId) =>
       itemIcon({ id, count: 1, potion: 'healing' });
@@ -928,6 +933,7 @@ export class Game {
   private openInventory() {
     const p = this.match.player;
     if (this.state !== 'playing' || p.dead || this.match.phase === 'ended') return;
+    this.previewKey = '';
     // Opening a screen lets go of every key; an item in use is put away rather than fired.
     if (p.usingItem) this.screenAction({ k: 'stopUse' });
     this.match.useHeld = false;
@@ -1770,7 +1776,15 @@ export class Game {
   private frame(now: number) {
     requestAnimationFrame(this.onFrame);
     // Max Framerate: skip display refreshes that come too soon.
-    const cap = this.settings.maxFps;
+    let cap = this.settings.maxFps;
+    // Behind a screen the world barely moves: paused offline it is frozen outright, and the
+    // title-screen duel and results backdrop are scenery. Drawing them at full rate kept the
+    // GPU (and on most laptops the fan) as busy as a real fight.
+    const frozen = this.state === 'paused' && !this.online;
+    // A minimized desktop window keeps getting frames (backgrounding is off so the simulation
+    // never stalls): keep ticking, but nobody sees the drawing.
+    const idleCap = frozen || document.hidden ? 10 : this.state === 'menu' || this.state === 'results' ? 30 : 0;
+    if (idleCap > 0 && (cap <= 0 || cap > idleCap)) cap = idleCap;
     if (cap > 0 && now - this.lastDrawn < 1000 / cap - 1) return;
     this.lastDrawn = now;
     // Menu Background off: the title screen shows a still frame instead of a live duel.
@@ -1944,7 +1958,14 @@ export class Game {
       if (p.dead || m.phase === 'ended' || this.state !== 'playing') this.closeInventory();
       else {
         this.inventory.refresh();
-        this.view.renderPreview(this.previewCanvas, p, this.inventory.mouseX, this.inventory.mouseY);
+        // Drawing the preview reads pixels back from the GPU (a full pipeline stall), so only
+        // redraw when the mouse, the held items or the armor changed.
+        const gear = (st: ItemStack | null | undefined) => (st ? `${st.id}${st.ench ? '*' : ''}` : '-');
+        const key = `${this.inventory.mouseX | 0},${this.inventory.mouseY | 0},${p.selected},${gear(p.heldStack())},${gear(p.offhand)},${p.armorSlots.map(gear).join(',')},${this.previewCanvas.getBoundingClientRect().width | 0}`;
+        if (key !== this.previewKey) {
+          this.previewKey = key;
+          this.view.renderPreview(this.previewCanvas, p, this.inventory.mouseX, this.inventory.mouseY);
+        }
       }
     }
     this.clickHint.style.display = this.state === 'playing' && !this.input.locked && !this.screenOpen && !this.chat.open ? '' : 'none';

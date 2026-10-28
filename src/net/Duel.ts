@@ -435,12 +435,14 @@ export class Duel {
     const f = this.fighters[i];
     if (!(mode instanceof Skywars) || this.phase !== 'fight') return;
     const [x, y, z] = [m.x, m.y, m.z].map((v) => Number(v) | 0);
-    if (!mode.canUse(f, x, y, z)) return;
+    // Only the chest this player actually opened (a right click the server saw), and still in reach.
+    const open = this.openChest[i];
+    if (!open || open.x !== x || open.y !== y || open.z !== z || !mode.canUse(f, x, y, z)) return;
     const slot = Number(m.i) | 0;
     if (m.op === 'all') mode.takeAll(f, x, y, z);
     else if (m.op === 'take' && slot >= 0 && slot < 27) mode.take(f, x, y, z, slot);
     else if (m.op === 'put' && slot >= 0 && slot < 36) mode.put(f, x, y, z, slot);
-    this.openChest[i] = { x, y, z, sent: '' };
+    open.sent = '';
     this.sendChest(i, false);
   }
 

@@ -327,7 +327,11 @@ play-with-friends server, not a hardened one.
 | WebSocket (no deps) | [`src/server/ws.ts`](src/server/ws.ts) |
 
 Rendering adapts: the device pixel ratio drops automatically when frames run long and climbs back
-when they do not, which is what keeps it playable on integrated graphics.
+when they do not, which is what keeps it playable on integrated graphics. Behind a screen it draws
+less: 30 FPS for the title-screen duel and results, 10 FPS paused offline or minimized (the
+simulation keeps its 20 ticks). Every shader is compiled and linked behind the loading screen, the
+inventory's player preview is only redrawn when the mouse or your gear changes, and Auto
+anti-aliasing stays off on PCs under 8 GB or 4 cores.
 
 ## Game modes
 

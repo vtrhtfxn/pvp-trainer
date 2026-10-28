@@ -114,8 +114,9 @@ export function itemTotals(slots: readonly Slot[]): Map<string, number> {
     const s = fromSlot(raw ?? null);
     if (!s) continue;
     const ench = s.ench ? ENCHANT_KEYS.filter((k) => s.ench![k]).map((k) => `${k}${s.ench![k]}`).join(',') : '';
-    // A loaded crossbow counts as a different item, so a layout can't load one for free.
-    const key = `${s.id}:${ench}:${s.damage ?? 0}:${s.potion ?? ''}:${s.charged ? 1 : 0}:${s.chargedPotion ?? ''}`;
+    // A loaded crossbow counts as a different item, so a layout can't load one for free; the
+    // same goes for what a shulker box holds, or a layout could refill an emptied one.
+    const key = `${s.id}:${ench}:${s.damage ?? 0}:${s.potion ?? ''}:${s.charged ? 1 : 0}:${s.chargedPotion ?? ''}:${s.stored ?? 0}`;
     m.set(key, (m.get(key) ?? 0) + s.count);
   }
   return m;

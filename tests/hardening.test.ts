@@ -20,7 +20,7 @@ describe('inventory slots from a client', () => {
     expect(fromSlot(['splash_potion', 1, 0, 0, 'healing'])?.potion).toBe('healing');
     expect(fromSlot(['__proto__', 1] as never)).toBeNull();
     // Totals can't be inflated with a junk count.
-    expect(itemTotals([['golden_apple', 1e9] as never]).get('golden_apple::0::0:')).toBe(64);
+    expect(itemTotals([['golden_apple', 1e9] as never]).get('golden_apple::0::0::0')).toBe(64);
   });
 });
 
