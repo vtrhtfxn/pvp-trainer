@@ -1,11 +1,17 @@
 import critUrl from '../assets/sounds/crit.ogg?url';
 import knockbackUrl from '../assets/sounds/knockback.ogg?url';
 import sweepUrl from '../assets/sounds/sweep.ogg?url';
+import totemUrl from '../assets/sounds/totem.ogg?url';
+import smashUrl from '../assets/sounds/smash.ogg?url';
+import explodeUrl from '../assets/sounds/explode.ogg?url';
 
 /**
- * Small WebAudio synth for combat feedback, plus recorded samples for crits, knockback hits
- * and sweeps (the synth stands in until they are decoded, or if the browser can't decode Ogg).
+ * Small WebAudio synth for combat feedback, plus recorded samples for crits, knockback hits,
+ * sweeps, totem pops, mace smashes and explosions (the synth stands in until they are decoded,
+ * or if the browser can't decode Ogg).
  */
+
+type SampleName = 'crit' | 'knockback' | 'sweep' | 'totem' | 'smash' | 'explode';
 
 export interface Listener {
   x: number;
@@ -24,7 +30,7 @@ export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
-  private readonly samples: Partial<Record<'crit' | 'knockback' | 'sweep', AudioBuffer>> = {};
+  private readonly samples: Partial<Record<SampleName, AudioBuffer>> = {};
   volume = 0.8;
   /** Silences new sounds (during /tick sprint, when thousands of ticks run per second). */
   muted = false;
@@ -82,6 +88,9 @@ export class Sound {
       ['crit', critUrl],
       ['knockback', knockbackUrl],
       ['sweep', sweepUrl],
+      ['totem', totemUrl],
+      ['smash', smashUrl],
+      ['explode', explodeUrl],
     ] as const;
     for (const [name, url] of list) {
       fetch(url)
@@ -95,13 +104,13 @@ export class Sound {
   }
 
   /** Plays a decoded sample; false when it isn't ready (the caller synthesises instead). */
-  private sample(name: 'crit' | 'knockback' | 'sweep', dest: AudioNode, peak = 1): boolean {
+  private sample(name: SampleName, dest: AudioNode, peak = 1, rate = 1): boolean {
     const buf = this.samples[name];
     if (!buf) return false;
     const ctx = this.ctx!;
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.playbackRate.value = 0.95 + Math.random() * 0.1;
+    src.playbackRate.value = rate * (0.95 + Math.random() * 0.1);
     const g = ctx.createGain();
     g.gain.value = peak;
     src.connect(g).connect(dest);
@@ -316,10 +325,11 @@ export class Sound {
     for (let i = 0; i < 3; i++) this.tone(d, t + i * 0.025, 0.07, 'sine', 2600 + Math.random() * 1800, 2000, 0.12);
   }
 
-  /** item.totem.use: a rising magical whoosh. */
+  /** item.totem.use: the recorded totem pop (a rising magical whoosh until it is loaded). */
   totem(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 1);
     if (!d) return;
+    if (this.sample('totem', d, 0.7)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.9, 'bandpass', 400, 3200, 2, 0.5);
     this.tone(d, t, 0.6, 'triangle', 330, 990, 0.3);
@@ -396,6 +406,11 @@ export class Sound {
     const d = this.out(pos, 1);
     if (!d) return;
     const t = this.ctx!.currentTime;
+    // The recorded smash; a heavy one (a long fall) plays deeper with a thump under it.
+    if (this.sample('smash', d, 1, heavy ? 0.85 : 1)) {
+      if (heavy) this.tone(d, t, 0.35, 'sine', 90, 35, 0.6);
+      return;
+    }
     this.tone(d, t, heavy ? 0.4 : 0.25, 'triangle', heavy ? 110 : 160, 35, heavy ? 1 : 0.7);
     this.noiseBurst(d, t, heavy ? 0.3 : 0.18, 'lowpass', 900, 200, 1, heavy ? 1 : 0.6);
   }
@@ -411,6 +426,8 @@ export class Sound {
   explosion(pos: { x: number; y: number; z: number }, power: number) {
     const d = this.out(pos, 1.4);
     if (!d) return;
+    // The recorded blast: bigger explosions (crystals, power 6) a touch deeper than anchors or TNT.
+    if (this.sample('explode', d, 0.8, power >= 6 ? 0.92 : 1)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.9 + power * 0.08, 'lowpass', 900, 60, 0.9, 1);
     this.tone(d, t, 0.6, 'sine', 70, 30, 0.9);
