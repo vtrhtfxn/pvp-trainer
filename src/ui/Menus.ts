@@ -5,13 +5,14 @@ import type { CustomKitData } from '../game/customKits';
 import { KitEditor } from './KitEditor';
 import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Action } from '../input/keybinds';
 import type { Sprite } from './sprites';
-import { DEFAULT_SETTINGS, saveSettings, type Records, type Settings } from './settings';
+import { DEFAULT_SETTINGS, loadPlayerName, saveSettings, type Records, type Settings } from './settings';
 import { MAX_FIRST_TO, TIER_POINTS, clampFirstTo, totalPoints, type MyTiers } from '../game/series';
 import type { ReplayData } from '../game/replay';
 import type { CoachReport } from '../game/coach';
 import logoUrl from '../assets/logo.png';
 import { DRILLS, DRILL_GROUPS, DRILL_SPEEDS, loadDrillSpeed, saveDrillSpeed, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 import { loadRelay, parseRelayUrls, saveRelay } from '../net/relay';
+import { faceUrl } from './faces';
 import { ADVANCEMENTS, GAUNTLET_LIVES, GAUNTLET_TIERS, KILL_EFFECTS, effectUnlocked, type KillEffectId } from '../game/fun';
 import { BEGINNER_STEPS, beginnerHidden, beginnerProgress, setBeginnerHidden, stepDone, type BeginnerStep } from './beginner';
 
@@ -76,6 +77,8 @@ export interface ResultData {
   player: FighterStats;
   bot: FighterStats;
   botName: string;
+  /** The opponent's tier colour (their face and name on the breakdown). */
+  botColor?: string;
   newBestCombo: boolean;
   /** Online duels are not recorded against a bot difficulty. */
   online?: boolean;
@@ -1527,12 +1530,30 @@ export class Menus {
     root.replaceChildren();
     root.classList.toggle('won', r.won);
     root.classList.toggle('lost', !r.won);
-    const panel = h('div', { class: 'menu-panel' });
-    const title = r.series ? (r.won ? 'Series Won!' : 'Series Lost!') : r.won ? 'Victory!' : 'You Died!';
-    panel.append(h('div', { class: 'result-title' }, title));
-    if (r.series) {
-      panel.append(h('div', { class: 'result-sub' }, `FT${r.series.target} · You ${r.series.you} – ${r.series.bot} ${r.botName}`));
-    }
+    // Laid out like a tournament broadcast's match breakdown (PvP Champs): the title block, a
+    // WINNER / DEFEAT plate, the stats side by side and the final score between the two faces.
+    const panel = h('div', { class: 'menu-panel breakdown' });
+    const you = loadPlayerName();
+    const botColor = r.botColor ?? '#aaaaaa';
+    panel.append(
+      h(
+        'div',
+        { class: 'bd-head' },
+        h('div', { class: 'bd-title' }, r.series ? 'Series Breakdown' : 'Match Breakdown'),
+        h('div', { class: 'bd-sub' }, `${you} vs ${r.botName}`),
+      ),
+    );
+    const mins = Math.floor(r.seconds / 60);
+    const secs = Math.floor(r.seconds % 60);
+    const time = `${mins}:${String(secs).padStart(2, '0')}`;
+    panel.append(
+      h(
+        'div',
+        { class: `bd-plate ${r.won ? 'won' : 'lost'}` },
+        h('span', { class: 'bd-plate-word' }, r.won ? (r.series ? 'Series won' : 'Winner') : r.series ? 'Series lost' : 'Defeat'),
+        h('span', { class: 'bd-plate-time' }, r.won ? `beat ${r.botName} in ${time}` : `slain by ${r.botName} in ${time}`),
+      ),
+    );
     if (r.tierEarned) {
       const t = h('div', { class: 'result-tier' }, 'New tier: ', h('b', {}, r.tierEarned.name), ` in ${r.tierEarned.kit} · +${r.tierEarned.points} pts`);
       t.style.setProperty('--tier', r.tierEarned.color);
@@ -1540,11 +1561,6 @@ export class Menus {
     } else if (r.tierBlocked) {
       panel.append(h('div', { class: 'result-note' }, 'Commands changed this series, so it didn’t earn a tier.'));
     }
-    const mins = Math.floor(r.seconds / 60);
-    const secs = Math.floor(r.seconds % 60);
-    panel.append(
-      h('div', { class: 'result-sub' }, `${r.won ? `You beat ${r.botName}` : `Slain by ${r.botName}`} in ${mins}:${String(secs).padStart(2, '0')}`),
-    );
     const acc = (s: FighterStats) => (s.swings ? `${Math.round((s.hits / s.swings) * 100)}%` : '—');
     const reach = (s: FighterStats) => (s.hits ? (s.reachSum / s.hits).toFixed(2) : '—');
     const rows: [string, string, string][] = [
@@ -1575,10 +1591,44 @@ export class Menus {
       ['Avg reach', reach(r.player), reach(r.bot)],
     ];
     if (r.unrecorded) panel.append(h('div', { class: 'result-note' }, 'Commands changed this duel, so it wasn’t recorded.'));
-    const table = h('div', { class: 'stats-table' });
-    table.append(h('span', {}, ''), h('b', {}, 'You'), h('b', {}, 'Bot'));
-    for (const [a, b, c] of rows) table.append(h('span', {}, a), h('span', {}, b), h('span', {}, c));
+    // You | stat | them, the better number bright and the other one grey.
+    const num = (v: string) => (/^[\d.]+/.test(v) ? parseFloat(v) : NaN);
+    const table = h('div', { class: 'bd-rows' });
+    for (const [i, [label, a, b]] of rows.entries()) {
+      const x = num(a);
+      const y = num(b);
+      const lead = Number.isNaN(x) || Number.isNaN(y) || x === y ? '' : x > y ? 'a' : 'b';
+      table.append(
+        h(
+          'div',
+          { class: 'bd-row' },
+          h('b', { class: lead === 'b' ? 'dim' : '' }, a),
+          h('span', {}, label),
+          h('b', { class: lead === 'a' ? 'dim' : '' }, b),
+        ),
+      );
+      (table.lastElementChild as HTMLElement).style.setProperty('--row', String(i));
+    }
     panel.append(table);
+    // Final score: your face, the pips, theirs.
+    const target = r.series?.target ?? 1;
+    const won = r.series ? r.series.you : r.won ? 1 : 0;
+    const lost = r.series ? r.series.bot : r.won ? 0 : 1;
+    const pips = (n: number) => '◆'.repeat(Math.min(n, target)) + '◇'.repeat(Math.max(0, target - n));
+    const face = (src: string) => h('img', { class: 'bd-face', src, alt: '' });
+    const youFace = face(faceUrl('you'));
+    const botFace = face(faceUrl('bot', botColor));
+    panel.append(
+      h(
+        'div',
+        { class: 'bd-score' },
+        youFace,
+        h('span', { class: 'bd-pips' }, pips(won)),
+        h('span', { class: 'bd-score-mid' }, h('b', {}, `${won} – ${lost}`), h('small', {}, r.series ? `First to ${target}` : 'Final score')),
+        h('span', { class: 'bd-pips' }, pips(lost)),
+        botFace,
+      ),
+    );
     panel.append(this.button(r.online ? 'Rematch (R) — both must agree' : 'Rematch (R)', onRematch, 'big'));
     if (onReplay) {
       const row = h('div', { class: `btn-row${onCoach ? ' three' : ''}` });

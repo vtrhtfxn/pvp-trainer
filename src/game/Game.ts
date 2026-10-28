@@ -996,6 +996,8 @@ export class Game {
       this.series = newSeries(kit.id, profile.id, this.settings.firstTo);
     }
     this.hud.setSeries(g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
+    const sr = this.series!;
+    this.hud.setPips(!g && !drillDef && sr.target > 1 ? { you: sr.you, them: sr.bot, target: sr.target } : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
     this.hudName = loadPlayerName();
     this.match = new Match(kit, profile, seed);
@@ -1350,6 +1352,7 @@ export class Game {
         this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId);
         this.series = null;
         this.hud.setSeries(null);
+        this.hud.setPips(null);
         this.match = this.netMatch;
       }
       this.netMatch.handle(msg);
@@ -1642,6 +1645,7 @@ export class Game {
         player: m.player.stats,
         bot: m.bot.stats,
         botName: m.bot.name,
+        botColor: m.profile.color,
         newBestCombo: newBest && m.player.stats.maxCombo > 0,
         unrecorded: this.cheated,
         series: series.target > 1 ? { target: series.target, you: series.you, bot: series.bot } : undefined,

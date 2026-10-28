@@ -536,7 +536,13 @@ on the right, the fight clock between. Each side has a tier badge, the name, a b
 a slanted health bar split into hearts, coloured green → yellow → red with the health left. A hit
 leaves a white trail that drains after a beat, healing flashes green, absorption is a gold stripe and
 a bar under 30% pulses. Under each bar: the current combo, totems left (totem kits) and the bot's
-status. Options → HUD → Versus Health Bar turns it off.
+status. Options → HUD → Versus Health Bar turns it off. In a "first to" series, the pips between the
+bars show the score (◆ won, ◇ to go).
+
+After a duel the results screen is a **Match Breakdown**, styled after the PvP Champs tournament
+broadcast (PvPHQ / Tubbo Events): the matchup, a WINNER or DEFEAT plate, the stats side by side with
+the better number bright, and the final score between the two faces. The display type is Bebas Neue
+(SIL Open Font License, bundled via `@fontsource/bebas-neue`).
 
 ### Gauntlet
 

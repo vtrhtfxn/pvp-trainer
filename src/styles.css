@@ -10,6 +10,10 @@
   size-adjust: 85.7143%;
 }
 :root {
+  /* PvP Champs broadcast palette: orange-gold on near-black, condensed display type. */
+  --champ-orange: #ffa31a;
+  --champ-gold: #ffc93c;
+  --display-font: 'Bebas Neue', 'Arial Narrow', sans-serif;
   /* Minecraft's own font, built from the default pack's glyph sheets (scripts/build-font.py).
      'Minecraft' is true size (8 px per em pixel-row: HUD, chat, titles, tooltips); 'Minecraft UI'
      is the same font drawn 6/7 the size, so the menus' 12–24 px text keeps its old footprint
@@ -607,24 +611,46 @@ body {
   flex-direction: row-reverse;
 }
 .vs-badge {
+  position: relative;
   flex: 0 0 auto;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 4px;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  color: #fff;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--tier, #888) 70%, #fff 30%), var(--tier, #888));
+  width: 40px;
+  height: 40px;
   border: 2px solid #000;
-  box-shadow:
-    inset 0 -3px 0 rgba(0, 0, 0, 0.35),
-    0 2px 6px rgba(0, 0, 0, 0.5);
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.7);
+  outline: 2px solid var(--champ-orange);
+  outline-offset: -4px;
+  background: #111;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
+}
+.vs-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.vs-tag {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%);
+  padding: 0 4px;
+  font-family: var(--display-font);
+  font-size: 13px;
+  line-height: 14px;
+  letter-spacing: 0.5px;
+  color: #111;
+  background: var(--tier, #888);
+  border: 1px solid #000;
+  white-space: nowrap;
+  text-shadow: none;
 }
 .vs-body {
   flex: 1;
   min-width: 0;
+  padding: 3px 7px 3px;
+  background: linear-gradient(180deg, rgba(22, 22, 22, 0.88), rgba(10, 10, 10, 0.88));
+  border: 2px solid #000;
+  border-bottom: 2px solid var(--champ-orange);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
 }
 .vs-top {
   display: flex;
@@ -639,12 +665,18 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-family: var(--display-font);
+  font-size: 20px;
+  line-height: 20px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
   color: #fff;
 }
 .vs-hp {
   flex: 0 0 auto;
-  font-size: 18px;
+  font-family: var(--display-font);
+  font-size: 24px;
+  line-height: 22px;
   color: hsl(var(--hue), 90%, 62%);
   transition: color 0.3s;
 }
@@ -663,8 +695,8 @@ body {
 .vs-bar {
   position: relative;
   height: 14px;
-  margin-top: 2px;
-  background: rgba(20, 8, 8, 0.75);
+  margin-top: 3px;
+  background: #2a1a12;
   border: 2px solid #000;
   /* Slanted outer end, like a broadcast health bar. */
   clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 100%, 0 100%);
@@ -720,8 +752,10 @@ body {
   display: flex;
   gap: 8px;
   min-height: 15px;
-  margin-top: 2px;
-  font-size: 12px;
+  margin-top: 3px;
+  font-family: var(--display-font);
+  font-size: 15px;
+  letter-spacing: 0.6px;
   color: #ddd;
   white-space: nowrap;
 }
@@ -729,7 +763,7 @@ body {
   justify-content: flex-end;
 }
 .vs-combo {
-  color: #ffaa00;
+  color: var(--champ-orange);
 }
 .vs-combo.bump {
   display: inline-block;
@@ -745,20 +779,34 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2px 8px 3px;
-  background: rgba(0, 0, 0, 0.55);
+  min-width: 64px;
+  padding: 3px 10px 4px;
+  background: linear-gradient(180deg, #1c1c1c, #0c0c0c);
   border: 2px solid #000;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  border-top: 3px solid var(--champ-orange);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.55);
 }
 .vs-timer {
-  font-size: 16px;
+  font-family: var(--display-font);
+  font-size: 26px;
+  line-height: 24px;
+  letter-spacing: 1px;
   color: #fff;
   font-variant-numeric: tabular-nums;
 }
 .vs-label {
+  display: flex;
+  gap: 8px;
+  font-family: var(--display-font);
+  font-size: 14px;
+  letter-spacing: 3px;
+  color: var(--champ-orange);
+}
+.vs-label .pips {
+  letter-spacing: 1px;
+  font-family: system-ui, sans-serif;
   font-size: 11px;
-  letter-spacing: 2px;
-  color: #ffaa00;
+  color: #fff;
 }
 @keyframes vs-hit {
   0% {
@@ -3740,4 +3788,184 @@ body {
 }
 .locker-panel > * {
   flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------- match breakdown (results) */
+.screen.results:has(.breakdown) {
+  background: radial-gradient(ellipse at 50% 35%, rgba(255, 163, 26, 0.28), rgba(40, 18, 0, 0.55) 55%, rgba(0, 0, 0, 0.7));
+}
+.menu-panel.breakdown {
+  width: min(560px, calc(100vw - 24px));
+  padding: 0 0 14px;
+  background: linear-gradient(180deg, rgba(20, 20, 20, 0.95), rgba(10, 10, 10, 0.95));
+  border: 2px solid #000;
+  outline: 2px solid var(--champ-orange);
+  outline-offset: -2px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 60px rgba(255, 163, 26, 0.15);
+  overflow: hidden;
+}
+.breakdown > :not(.bd-head):not(.bd-plate):not(.bd-rows):not(.bd-score) {
+  margin-left: 14px;
+  margin-right: 14px;
+}
+.bd-head {
+  padding: 12px 16px 8px;
+  text-align: center;
+  background: linear-gradient(180deg, #161616, #0b0b0b);
+  border-bottom: 3px solid var(--champ-orange);
+}
+.bd-title {
+  font-family: var(--display-font);
+  font-size: 46px;
+  line-height: 44px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.6);
+}
+.bd-sub {
+  margin-top: 2px;
+  font-family: var(--display-font);
+  font-size: 22px;
+  letter-spacing: 0.8px;
+  color: var(--champ-orange);
+}
+.bd-plate {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  margin: 12px auto 10px;
+  width: fit-content;
+  padding: 2px 26px 0;
+  /* A slanted plate, like the broadcast's WINNER plate. */
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  animation: bd-pop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+@keyframes bd-pop {
+  0% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.95);
+  }
+  100% {
+    transform: none;
+  }
+}
+.breakdown > .mc-btn,
+.breakdown > .btn-row {
+  width: auto;
+  align-self: stretch;
+}
+.bd-plate.won {
+  background: linear-gradient(180deg, #ffe066, var(--champ-gold) 45%, #e0a000);
+}
+.bd-plate.lost {
+  background: linear-gradient(180deg, #ff7a7a, #d63a3a 50%, #9e1c1c);
+}
+.bd-plate-word {
+  font-family: var(--display-font);
+  font-size: 40px;
+  line-height: 40px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #6b3a00;
+}
+.bd-plate.lost .bd-plate-word {
+  color: #3a0000;
+}
+.bd-plate-time {
+  font-family: var(--display-font);
+  font-size: 17px;
+  letter-spacing: 0.5px;
+  color: rgba(0, 0, 0, 0.65);
+}
+.bd-rows {
+  margin: 0 14px;
+  border-top: 2px solid var(--champ-orange);
+  background: rgba(0, 0, 0, 0.35);
+}
+.bd-row {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1fr;
+  align-items: center;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  animation: rise-in 300ms ease-out both;
+}
+.bd-row:nth-child(n) {
+  animation-delay: calc(var(--row, 0) * 30ms);
+}
+.bd-row > b {
+  font-family: var(--display-font);
+  font-weight: normal;
+  font-size: 24px;
+  line-height: 24px;
+  color: #fff;
+  text-align: right;
+}
+.bd-row > b:last-child {
+  text-align: left;
+}
+.bd-row > b.dim {
+  color: #7d7d7d;
+}
+.bd-row > span {
+  text-align: center;
+  font-family: var(--display-font);
+  font-size: 18px;
+  letter-spacing: 0.6px;
+  color: var(--champ-orange);
+}
+.bd-score {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 14px 12px;
+  padding: 6px 8px;
+  background: #0d0d0d;
+  border: 2px solid #000;
+  border-bottom: 3px solid var(--champ-orange);
+}
+.bd-face {
+  width: 44px;
+  height: 44px;
+  image-rendering: pixelated;
+  border: 2px solid #000;
+}
+.bd-pips {
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 3px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.bd-score-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.bd-score-mid b {
+  font-family: var(--display-font);
+  font-weight: normal;
+  font-size: 30px;
+  line-height: 28px;
+  color: var(--champ-gold);
+}
+.bd-score-mid small {
+  font-size: 11px;
+  color: #bdbdbd;
+}
+.breakdown .result-tier,
+.breakdown .result-note {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+.screen.results.lost:has(.breakdown) {
+  background: radial-gradient(ellipse at 50% 35%, rgba(214, 58, 58, 0.25), rgba(40, 6, 0, 0.6) 55%, rgba(0, 0, 0, 0.75));
 }

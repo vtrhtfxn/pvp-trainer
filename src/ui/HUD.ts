@@ -8,6 +8,7 @@ import { estimateRegen } from '../mods/appleskin';
 import type { ModManager } from '../mods/registry';
 import { drawDurabilityBar, itemIcon } from '../render/itemIcons';
 import { packImage, packUrl } from '../render/pack';
+import { faceUrl } from './faces';
 
 /** Which fluid the player's eyes are in, if any. */
 function eyeFluid(p: Fighter): 'water' | 'lava' | null {
@@ -109,6 +110,7 @@ export class HUD {
   private readonly you: VersusSide;
   private readonly them: VersusSide;
   private readonly vsTimer: HTMLDivElement;
+  private readonly vsPips: HTMLDivElement;
   private readonly effects: HTMLDivElement;
   private readonly center: HTMLDivElement;
   private readonly fire: HTMLDivElement;
@@ -158,7 +160,8 @@ export class HUD {
     this.you = new VersusSide(this.versus, 'left');
     const mid = el('div', 'vs-center', this.versus);
     this.vsTimer = el('div', 'vs-timer', mid);
-    el('div', 'vs-label', mid).textContent = 'VS';
+    this.vsPips = el('div', 'vs-label', mid);
+    this.vsPips.textContent = 'VS';
     this.them = new VersusSide(this.versus, 'right');
     this.effects = el('div', 'effects', this.root);
     this.center = el('div', 'center-text', this.root);
@@ -182,6 +185,19 @@ export class HUD {
     this.actionbar = el('div', 'actionbar', this.root);
     this.seriesEl = el('div', 'series-score', this.root);
     this.seriesEl.style.display = 'none';
+  }
+
+  /**
+   * The match score between the bars, broadcast style: ◆ for a round won, ◇ still to win —
+   * yours on the left, theirs on the right. null shows "VS" (a single duel).
+   */
+  setPips(score: { you: number; them: number; target: number } | null) {
+    if (!score) {
+      this.vsPips.textContent = 'VS';
+      return;
+    }
+    const pips = (n: number) => '◆'.repeat(Math.min(n, score.target)) + '◇'.repeat(Math.max(0, score.target - n));
+    this.vsPips.innerHTML = `<span class="pips you">${pips(score.you)}</span><span class="pips them">${pips(score.them)}</span>`;
   }
 
   /** The "first to" score under the opponent's bar; null hides it (a single duel). */
@@ -392,8 +408,8 @@ export class HUD {
     const showVs = settings.showOpponentBar ? '' : 'none';
     if (this.versus.style.display !== showVs) this.versus.style.display = showVs;
     if (settings.showOpponentBar) {
-      this.you.update(player, info.playerName, 'YOU', '#55ffff', '');
-      this.them.update(bot, info.botName, info.botTag, info.botColor, info.botStatus);
+      this.you.update(player, info.playerName, 'YOU', '#55ffff', '', 'you');
+      this.them.update(bot, info.botName, info.botTag, info.botColor, info.botStatus, 'bot');
       const secs = Math.floor(info.fightTicks / 20);
       const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
       if (clock !== this.timerText) {
@@ -688,6 +704,8 @@ export class HUD {
 class VersusSide {
   private readonly root: HTMLDivElement;
   private readonly badge: HTMLDivElement;
+  private readonly face: HTMLImageElement;
+  private readonly tag: HTMLSpanElement;
   private readonly name: HTMLDivElement;
   private readonly hp: HTMLDivElement;
   private readonly fill: HTMLDivElement;
@@ -701,6 +719,9 @@ class VersusSide {
   constructor(parent: HTMLElement, side: 'left' | 'right') {
     this.root = el('div', `vs-side ${side}`, parent);
     this.badge = el('div', 'vs-badge', this.root);
+    this.face = el('img', 'vs-face', this.badge);
+    this.face.alt = '';
+    this.tag = el('span', 'vs-tag', this.badge);
     const body = el('div', 'vs-body', this.root);
     const top = el('div', 'vs-top', body);
     this.name = el('div', 'vs-name', top);
@@ -719,7 +740,7 @@ class VersusSide {
     this.lastCombo = 0;
   }
 
-  update(f: Fighter, name: string, tag: string, color: string, status: string) {
+  update(f: Fighter, name: string, tag: string, color: string, status: string, kind: 'you' | 'bot') {
     const health = Math.max(0, f.health);
     const totems = (f.offhand?.id === 'totem_of_undying' ? 1 : 0) + f.countItem('totem_of_undying');
     const combo = f.stats.combo;
@@ -729,8 +750,10 @@ class VersusSide {
     const max = f.maxHealth || 20;
     const frac = Math.min(1, health / max);
     this.name.textContent = name;
-    this.badge.textContent = tag;
+    this.tag.textContent = tag;
     this.badge.style.setProperty('--tier', color);
+    const src = faceUrl(kind, color);
+    if (this.face.getAttribute('src') !== src) this.face.src = src;
     this.hp.innerHTML = `${(health / 2).toFixed(1)}<i>❤</i>${f.absorption > 0 ? `<b>+${(f.absorption / 2).toFixed(1)}</b>` : ''}`;
     this.fill.style.width = `${frac * 100}%`;
     // Green → yellow → red with the health left.
