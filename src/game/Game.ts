@@ -59,7 +59,7 @@ import { Bedwars } from './modes/Bedwars';
 import { Skywars } from './modes/Skywars';
 import { SpectatorHud } from '../ui/SpectatorHud';
 import { DrillHud } from '../ui/DrillHud';
-import { DrillRun, drillById, loadDrillProgress, recordDrill } from '../trainer/drills';
+import { DrillRun, drillById, loadDrillProgress, loadDrillSpeed, recordDrill } from '../trainer/drills';
 
 type State = 'menu' | 'playing' | 'paused' | 'results' | 'spectating';
 /** Game drives either the offline Match or its online stand-in; they share a surface. */
@@ -938,7 +938,7 @@ export class Game {
     this.state = 'playing';
     this.input.enabled = true;
     this.input.closeGuard = true;
-    this.drill = drillDef ? new DrillRun(drillDef, this.match as Match) : null;
+    this.drill = drillDef ? new DrillRun(drillDef, this.match as Match, loadDrillSpeed()) : null;
     if (this.drill) this.drillHud.show(this.drill);
     else this.drillHud.hide();
     void this.input.lock();
@@ -975,7 +975,8 @@ export class Game {
 
   private finishDrill(run: DrillRun) {
     const r = run.result!;
-    const newBest = recordDrill(this.drillProgress, run.def.id, r);
+    // Slow-motion practice is for learning the timing; only full-speed runs tick a drill off.
+    const newBest = r.speed >= 1 ? recordDrill(this.drillProgress, run.def.id, r) : false;
     this.drill = null;
     this.drillHud.hide();
     this.state = 'results';
@@ -1629,7 +1630,9 @@ export class Game {
       (this.state === 'playing' || this.state === 'menu' || this.state === 'results' || (this.online && this.state === 'paused') || (!!spec && !spec.paused));
     // /tick rate only changes offline duels; online and the title screen always run at 20.
     const offlineDuel = !!this.cmdMatch && !spec;
-    const tickMs = spec ? TICK_MS / spec.speed : offlineDuel ? 1000 / this.session.tickRate : TICK_MS;
+    // Trainer practice speed slows the whole drill down (you and the bot) to learn the timing.
+    const drillSpeed = this.drill && this.state === 'playing' ? this.drill.speed : 1;
+    const tickMs = spec ? TICK_MS / spec.speed : offlineDuel ? 1000 / this.session.tickRate / drillSpeed : TICK_MS;
     if (ticking) {
       const budget = performance.now() + TICK_BUDGET_MS;
       if (this.sprinting && offlineDuel && playing) {

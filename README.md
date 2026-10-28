@@ -495,12 +495,29 @@ bot that sets each one up. Every attempt gets instant feedback (what went right,
 wrong: "too early — 63% charged", "jumped 1 tick early", "only 55% of the pot"), and your best result
 per drill is saved.
 
+What makes it practice rather than a test:
+
+- **Bots that stay hittable.** The sparring bot fights like a player: after it swings it follows you in
+  for a second so you can answer, and between swings it waits at the edge of your reach — one step and
+  it is in range. Targets walk back in after your knockback but never run from you.
+- **Warm-up pace.** Each drill starts the bot at 60% pace (slower strafing, more time between its
+  swings), speeds it up 10% with every success and eases off after two misses in a row. The HUD shows
+  the pace; timed drills (Aim tracking) always run at full pace.
+- **Misses explained.** A swing that hits nothing says why: out of reach (and by how much) or crosshair
+  off the bot.
+- **Practice speed.** 50%, 75% or 100% on the drill page slows the whole drill — you and the bot — to
+  learn a timing like a jump reset. Only a pass at 100% ticks the drill off.
+- **Your most common mistake** is named on the results screen, with the advice for it.
+
+`tests/trainerHuman.test.ts` plays the sword and defense drills as a human-like player (aim three
+ticks behind, its own read of the distance) and checks each one can be passed within a minute.
+
 | Group | Drills |
 | --- | --- |
-| Sword basics | Full-charge hits · Sprint hits (W-tap) · Jump crits · Spacing (S-tap) · Crit chain · Combo (vs HT4) · Aim tracking |
-| Defense | Jump reset (same-tick jump; shows the knockback you took) · P-crit (crit on the way down from their knockback) · Hit select (punish right after their swing) |
+| Sword basics | Full-charge hits · Sprint hits (W-tap) · Jump crits · Spacing (S-tap) · Crit chain · Combo (vs HT5) · Aim tracking |
+| Defense | Jump reset (same-tick jump; shows the knockback you took) · P-crit (NethPot kit: crit on the way down from their knockback) · Hit select (punish right after their swing) |
 | Axe & shield | Shield timing (raise ≥ 5 ticks before the hit) · Shield disable · Attribute swap (sword → axe on the click tick) · Disable → punish |
-| Pot | Potting (≥ 80% strength) · Re-totem (hotbar totem + F, under 1 s) |
+| Pot | Potting (Diamond Pot, ≥ 80% strength) · Re-totem (NethPot: hotbar totem + F, under 1 s) |
 | Crystal | Crystal combo · Hit-crystal · Respawn anchor |
 | Mace | Wind charge smash |
 | UHC | Water bucket clutch |

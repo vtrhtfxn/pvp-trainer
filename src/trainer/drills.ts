@@ -39,6 +39,10 @@ export interface DrillDef {
   bot?: (run: DrillRun) => DrillBot;
   /** The drill looks after the player's health itself (no top-ups). */
   ownsHealth?: boolean;
+  /** The bot runs at full pace from the start (timed drills, where a warm-up would skew the score). */
+  fullPace?: boolean;
+  /** Missed swings are not about the bot (crystals, anchors), so don't explain them. */
+  quietMisses?: boolean;
   setup?(run: DrillRun): void;
   check(run: DrillRun, pe: FighterEvent[], be: FighterEvent[]): void;
   /** Timed drills: the score in percent. */
@@ -57,7 +61,37 @@ export interface DrillResult {
   bestStreak: number;
   /** Timed drills: the score in percent. */
   score?: number;
+  /** Practice speed it was played at (1 = full speed; slower runs don't tick a drill off). */
+  speed: number;
+  /** The mistake made most often, with the full advice and how many times. */
+  topMistake?: { text: string; count: number };
 }
+
+/** Practice speeds for the Trainer: the whole game, bot and you, in slow motion. */
+export const DRILL_SPEEDS = [0.5, 0.75, 1] as const;
+const SPEED_KEY = 'pvp-trainer.drills.speed';
+
+export function loadDrillSpeed(): number {
+  try {
+    const v = Number(localStorage.getItem(SPEED_KEY));
+    return (DRILL_SPEEDS as readonly number[]).includes(v) ? v : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function saveDrillSpeed(v: number) {
+  try {
+    localStorage.setItem(SPEED_KEY, String(v));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** The warm-up: where the bot's pace starts, and how it moves with each attempt. */
+export const PACE_START = 0.6;
+const PACE_STEP = 0.1;
+const PACE_MIN = 0.5;
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const hearts = (hp: number) => `${(hp / 2).toFixed(1)} ❤`;
@@ -76,12 +110,23 @@ export class DrillRun {
   result: DrillResult | null = null;
   /** Per-drill scratch state. */
   s: Record<string, number | boolean | null> = {};
+  /**
+   * How fast the bot moves and swings, 0.5–1: it starts slow, speeds up with every success and
+   * eases off after two misses in a row, so the drill meets you where you are.
+   */
+  pace: number;
   private lastOnGround = true;
+  private lastMissNote = -999;
+  /** Failed attempts by kind ("Too early", "Not a crit"…), for the results screen. */
+  private readonly mistakes = new Map<string, { text: string; count: number }>();
 
   constructor(
     readonly def: DrillDef,
     public m: Match,
+    /** Practice speed (slow motion); the game loop reads it. */
+    readonly speed = 1,
   ) {
+    this.pace = def.fullPace || !def.bot ? 1 : PACE_START;
     this.attach(m);
   }
 
@@ -103,7 +148,7 @@ export class DrillRun {
     m.phase = 'fight';
     m.phaseTicks = 0;
     const bot = this.def.bot?.(this);
-    m.botDriver = bot ? () => bot(m, this.t) : null;
+    m.botDriver = bot ? () => bot(m, this.t, this.pace) : null;
     this.def.setup?.(this);
   }
 
@@ -115,15 +160,26 @@ export class DrillRun {
   success(text: string) {
     this.successes++;
     this.streak++;
+    this.s.missRun = 0;
     this.bestStreak = Math.max(this.bestStreak, this.streak);
     this.say(`✔ ${text}`, 'good');
+    if (!this.def.fullPace) this.pace = Math.min(1, this.pace + PACE_STEP);
     if (!this.def.timeTicks && this.successes >= this.def.goal) this.finish();
   }
 
   fail(text: string) {
     this.fails++;
     this.streak = 0;
+    this.s.missRun = Number(this.s.missRun ?? 0) + 1;
+    const kind = text.split(' — ')[0].replace(/[\d.]+/g, '#');
+    const m = this.mistakes.get(kind) ?? { text, count: 0 };
+    m.count++;
+    this.mistakes.set(kind, m);
     this.say(`✘ ${text}`, 'bad');
+    if (!this.def.fullPace && Number(this.s.missRun) >= 2) {
+      this.pace = Math.max(PACE_MIN, this.pace - PACE_STEP);
+      this.s.missRun = 0;
+    }
   }
 
   /** One tick, after the match ticked and before its events are cleared. */
@@ -133,6 +189,7 @@ export class DrillRun {
     const p = this.p;
     const b = this.b;
     this.def.check(this, p.events, b.events);
+    this.explainMiss();
     // Keep the sparring partner (and you) standing, so a drill never ends in a death screen.
     if (!b.dead && b.health < b.maxHealth * 0.4) b.health = b.maxHealth;
     if (!this.def.ownsHealth && !p.dead && p.health < p.maxHealth * 0.3) p.health = p.maxHealth;
@@ -140,12 +197,30 @@ export class DrillRun {
     if (this.def.timeTicks && this.t >= this.def.timeTicks) this.finish();
   }
 
+  /**
+   * A swing that hit nothing: say why, so a miss teaches something — out of reach (and by how
+   * much) or the crosshair was off the bot. Not counted as a failed attempt.
+   */
+  private explainMiss() {
+    const p = this.p;
+    if (this.def.quietMisses || !p.events.some((e) => e.type === 'miss') || this.t - this.lastMissNote < 10) return;
+    this.lastMissNote = this.t;
+    const reach = p.entityReach();
+    const along = rayDistanceToTarget(p, this.b, 8);
+    if (along > reach) this.say(`Missed — out of reach: ${along.toFixed(2)} blocks (yours is ${reach.toFixed(1)}). Step in first.`);
+    else if (along < 0) this.say('Missed — your crosshair was off the bot. Aim at its body.');
+  }
+
   get progress(): string {
+    const extra = [this.pace < 1 ? `bot pace ${Math.round(this.pace * 100)}%` : '', this.speed < 1 ? `${Math.round(this.speed * 100)}% speed` : '']
+      .filter(Boolean)
+      .map((x) => ` · ${x}`)
+      .join('');
     if (this.def.timeTicks) {
       const left = Math.max(0, Math.ceil((this.def.timeTicks - this.t) / 20));
-      return `${this.def.status?.(this) ?? ''} · ${left}s left`;
+      return `${this.def.status?.(this) ?? ''} · ${left}s left${extra}`;
     }
-    return `${this.successes} / ${this.def.goal}`;
+    return `${this.successes} / ${this.def.goal}${extra}`;
   }
 
   finish() {
@@ -160,12 +235,14 @@ export class DrillRun {
       seconds: this.t / 20,
       bestStreak: this.bestStreak,
       score,
+      speed: this.speed,
+      topMistake: [...this.mistakes.values()].sort((a, b) => b.count - a.count)[0],
     };
   }
 }
 
 /** The tier the combo drill's bot plays at. */
-const COMBO_BOT: DifficultyId = 'ht4';
+const COMBO_BOT: DifficultyId = 'ht5';
 
 export const DRILLS: DrillDef[] = [
   // ------------------------------------------------------------------ sword basics
@@ -178,7 +255,7 @@ export const DRILLS: DrillDef[] = [
     goal: 10,
     how: ['Watch the attack bar under your crosshair.', 'Click only when it is full (a sword takes 0.6 s).', 'Land 10 full-charge hits on the moving target.'],
     why: 'In 1.9+ every swing restarts the cooldown and early hits do 20% + 80% × charge² of the damage. Only hits above 90% charge can crit or sprint-knock back — spam clicking loses fights.',
-    bot: () => strafer({ range: 2.6, period: 40 }),
+    bot: () => strafer({ range: 2.6, period: 40, strafe: 0.7 }),
     check(run, pe) {
       for (const e of hits(pe, run.b)) {
         if (e.strong) run.success(`Full charge (${pct(e.scale)})`);
@@ -218,7 +295,7 @@ export const DRILLS: DrillDef[] = [
     goal: 8,
     how: ['Stop sprinting (sprint hits can never crit).', 'Jump, and click on the way down — after the top of the jump — with a full bar.', 'Stars around the target mean a crit. Land 8.'],
     why: 'A critical hit needs: falling (not on the ground), not sprinting, not in water or on a ladder, and over 90% charge. It does 1.5× damage. A jump lasts about 12 ticks, the same as a sword charge — so jump and swing on one rhythm.',
-    bot: () => strafer({ range: 2.4, period: 60 }),
+    bot: () => strafer({ range: 2.4, period: 60, strafe: 0.5 }),
     check(run, pe) {
       for (const e of hits(pe, run.b)) {
         if (e.crit) run.success('Critical hit');
@@ -237,7 +314,7 @@ export const DRILLS: DrillDef[] = [
     goal: 8,
     how: [
       'The bot walks in and swings at you now and then.',
-      'Hit it from 2.75 blocks or further (the reach readout shows your distance).',
+      'Hit it from 2.5 blocks or further (the reach readout shows your distance).',
       'After each hit tap S (S-tap) or let go of W so it can not close the gap and trade back.',
     ],
     why: 'Reach is 3 blocks from your eyes to their hitbox. Hitting from the edge of it while they are still out of theirs means you land first and they eat the knockback; an S-tap stops you running into them after your hit.',
@@ -245,7 +322,7 @@ export const DRILLS: DrillDef[] = [
     check(run, pe) {
       for (const e of hits(pe, run.b)) {
         if (!e.strong) run.fail(`Too early — ${pct(e.scale)} charged.`);
-        else if (e.reach >= 2.75) run.success(`Hit from ${e.reach.toFixed(2)} blocks`);
+        else if (e.reach >= 2.5) run.success(`Hit from ${e.reach.toFixed(2)} blocks`);
         else run.fail(`Too close — ${e.reach.toFixed(2)} blocks. Back off (S-tap) and hit at the edge of your reach.`);
       }
     },
@@ -292,7 +369,7 @@ export const DRILLS: DrillDef[] = [
     level: 2,
     goal: 3,
     profile: COMBO_BOT,
-    how: ['This bot fights back (HT4).', 'Land 5 hits in a row without it hitting you — sprint hits, W-taps and good spacing keep it knocked back.', 'Do it 3 times.'],
+    how: ['This bot fights back (HT5 — the second tier).', 'Land 5 hits in a row without it hitting you — sprint hits, W-taps and good spacing keep it knocked back.', 'Do it 3 times.'],
     why: 'Each sprint hit knocks the opponent out of range for a moment; re-sprinting and walking back in at the right time lets you hit again before they can. A combo ends the moment they land a hit.',
     check(run, pe) {
       const combo = run.p.stats.combo;
@@ -316,6 +393,7 @@ export const DRILLS: DrillDef[] = [
     level: 1,
     goal: 70,
     timeTicks: 20 * 20,
+    fullPace: true,
     how: ['The bot sprint-strafes left and right in front of you.', 'Keep your crosshair on it for 20 seconds — no need to click.', 'Pass with 70% of the time on target.'],
     why: 'Your hit lands where your crosshair is when you click. A strafing opponent at 3 blocks crosses your screen fast; keeping the crosshair on them (and leading a little) is what makes your full-charge hits connect.',
     bot: () => strafer({ range: 3, period: 18, speed: 2 }),
@@ -376,15 +454,16 @@ export const DRILLS: DrillDef[] = [
     id: 'pcrit',
     name: 'P-crit (punish crit)',
     group: 'Defense',
-    kit: 'sword',
+    // A NethPot technique: netherite's knockback resistance keeps you close enough to answer.
+    kit: 'neth_pot',
     level: 3,
     goal: 5,
     how: [
-      'Let the bot hit you — its sprint hit throws you up into the air.',
+      'NethPot kit (netherite armor). Let the bot hit you — its hit throws you up into the air.',
       'Do not jump yourself. While you come down from its knockback, crit it back with a full bar (and no sprint).',
       'Land 5 punish crits.',
     ],
-    why: 'A crit only needs you to be falling. Knockback lifts you, so you are "falling" a few ticks after being hit — a free crit window. Pros use it to answer every hit with a harder one.',
+    why: 'A crit only needs you to be falling. Knockback lifts you, so you are "falling" a few ticks after being hit — a free crit window. Netherite armor’s knockback resistance (10% a piece) keeps you close enough to reach them, which is why it is a NethPot staple: answer every hit with a harder one.',
     bot: () => attacker({ interval: [50, 70], sprint: true, range: 2.6 }),
     check(run, pe) {
       if (hurtBy(pe, run.b)) {
@@ -575,7 +654,7 @@ export const DRILLS: DrillDef[] = [
     id: 'retotem',
     name: 'Re-totem',
     group: 'Pot',
-    kit: 'crystal',
+    kit: 'neth_pot',
     level: 2,
     goal: 5,
     ownsHealth: true,
@@ -633,6 +712,7 @@ export const DRILLS: DrillDef[] = [
     name: 'Crystal combo',
     group: 'Crystal',
     kit: 'crystal',
+    quietMisses: true,
     level: 2,
     goal: 8,
     how: [
@@ -658,6 +738,7 @@ export const DRILLS: DrillDef[] = [
     name: 'Hit-crystal',
     group: 'Crystal',
     kit: 'crystal',
+    quietMisses: true,
     level: 3,
     goal: 5,
     how: [
@@ -683,6 +764,7 @@ export const DRILLS: DrillDef[] = [
     name: 'Respawn anchor',
     group: 'Crystal',
     kit: 'crystal',
+    quietMisses: true,
     level: 2,
     goal: 5,
     how: [
