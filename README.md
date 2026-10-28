@@ -327,7 +327,11 @@ play-with-friends server, not a hardened one.
 | WebSocket (no deps) | [`src/server/ws.ts`](src/server/ws.ts) |
 
 Rendering adapts: the device pixel ratio drops automatically when frames run long and climbs back
-when they do not, which is what keeps it playable on integrated graphics.
+when they do not, which is what keeps it playable on integrated graphics. Behind a screen it draws
+less: 30 FPS for the title-screen duel and results, 10 FPS paused offline or minimized (the
+simulation keeps its 20 ticks). Every shader is compiled and linked behind the loading screen, the
+inventory's player preview is only redrawn when the mouse or your gear changes, and Auto
+anti-aliasing stays off on PCs under 8 GB or 4 cores.
 
 ## Game modes
 
@@ -818,8 +822,9 @@ nametag reads *Passive*.
   ×1.2 / ×1.75 / ×2.2 — Wind Burst III throws you ~24 blocks up — which also pushes the target.
   The HUD's next-hit line shows `SMASH +N` while a smash is on.
 - **Wind charges**: thrown straight along the crosshair at 1.5 blocks/tick (no gravity), 0.5 s
-  cooldown; they burst on impact (power 1.2, knockback ×1.22, 1 damage on a direct hit). One at
-  your feet launches you ~7 blocks. A fall that ends above the height a gust launched you from
+  cooldown; they burst on impact (power 1.2, knockback ×1.22, 1 damage on a direct hit), a
+  quarter block out from the face they hit. They carry how far you really moved last tick, so
+  one at your feet launches you ~6 blocks straight up even mid-sprint. A fall that ends above the height a gust launched you from
   deals no fall damage.
 - **Elytra**: right click an armor piece in your hand to swap it with the one you wear (the elytra
   goes in the chest slot — no armor points). Jump in mid-air to glide: vanilla elytra physics

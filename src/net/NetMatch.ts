@@ -6,7 +6,7 @@ import { DroppedItem } from '../game/DroppedItem';
 import { TntCart } from '../game/TntCart';
 import { EndCrystal } from '../game/EndCrystal';
 import { Fighter, SLOT_COUNT, type FighterEvent } from '../game/Fighter';
-import { ITEMS, type ItemId, type PotionId } from '../game/items';
+import { EFFECT_NAMES, ITEMS, type EffectId, type ItemId, type PotionId } from '../game/items';
 import { kitById, type KitId } from '../game/kits';
 import { Thrown } from '../game/Thrown';
 import { World, type WorldEvent } from '../game/World';
@@ -21,6 +21,9 @@ import { PLAYBACK_MAX_MS, PLAYBACK_MIN_MS, fromSlot, toSlot, type ClientMsg, typ
 const RNG = new Rng(3);
 
 const TICK_MS = 50;
+
+/** A whole number from the wire (anything else is 0). */
+const int = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : 0);
 /** How much arrival history the jitter estimate looks at (moves, ~4 s). */
 const JITTER_WINDOW = 80;
 /**
@@ -456,7 +459,7 @@ export class NetMatch {
       for (let k = 0; k < SLOT_COUNT; k++) f.setSlot(k, fromSlot(s.inv[k]));
     }
     f.cooldowns.clear();
-    for (const [id, ticks, total] of s.cd ?? []) if (id in ITEMS) f.cooldowns.set(id as ItemId, { ticks, total });
+    for (const [id, ticks, total] of s.cd ?? []) if (Object.hasOwn(ITEMS, id)) f.cooldowns.set(id as ItemId, { ticks: int(ticks), total: int(total) });
     f.fireTicks = s.fire ?? 0;
     f.mining = s.mn ? { x: s.mn[0], y: s.mn[1], z: s.mn[2], block: this.world.blocks.get(s.mn[0], s.mn[1], s.mn[2]) } : null;
     f.mineProgress = s.mn ? s.mn[3] : 0;
@@ -466,11 +469,19 @@ export class NetMatch {
     }
     f.shieldCooldown = s.sc ?? 0;
     f.applyUseState(s.ui, s.uh === 1 ? 'off' : 'main', s.ur, s.ud);
+    // The host's state reaches HUD markup (effect classes, combo counters): only known effect
+    // ids and plain numbers get through, never a string a modified host slipped in.
     f.effects.clear();
-    for (const [id, amplifier, duration] of s.eff) {
-      f.effects.set(id as 'regeneration' | 'absorption', { amplifier, duration });
+    for (const [id, amplifier, duration] of Array.isArray(s.eff) ? s.eff : []) {
+      if (Object.hasOwn(EFFECT_NAMES, id)) f.effects.set(id as EffectId, { amplifier: Math.max(0, Math.min(255, int(amplifier))), duration: int(duration) });
     }
-    Object.assign(f.stats, s.st);
+    if (s.st && typeof s.st === 'object') {
+      const stats = f.stats as unknown as Record<string, number>;
+      for (const k of Object.keys(stats)) {
+        const v = (s.st as Record<string, unknown>)[k];
+        if (typeof v === 'number' && Number.isFinite(v)) stats[k] = v;
+      }
+    }
     if (s.dead && !f.dead) {
       f.dead = true;
       f.deathTime = s.dt;

@@ -295,6 +295,11 @@ export class Fighter {
   readonly vel = new V3();
   /** Server-side copy of the velocity: physics without input, never keeps knockback. */
   readonly serverVel = new V3();
+  /**
+   * How far we really moved last tick (vanilla Entity.getKnownMovement: a player's last move
+   * packet). Thrown things inherit this, not `vel` — on the ground `vel` is already cut by friction.
+   */
+  readonly knownMove = new V3();
   yaw = 0;
   pitch = 0;
   prevYaw = 0;
@@ -448,6 +453,7 @@ export class Fighter {
   reset(x: number, z: number, yaw: number, kit: Loadout) {
     this.pos.set(x, this.world.floorY, z);
     this.prevPos.copy(this.pos);
+    this.knownMove.set(0, 0, 0);
     // Grounded entities rest at vy = -0.0784 (gravity applied after the floor collision).
     this.vel.set(0, -C.GRAVITY * C.VERTICAL_DRAG, 0);
     this.serverVel.set(0, -C.GRAVITY * C.VERTICAL_DRAG, 0);
@@ -456,6 +462,7 @@ export class Fighter {
     this.onGround = true;
     this.horizontalCollision = false;
     this.fallDistance = 0;
+    this.movedFall = 0;
     this.fallFlying = false;
     this.fallFlyTicks = 0;
     this.prevJumpInput = false;
@@ -1142,6 +1149,7 @@ export class Fighter {
     this.vel.set(0, 0, 0);
     this.serverVel.set(0, 0, 0);
     this.fallDistance = 0;
+    this.movedFall = 0;
     this.events.push({ type: 'pearlLand' });
     fallHurt(this, C.PEARL_DAMAGE);
   }
@@ -1193,6 +1201,7 @@ export class Fighter {
       this.vel.set(0, 0, 0);
       this.serverVel.set(0, 0, 0);
       this.fallDistance = 0;
+      this.movedFall = 0;
       this.events.push({ type: 'pearlLand' });
       return true;
     }
@@ -1639,6 +1648,7 @@ export class Fighter {
 
   /** Copies current state into the "previous" slots used for render interpolation. */
   snapshot() {
+    this.knownMove.set(this.pos.x - this.prevPos.x, this.pos.y - this.prevPos.y, this.pos.z - this.prevPos.z);
     this.prevPos.copy(this.pos);
     this.prevYaw = this.yaw;
     this.prevPitch = this.pitch;
@@ -1900,6 +1910,9 @@ export class Fighter {
     this.bob += (f - this.bob) * 0.4;
   }
 
+  /** Server side: how far this player's packets have dropped since they left the ground. */
+  private movedFall = 0;
+
   /** Applies a movement packet. Position is trusted; the rest feeds the combat rules. */
   applyMove(
     x: number,
@@ -1934,8 +1947,14 @@ export class Fighter {
         this.impulseY = null;
       }
       this.fallDistance = 0;
-    } else if (fallDistance !== null) this.fallDistance = Math.max(0, fallDistance);
-    else if (wasOnGround || this.pos.y < this.prevPos.y) this.fallDistance += Math.max(0, this.prevPos.y - this.pos.y);
+      this.movedFall = 0;
+    } else if (fallDistance !== null) {
+      // The client's own count is more exact (water, slow falling and the like reset it), but
+      // never take more than the drop its packets actually showed: a claimed 400-block fall would
+      // be a one-shot mace smash, and a claim while standing still a free crit on every hit.
+      if (y < lastY) this.movedFall += lastY - y;
+      this.fallDistance = Math.min(Math.max(0, fallDistance), this.movedFall + 0.01);
+    } else if (wasOnGround || this.pos.y < this.prevPos.y) this.fallDistance += Math.max(0, this.prevPos.y - this.pos.y);
     this.sprinting = sprinting;
     this.input = { ...this.input, sneak: sneaking };
   }
