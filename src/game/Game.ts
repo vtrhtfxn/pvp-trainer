@@ -334,7 +334,14 @@ export class Game {
         } else this.restartCurrent();
       },
       onPointerLockChange: (locked) => {
-        if (!locked && this.state === 'playing' && !this.screenOpen && !this.chat.open) this.pause();
+        if (locked || this.state !== 'playing' || this.screenOpen || this.chat.open) return;
+        // The Esc that just closed a screen, seen by the browser as "leave pointer lock": back in
+        // once the key is up instead of pausing.
+        if (performance.now() < this.escGraceUntil) {
+          this.relockOnEscUp = true;
+          return;
+        }
+        this.pause();
       },
       onChat: (command) => this.openChat(command),
     });
@@ -342,6 +349,28 @@ export class Game {
       if (this.state === 'playing' && !this.input.locked && !this.screenOpen && !this.chat.open) void this.input.lock();
       else if (this.state === 'spectating' && this.spec?.cam === 'free' && !this.input.locked) void this.input.lock(false);
     });
+    // Whether Esc is held (capture phase: seen before any screen handles it).
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.code === 'Escape') this.escDown = true;
+      },
+      true,
+    );
+    window.addEventListener(
+      'keyup',
+      (e) => {
+        if (e.code !== 'Escape') return;
+        this.escDown = false;
+        if (this.escGraceUntil === Infinity) this.escGraceUntil = performance.now() + 250;
+        if (!this.relockOnEscUp) return;
+        this.relockOnEscUp = false;
+        setTimeout(() => {
+          if (this.state === 'playing' && !this.screenOpen && !this.chat.open && !this.input.locked) void this.input.lock();
+        }, 30);
+      },
+      true,
+    );
     window.addEventListener('keydown', (e) => {
       if (this.state === 'spectating') {
         this.spectateKey(e);
@@ -799,10 +828,28 @@ export class Game {
     if (!this.shopUi.open && !this.chestUi.open) return;
     this.shopUi.hide();
     this.chestUi.hide();
-    if (this.state === 'playing') {
-      this.input.enabled = true;
-      void this.input.lock();
+    this.backIntoGame();
+  }
+
+  private escDown = false;
+  /** After Esc closes a screen: until the key is up (and a moment after), a lost lock isn't a pause. */
+  private escGraceUntil = 0;
+  private relockOnEscUp = false;
+
+  /**
+   * Back into the game after closing a screen (inventory, shop, chest). Closed with Esc, the
+   * mouse is locked again only once the key is up: browsers take an Esc that is still down as
+   * "leave pointer lock", which used to drop you out of the game into the pause menu.
+   */
+  private backIntoGame() {
+    if (this.state !== 'playing') return;
+    this.input.enabled = true;
+    if (this.escDown) {
+      this.escGraceUntil = Infinity;
+      this.relockOnEscUp = true;
+      return;
     }
+    void this.input.lock();
   }
 
   /** Scoreboard, titles and chat announcements of a Bed Wars / SkyWars game. */
@@ -897,10 +944,7 @@ export class Game {
       this.netMatch.holdInventory = false;
       this.netMatch.syncInventory();
     }
-    if (this.state === 'playing') {
-      this.input.enabled = true;
-      void this.input.lock();
-    }
+    this.backIntoGame();
   }
 
   private toMenu() {
@@ -953,6 +997,7 @@ export class Game {
     }
     this.hud.setSeries(g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
+    this.hudName = loadPlayerName();
     this.match = new Match(kit, profile, seed);
     // A new duel keeps what commands set up (rules, reach, game modes, time…) but not the rest.
     this.state = 'playing';
@@ -1415,6 +1460,9 @@ export class Game {
     this.hud.showCenter(`Gauntlet — Round 1: ${DIFFICULTIES[gauntletTier(this.gauntlet!)].name}`, 'toast', 60);
   }
 
+  /** Your name on the versus bar (read once per duel, not every frame). */
+  private hudName = loadPlayerName();
+
   private gauntletLine(): string {
     const g = this.gauntlet!;
     return `Gauntlet · ${Math.min(g.round + 1, GAUNTLET_TIERS.length)}/${GAUNTLET_TIERS.length} · ${DIFFICULTIES[gauntletTier(g)].name} · ${'❤'.repeat(g.lives)}`;
@@ -1875,6 +1923,9 @@ export class Game {
         botName: m.bot.name,
         botColor: m.profile.color,
         botStatus: m.brain.label,
+        botTag: this.netMatch ? 'P2' : m.profile.name,
+        playerName: this.hudName,
+        fightTicks: m.fightTicks,
         lastReach: this.lastReach,
         now: performance.now(),
         firstPerson: this.view.cameraMode === 'first' && !this.view.extras.freelook,

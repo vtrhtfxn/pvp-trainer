@@ -183,7 +183,7 @@ until nothing overlaps. The **Resource Packs** tab shows the active pack; more a
   sprint, toggle sneak, double-tap-W sprint, invert hotbar scroll.
 - **Key Binds** — every action, including mouse buttons 4/5.
 - **Sound** — master, players, footsteps, blocks & world, menus.
-- **HUD** — the practice panel and each of its lines, opponent bar and nametag, effect list,
+- **HUD** — the practice panel and each of its lines, the versus bar (both fighters' health) and nametag, effect list,
   hitboxes.
 - **Chat** — shown / commands only / hidden, text and background opacity, size, width.
 
@@ -528,6 +528,15 @@ The technique list comes from Minecraft Wiki mechanics, PvP guides and tier-list
 tricks (block-hitting — play the 1.8 Sword kit for those) and macros are left out. Each drill's page explains the steps and the mechanic
 behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and checks it can be passed
 (and that the wrong technique is called out).
+
+### Versus bar
+
+The top of the screen shows both fighters like a tournament broadcast: you on the left, your opponent
+on the right, the fight clock between. Each side has a tier badge, the name, a big health number and
+a slanted health bar split into hearts, coloured green → yellow → red with the health left. A hit
+leaves a white trail that drains after a beat, healing flashes green, absorption is a gold stripe and
+a bar under 30% pulses. Under each bar: the current combo, totems left (totem kits) and the bot's
+status. Options → HUD → Versus Health Bar turns it off.
 
 ### Gauntlet
 

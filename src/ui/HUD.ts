@@ -105,11 +105,10 @@ export class HUD {
   private readonly eatFill: HTMLDivElement;
   readonly practice: HTMLDivElement;
   private readonly feedback: HTMLDivElement;
-  private readonly opponent: HTMLDivElement;
-  private readonly oppName: HTMLDivElement;
-  private readonly oppHealth: HTMLDivElement;
-  private readonly oppAbsorb: HTMLDivElement;
-  private readonly oppText: HTMLDivElement;
+  private readonly versus: HTMLDivElement;
+  private readonly you: VersusSide;
+  private readonly them: VersusSide;
+  private readonly vsTimer: HTMLDivElement;
   private readonly effects: HTMLDivElement;
   private readonly center: HTMLDivElement;
   private readonly fire: HTMLDivElement;
@@ -126,7 +125,7 @@ export class HUD {
   /** Last HTML written to the practice panel / effect list (reading innerHTML back is slow). */
   private practiceHtml = '';
   private effectsHtml = '';
-  private oppKey = '';
+  private timerText = '';
   private uses: number[] = [];
   private scale = 2;
   private dpr = 1;
@@ -154,12 +153,13 @@ export class HUD {
     this.eatFill = el('div', 'eat-fill', this.eatBar);
     this.practice = el('div', 'practice', this.root);
     this.feedback = el('div', 'feedback', this.root);
-    this.opponent = el('div', 'opponent', this.root);
-    this.oppName = el('div', 'opp-name', this.opponent);
-    const bar = el('div', 'opp-bar', this.opponent);
-    this.oppHealth = el('div', 'opp-health', bar);
-    this.oppAbsorb = el('div', 'opp-absorb', bar);
-    this.oppText = el('div', 'opp-text', this.opponent);
+    // The versus bar: you on the left, the opponent on the right, the fight clock between.
+    this.versus = el('div', 'versus', this.root);
+    this.you = new VersusSide(this.versus, 'left');
+    const mid = el('div', 'vs-center', this.versus);
+    this.vsTimer = el('div', 'vs-timer', mid);
+    el('div', 'vs-label', mid).textContent = 'VS';
+    this.them = new VersusSide(this.versus, 'right');
     this.effects = el('div', 'effects', this.root);
     this.center = el('div', 'center-text', this.root);
     // ScreenEffectRenderer.renderFire: two sheets of flame over the bottom corners.
@@ -280,6 +280,8 @@ export class HUD {
   }
 
   resetRound(player: Fighter) {
+    this.you.reset();
+    this.them.reset();
     this.lastHealth = this.displayHealth = player.health;
     this.healthBlinkUntil = 0;
     this.feedback.textContent = '';
@@ -336,9 +338,14 @@ export class HUD {
       botName: string;
       botColor: string;
       botStatus: string;
+      /** Tier shown on the opponent's badge (LT5…HT1, or a short label online). */
+      botTag: string;
+      playerName: string;
       lastReach: number | null;
       now: number;
       firstPerson: boolean;
+      /** Ticks fought this round (the clock in the middle of the versus bar). */
+      fightTicks: number;
     },
   ) {
     const burning = info.firstPerson && player.onFire && !player.dead && !player.effects.has('fire_resistance');
@@ -381,19 +388,17 @@ export class HUD {
       this.practice.innerHTML = html;
     }
 
-    // ---- opponent bar
-    const showOpp = settings.showOpponentBar ? '' : 'none';
-    if (this.opponent.style.display !== showOpp) this.opponent.style.display = showOpp;
+    // ---- versus bar
+    const showVs = settings.showOpponentBar ? '' : 'none';
+    if (this.versus.style.display !== showVs) this.versus.style.display = showVs;
     if (settings.showOpponentBar) {
-      const t = `${(Math.max(0, bot.health) / 2).toFixed(1)} ❤${bot.absorption > 0 ? ` +${(bot.absorption / 2).toFixed(1)}` : ''}${info.botStatus ? ` · ${info.botStatus}` : ''}`;
-      const key = `${info.botName}|${info.botColor}|${bot.health}|${bot.absorption}|${bot.maxHealth}|${t}`;
-      if (key !== this.oppKey) {
-        this.oppKey = key;
-        this.oppName.textContent = info.botName;
-        this.oppName.style.color = info.botColor;
-        this.oppHealth.style.width = `${(Math.max(0, bot.health) / bot.maxHealth) * 100}%`;
-        this.oppAbsorb.style.width = `${Math.min(100, (bot.absorption / bot.maxHealth) * 100)}%`;
-        this.oppText.textContent = t;
+      this.you.update(player, info.playerName, 'YOU', '#55ffff', '');
+      this.them.update(bot, info.botName, info.botTag, info.botColor, info.botStatus);
+      const secs = Math.floor(info.fightTicks / 20);
+      const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      if (clock !== this.timerText) {
+        this.timerText = clock;
+        this.vsTimer.textContent = clock;
       }
     }
 
@@ -671,5 +676,92 @@ export class HUD {
     c.fillRect(sx - 1, hy + 21, 24, 2);
     c.fillRect(sx - 1, hy - 1, 2, 24);
     c.fillRect(sx + 21, hy - 1, 2, 24);
+  }
+}
+
+/**
+ * One fighter's half of the versus bar: tier badge, name, a big health number and a segmented,
+ * slanted health bar (one segment per heart) whose colour follows the health left. Damage leaves
+ * a white trail that drains after a moment; healing flashes; absorption is a gold segment; low
+ * health pulses. Under it: the combo counter, totems left and the bot's status.
+ */
+class VersusSide {
+  private readonly root: HTMLDivElement;
+  private readonly badge: HTMLDivElement;
+  private readonly name: HTMLDivElement;
+  private readonly hp: HTMLDivElement;
+  private readonly fill: HTMLDivElement;
+  private readonly ghost: HTMLDivElement;
+  private readonly absorb: HTMLDivElement;
+  private readonly sub: HTMLDivElement;
+  private key = '';
+  private lastHealth = -1;
+  private lastCombo = 0;
+
+  constructor(parent: HTMLElement, side: 'left' | 'right') {
+    this.root = el('div', `vs-side ${side}`, parent);
+    this.badge = el('div', 'vs-badge', this.root);
+    const body = el('div', 'vs-body', this.root);
+    const top = el('div', 'vs-top', body);
+    this.name = el('div', 'vs-name', top);
+    this.hp = el('div', 'vs-hp', top);
+    const bar = el('div', 'vs-bar', body);
+    this.ghost = el('div', 'vs-ghost', bar);
+    this.fill = el('div', 'vs-fill', bar);
+    this.absorb = el('div', 'vs-absorb', bar);
+    el('div', 'vs-ticks', bar);
+    this.sub = el('div', 'vs-sub', body);
+  }
+
+  reset() {
+    this.key = '';
+    this.lastHealth = -1;
+    this.lastCombo = 0;
+  }
+
+  update(f: Fighter, name: string, tag: string, color: string, status: string) {
+    const health = Math.max(0, f.health);
+    const totems = (f.offhand?.id === 'totem_of_undying' ? 1 : 0) + f.countItem('totem_of_undying');
+    const combo = f.stats.combo;
+    const key = `${name}|${tag}|${color}|${health.toFixed(2)}|${f.absorption}|${f.maxHealth}|${status}|${combo}|${totems}`;
+    if (key === this.key) return;
+    this.key = key;
+    const max = f.maxHealth || 20;
+    const frac = Math.min(1, health / max);
+    this.name.textContent = name;
+    this.badge.textContent = tag;
+    this.badge.style.setProperty('--tier', color);
+    this.hp.innerHTML = `${(health / 2).toFixed(1)}<i>❤</i>${f.absorption > 0 ? `<b>+${(f.absorption / 2).toFixed(1)}</b>` : ''}`;
+    this.fill.style.width = `${frac * 100}%`;
+    // Green → yellow → red with the health left.
+    this.root.style.setProperty('--hue', String(Math.round(120 * Math.max(0, Math.min(1, (frac - 0.15) / 0.7)))));
+    this.root.classList.toggle('low', frac > 0 && frac <= 0.3);
+    if (this.lastHealth >= 0 && health < this.lastHealth) {
+      // The white trail stays where the health was and drains after a beat.
+      this.ghost.classList.remove('draining');
+      void this.ghost.offsetWidth;
+      this.ghost.classList.add('draining');
+      this.flash('hit');
+    } else if (this.lastHealth >= 0 && health > this.lastHealth + 0.01) this.flash('heal');
+    this.ghost.style.width = `${frac * 100}%`;
+    if (this.lastHealth < 0 || health > this.lastHealth) {
+      // Healing (or a new round): no trail.
+      this.ghost.classList.remove('draining');
+    }
+    this.lastHealth = health;
+    // Absorption: a gold stripe along the top of the bar (it shows even at full health).
+    this.absorb.style.width = `${Math.min(1, f.absorption / max) * 100}%`;
+    const bits: string[] = [];
+    if (combo >= 2) bits.push(`<span class="vs-combo${combo > this.lastCombo ? ' bump' : ''}">${combo} COMBO</span>`);
+    if (totems > 0) bits.push(`<span class="vs-totems">⛨ ${totems}</span>`);
+    if (status) bits.push(`<span class="vs-status">${status}</span>`);
+    this.sub.innerHTML = bits.join('');
+    this.lastCombo = combo;
+  }
+
+  private flash(kind: 'hit' | 'heal') {
+    this.root.classList.remove('hit', 'heal');
+    void this.root.offsetWidth;
+    this.root.classList.add(kind);
   }
 }

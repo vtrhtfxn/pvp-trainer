@@ -821,7 +821,7 @@ export class Menus {
         toggle('CPS Counter', () => s.showCps, (v) => (s.showCps = v));
         toggle('Next-hit Coach', () => s.showNextHit, (v) => (s.showNextHit = v));
         toggle('Hit Feedback', () => s.hitFeedback, (v) => (s.hitFeedback = v));
-        toggle('Opponent Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v));
+        toggle('Versus Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v));
         toggle('Opponent Nametag', () => s.showNametag, (v) => (s.showNametag = v));
         toggle('Effect List', () => s.showEffects, (v) => (s.showEffects = v));
         toggle(/Mac|iP(hone|ad)/.test(navigator.platform) ? 'Hitboxes (⌘M)' : 'Hitboxes (Ctrl+M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
