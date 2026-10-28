@@ -70,6 +70,8 @@ export class Duel {
   readonly fighters: [Fighter, Fighter];
   phase: NetPhase = 'lobby';
   phaseTicks = 0;
+  /** Ticks from round start to FIGHT! (the lobby gives real duels PREP_TICKS). */
+  countdownTicks = COUNTDOWN_TICKS;
   fightTicks = 0;
   tickCount = 0;
   winner: number | null = null;
@@ -172,7 +174,7 @@ export class Duel {
   }
 
   get countdownSeconds(): number {
-    return Math.max(0, Math.ceil((COUNTDOWN_TICKS - this.phaseTicks) / 20));
+    return Math.max(0, Math.ceil((this.countdownTicks - this.phaseTicks) / 20));
   }
 
   setName(i: number, name: string) {
@@ -344,7 +346,7 @@ export class Duel {
     if (this.mode) this.tickModeUi();
 
     this.phaseTicks++;
-    if (this.phase === 'countdown' && this.phaseTicks >= COUNTDOWN_TICKS) {
+    if (this.phase === 'countdown' && this.phaseTicks >= this.countdownTicks) {
       this.phase = 'fight';
       this.phaseTicks = 0;
     } else if (this.phase === 'fight' && this.mode) {

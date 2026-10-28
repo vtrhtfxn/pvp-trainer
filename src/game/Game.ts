@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BotBrain } from '../ai/BotBrain';
-import { DIFFICULTIES, type DifficultyId } from '../ai/difficulty';
+import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId, type TierId } from '../ai/difficulty';
 import { Sound, type HitKind } from '../audio/Sound';
 import { deathMessage, registerBuiltins } from '../commands/builtin';
 import { CommandError, Dispatcher } from '../commands/dispatcher';
@@ -9,6 +9,7 @@ import { TICK_MS } from '../core/constants';
 import { clamp, lookDir, V3 } from '../core/math';
 import { Rng } from '../core/rng';
 import { Input } from '../input/Input';
+import { keyName } from '../input/keybinds';
 import { DamageIndicators } from '../mods/damage';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
@@ -48,6 +49,8 @@ import {
 import { Toasts } from '../ui/Toasts';
 import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
 import { KITS, isCustomKit, kitById, type KitId } from './kits';
+import { isYours, recordGame, roundName, saveTournament } from './tournament';
+import { TournamentUI } from '../ui/Tournament';
 import { loadCustomKits } from './customKits';
 import { B } from './Blocks';
 import type { World } from './World';
@@ -64,7 +67,7 @@ const BLOCK_COLORS: Record<number, number> = {
 function blockSound(block: number): 'wood' | 'stone' | 'web' {
   return block === B.PLANKS ? 'wood' : block === B.COBWEB ? 'web' : 'stone';
 }
-import { Match } from './Match';
+import { Match, PREP_TICKS } from './Match';
 import { Spectate, type SpecCam, type Watch } from './Spectate';
 import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
 import { ReplayWatch } from './ReplayWatch';
@@ -114,6 +117,9 @@ export class Game {
   private series: Series | null = null;
   /** A Gauntlet run in progress (every tier in a row on three lives), or null. */
   private gauntlet: Gauntlet | null = null;
+  /** Tournament screens, and the game of your tournament match being played (null otherwise). */
+  private readonly tourney: TournamentUI;
+  private tourneyGame: { kit: KitId; tier: TierId; name: string } | null = null;
   /** Advancements earned (kept across sessions). */
   private readonly advancements = loadAdvancements();
   private killEffect: KillEffectId = loadKillEffect(this.advancements);
@@ -261,6 +267,10 @@ export class Game {
       onDrill: (id) => this.startDrill(id),
       drillProgress: () => this.drillProgress,
       onGauntlet: () => this.startGauntlet(),
+      onTournament: () => {
+        this.menus.hideAll();
+        this.tourney.showEntry();
+      },
       gauntletBest: () => loadGauntletBest(),
       locker: () => ({ unlocked: this.advancements, selected: this.killEffect }),
       onKillEffect: (id) => {
@@ -289,6 +299,33 @@ export class Game {
       installedMods: () => this.mods.installedCount,
     }, customKits);
     this.menus.setReplays(this.replays);
+    this.tourney = new TournamentUI(uiRoot, {
+      onUiSound: () => {
+        this.sound.unlock();
+        this.sound.ui();
+      },
+      onPlayGame: (kit, opp) => {
+        this.tourney.hide();
+        this.tourneyGame = { kit, tier: opp.tier ?? 'lt3', name: opp.name };
+        this.startDuel(true);
+      },
+      onLeave: () => {
+        this.tourney.hide();
+        this.toMenu();
+      },
+      onFinished: (won, size) => {
+        this.earn({ kind: 'tournament', won, size });
+        if (won) this.sound.jingle(true);
+      },
+      kitIcon: (kit) => kitIcons[kitById(kit).icon],
+      yourBest: () =>
+        (Object.entries(this.myTiers) as [KitId, TierId][])
+          .sort((a, b) => TIER_POINTS[b[1]] - TIER_POINTS[a[1]])
+          .map(([k]) => k),
+      // Your best tier (0 = LT5 … 9 = HT1); with none yet you're seeded like an LT4.
+      youRating: () => Math.max(2, ...Object.values(this.myTiers).map((t) => DIFFICULTY_ORDER.indexOf(t as TierId) - 1)),
+      playerName: () => loadPlayerName(),
+    });
     this.market = new Marketplace(uiRoot, this.mods, {
       onClose: () => this.closeMarket(),
       onEditHud: () => this.openHudEditor(),
@@ -957,6 +994,9 @@ export class Game {
   private toMenu() {
     this.spec = null;
     this.gauntlet = null;
+    // Leaving a tournament game half-way doesn't count; the match waits in the saved bracket.
+    this.tourneyGame = null;
+    this.tourney.hide();
     this.scoreboard.hide();
     this.shopUi.hide();
     this.chestUi.hide();
@@ -994,20 +1034,29 @@ export class Game {
     const drillDef = drillId ? drillById(drillId) ?? null : null;
     this.lastDrill = drillDef ? drillDef.id : null;
     // A new duel from anywhere but the Gauntlet's own rounds ends the run.
-    if (drillDef || !nextRound) this.gauntlet = null;
+    if (drillDef || !nextRound) {
+      this.gauntlet = null;
+      this.tourneyGame = null;
+    }
     const g = this.gauntlet;
-    const kit = kitById(drillDef ? drillDef.kit : g ? g.kit : this.settings.kit);
-    const profile = DIFFICULTIES[drillDef ? drillDef.profile ?? 'practice' : g ? gauntletTier(g) : this.settings.difficulty];
+    const tg = this.tourneyGame;
+    const kit = kitById(drillDef ? drillDef.kit : tg ? tg.kit : g ? g.kit : this.settings.kit);
+    const profile = DIFFICULTIES[drillDef ? drillDef.profile ?? 'practice' : tg ? tg.tier : g ? gauntletTier(g) : this.settings.difficulty];
     const s = this.series;
     if (!nextRound || !s || s.kit !== kit.id || s.tier !== profile.id) {
       this.series = newSeries(kit.id, profile.id, this.settings.firstTo);
     }
-    this.hud.setSeries(g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
+    // A tournament game is one round; the match score is the tournament's own.
+    if (tg) this.series = newSeries(kit.id, profile.id, 1);
+    this.hud.setSeries(tg ? this.tourneyLine() : g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
     const sr = this.series!;
-    this.hud.setPips(!g && !drillDef && sr.target > 1 ? { you: sr.you, them: sr.bot, target: sr.target } : null);
+    this.hud.setPips(!tg && !g && !drillDef && sr.target > 1 ? { you: sr.you, them: sr.bot, target: sr.target } : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
     this.hudName = loadPlayerName();
     this.match = new Match(kit, profile, seed);
+    if (tg) this.match.bot.name = tg.name;
+    // A real duel opens with 10 s to sort your inventory (drills get straight to the point).
+    if (!drillDef) this.match.countdownTicks = PREP_TICKS;
     // A new duel keeps what commands set up (rules, reach, game modes, time…) but not the rest.
     this.state = 'playing';
     this.applySession(true);
@@ -1478,6 +1527,35 @@ export class Game {
     return `Gauntlet · ${Math.min(g.round + 1, GAUNTLET_TIERS.length)}/${GAUNTLET_TIERS.length} · ${DIFFICULTIES[gauntletTier(g)].name} · ${'❤'.repeat(g.lives)}`;
   }
 
+  /** The HUD line in a tournament game: round, game number and the match score. */
+  private tourneyLine(): string {
+    const t = this.tourney.t;
+    const m = t && t.matches.filter((x) => isYours(t, x) && x.draft && x.winner === null).pop();
+    if (!t || !m) return 'Tournament';
+    const me = m.players.indexOf(t.you);
+    return `${roundName(t, m)} · Game ${m.games.length + 1} · ${m.wins[me]}–${m.wins[1 - me]}`;
+  }
+
+  /** A tournament game is over: into the match, then back to the kit-selection screen. */
+  private finishTourneyGame(won: boolean) {
+    this.tourneyGame = null;
+    const t = this.tourney.t;
+    const m = t && t.matches.filter((x) => isYours(t, x) && x.draft && x.winner === null).pop();
+    if (t && m) {
+      const me = m.players.indexOf(t.you) as 0 | 1;
+      recordGame(t, m, won ? me : ((1 - me) as 0 | 1));
+      saveTournament(t);
+    }
+    this.state = 'results';
+    this.chat.hide();
+    this.hud.setVisible(false);
+    this.input.enabled = false;
+    this.input.unlock();
+    this.sound.jingle(won);
+    this.menus.hideAll();
+    this.tourney.showMatch();
+  }
+
   private finishGauntletRound(won: boolean) {
     const g = this.gauntlet!;
     const beaten = DIFFICULTIES[gauntletTier(g)].name;
@@ -1605,6 +1683,11 @@ export class Game {
       saveRecords(this.records);
     }
     if (this.sprinting) this.finishSprint();
+    if (this.tourneyGame) {
+      this.duelAdvancements(m, won, false);
+      this.finishTourneyGame(won);
+      return;
+    }
     if (this.gauntlet) {
       this.duelAdvancements(m, won, false);
       this.finishGauntletRound(won);
@@ -1686,6 +1769,7 @@ export class Game {
       gameModes: { ...s.gameModes },
       dayTime: m.world.dayTime,
       raining: m.world.raining,
+      prep: m.countdownTicks,
       date: Date.now(),
     });
     rec.start(m.player);
@@ -2137,12 +2221,10 @@ export class Game {
     }
 
     if (m.phase === 'countdown') {
-      const n = m.countdownSeconds;
-      if (n !== this.lastCountdown && n > 0) {
-        this.lastCountdown = n;
-        this.hud.showCenter(String(n), 'count', 22);
-        this.sound.countdown(false);
-      }
+      // Jump (Space) when you're done arranging: on to the 3-2-1.
+      const preparing = m instanceof Match && m.preparing;
+      if (preparing && !this.inventory.open && !this.chat.open && this.input.held('jump')) this.screenAction({ k: 'ready' });
+      this.showCountdown(m.countdownSeconds, preparing);
     } else if (prevPhase === 'countdown' && m.phase === 'fight') {
       this.hud.showCenter('FIGHT!', 'fight', 26);
       this.sound.countdown(true);
@@ -2165,6 +2247,18 @@ export class Game {
     }
   }
 
+  /**
+   * The countdown: while you're still arranging (10 s in a real duel) a quiet number and a hint,
+   * then the usual 3-2-1 with its beeps.
+   */
+  private showCountdown(n: number, preparing: boolean) {
+    if (n === this.lastCountdown || n <= 0) return;
+    this.lastCountdown = n;
+    this.hud.showCenter(String(n), preparing ? 'count prep' : 'count', 22);
+    if (preparing) this.hud.showTitle('actionbar', `Sort your inventory (${keyName(this.input.binds.inventory)})${this.online ? '' : ` · ${keyName(this.input.binds.jump)} when ready`}`);
+    else this.sound.countdown(false);
+  }
+
   /** Online rounds: the server owns combat, so only local movement + feedback happen here. */
   private tickOnline(m: NetMatch) {
     const prevPhase = m.phase;
@@ -2174,12 +2268,7 @@ export class Game {
     this.tickOnlineModeUi(m);
 
     if (m.phase === 'countdown') {
-      const n = m.countdownSeconds;
-      if (n !== this.lastCountdown && n > 0) {
-        this.lastCountdown = n;
-        this.hud.showCenter(String(n), 'count', 22);
-        this.sound.countdown(false);
-      }
+      this.showCountdown(m.countdownSeconds, m.countdownSeconds > 3);
     } else if (prevPhase === 'countdown' && m.phase === 'fight') {
       this.lastCountdown = -1;
       this.hud.showCenter('FIGHT!', 'fight', 26);

@@ -68,7 +68,7 @@ export interface KitDef extends Loadout {
   legacyCombat?: boolean;
   /** Made in the kit editor. */
   custom?: boolean;
-  /** A subtier (Cart, Diamond SMP): listed on the Subtiers page instead of the title screen. */
+  /** A subtier (Spear Mace, Cart, Diamond SMP): listed on the Subtiers page instead of the title screen. */
   subtier?: boolean;
   /** A minigame (Bed Wars, SkyWars): its own map and rules; the loadout comes from the game. */
   mode?: 'bedwars' | 'skywars';
@@ -630,6 +630,7 @@ export const KITS: KitDef[] = [
     name: 'Spear Mace',
     icon: 'spear_mace',
     available: true,
+    subtier: true,
     summary: 'The 1.21.11 spear: Lunge jabs and running charges, with the mace and wind charges for smashes.',
     contents: [
       'Netherite Armor — Prot IV, Unbreaking III (Feather Falling IV boots)',

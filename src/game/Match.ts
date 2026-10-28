@@ -12,6 +12,8 @@ import { runAction, type ReplayAction, type ReplayRecorder } from './replay';
 
 export type Phase = 'countdown' | 'fight' | 'ended';
 export const COUNTDOWN_TICKS = 60;
+/** A real duel's countdown: 10 s to sort your inventory, the last 3 the usual 3-2-1. */
+export const PREP_TICKS = 200;
 export const SPAWN_DISTANCE = 12;
 
 /**
@@ -28,6 +30,8 @@ export class Match {
   readonly rng: Rng;
   phase: Phase = 'countdown';
   phaseTicks = 0;
+  /** Ticks from the start of a round to FIGHT!: 3 s, or PREP_TICKS for a real duel. */
+  countdownTicks = COUNTDOWN_TICKS;
   tickCount = 0;
   fightTicks = 0;
   winner: Fighter | null = null;
@@ -137,7 +141,17 @@ export class Match {
   }
 
   get countdownSeconds(): number {
-    return Math.max(0, Math.ceil((COUNTDOWN_TICKS - this.phaseTicks) / 20));
+    return Math.max(0, Math.ceil((this.countdownTicks - this.phaseTicks) / 20));
+  }
+
+  /** Still in the inventory part of the countdown (before the 3-2-1). */
+  get preparing(): boolean {
+    return this.phase === 'countdown' && this.phaseTicks < this.countdownTicks - COUNTDOWN_TICKS;
+  }
+
+  /** Ready before the 10 s are up: straight to the 3-2-1. */
+  skipPrep() {
+    if (this.preparing) this.phaseTicks = this.countdownTicks - COUNTDOWN_TICKS;
   }
 
   tick() {
@@ -176,6 +190,12 @@ export class Match {
       if (this.botDriver) this.botDriver();
       else this.brain.tick();
     } else {
+      // Before the fight you can still pick your starting slot and off hand, just not use them.
+      if (this.phase === 'countdown') {
+        if (this.queuedSlot !== null) p.selectSlot(this.queuedSlot);
+        for (; this.queuedSwap > 0; this.queuedSwap--) p.swapHands();
+      }
+      this.queuedSlot = null;
       this.clearQueues();
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
       if (this.phase === 'countdown') {
@@ -190,7 +210,7 @@ export class Match {
     this.world.tickEntities();
 
     this.phaseTicks++;
-    if (this.phase === 'countdown' && this.phaseTicks >= COUNTDOWN_TICKS) {
+    if (this.phase === 'countdown' && this.phaseTicks >= this.countdownTicks) {
       this.phase = 'fight';
       this.phaseTicks = 0;
     } else if (this.phase === 'fight' && this.mode) {

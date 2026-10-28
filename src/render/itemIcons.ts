@@ -153,38 +153,10 @@ function paintHead(rows: string[]): HTMLCanvasElement {
  * registered as the pack texture item/golden_head (icons, hand, dropped items all use it).
  */
 /**
- * Spear Mace: the netherite spear (newer than the bundled resource pack, so it is drawn here —
- * a dark shaft running corner to corner with a binding and a long netherite head) and the purple
- * shulker box (the red one's textures, shifted to purple).
+ * Spear Mace: the purple shulker box (the red one's textures, shifted to purple). The spear's own
+ * texture is a 32×32 file in the pack (item/netherite_spear.png).
  */
 export function registerSpearMace() {
-  const [c, ctx] = blank();
-  const px = (x: number, y: number, col: string) => {
-    if (x < 0 || y < 0 || x > 15 || y > 15) return;
-    ctx.fillStyle = col;
-    ctx.fillRect(x, y, 1, 1);
-  };
-  // Shaft: bottom-left to the binding, a dark outline under a lighter core.
-  for (let x = 1; x <= 9; x++) {
-    px(x, 15 - x + 1, '#241a1d');
-    px(x, 15 - x, x % 3 === 0 ? '#5b4247' : '#4a363b');
-  }
-  // Binding: a short cross-piece where the head meets the shaft.
-  px(8, 5, '#2b2326');
-  px(9, 5, '#6d5a5f');
-  px(10, 6, '#6d5a5f');
-  px(10, 7, '#2b2326');
-  // Head: three pixels wide, tapering to the point at the top right.
-  for (let x = 10; x <= 15; x++) {
-    const y = 15 - x;
-    px(x, y, x >= 14 ? '#b8b0b4' : '#8f878b');
-    if (x <= 13) {
-      px(x - 1, y, '#5e575b');
-      px(x, y + 1, '#3d373a');
-    }
-  }
-  px(15, 0, '#dcd6d9');
-  registerPackImage('item/netherite_spear', c);
   for (const face of ['', '_top']) {
     const src = packImage(`block/red_shulker_box${face}`);
     if (!src) continue;

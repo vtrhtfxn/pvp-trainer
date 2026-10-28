@@ -119,7 +119,8 @@ export type AdvEvent =
       kitsWon: number;
     }
   | { kind: 'drills'; passed: number; total: number }
-  | { kind: 'gauntlet'; cleared: number; total: number };
+  | { kind: 'gauntlet'; cleared: number; total: number }
+  | { kind: 'tournament'; won: boolean; size: number };
 
 export interface Advancement {
   id: string;
@@ -149,6 +150,8 @@ export const ADVANCEMENTS: Advancement[] = [
   { id: 'student', title: 'Student', desc: 'Pass 5 Trainer drills.', frame: 'task', test: (e) => e.kind === 'drills' && e.passed >= 5 },
   { id: 'graduate', title: 'Graduate', desc: 'Pass every Trainer drill.', frame: 'challenge', test: (e) => e.kind === 'drills' && e.passed >= e.total },
   { id: 'gauntlet3', title: 'Warming Up', desc: 'Clear 3 rounds of a Gauntlet.', frame: 'task', test: (e) => e.kind === 'gauntlet' && e.cleared >= 3 },
+  { id: 'tourney', title: 'Main Event', desc: 'Win a tournament.', frame: 'goal', test: (e) => e.kind === 'tournament' && e.won },
+  { id: 'tourney32', title: 'Last One Standing', desc: 'Win a 32-player tournament.', frame: 'challenge', test: (e) => e.kind === 'tournament' && e.won && e.size >= 32 },
   { id: 'gauntlet10', title: 'Gauntlet Champion', desc: 'Clear a whole Gauntlet, LT5 to HT1.', frame: 'challenge', test: (e) => e.kind === 'gauntlet' && e.cleared >= e.total },
 ];
 
