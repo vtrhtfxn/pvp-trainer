@@ -10,6 +10,7 @@ import type { EndCrystal } from './EndCrystal';
 import type { World } from './World';
 
 const tmpDir = new V3();
+const tmpMove = new V3();
 const rayHit: RayHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: 0 };
 const tmpBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
 const ownerBox: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
@@ -62,9 +63,11 @@ export class Thrown {
     dx = (dx / len + tri()) * speed;
     dy = (dy / len + tri()) * speed;
     dz = (dz / len + tri()) * speed;
-    const mx = f.networked ? f.pos.x - f.prevPos.x : f.vel.x;
-    const mz = f.networked ? f.pos.z - f.prevPos.z : f.vel.z;
-    this.vel.set(dx + mx, dy + (f.onGround ? 0 : f.vel.y), dz + mz);
+    // Projectile.shootFromRotation adds shooter.getKnownMovement(): how far they really moved
+    // last tick. Sprinting that is 0.28 a tick, while `vel` after ground friction is only 0.15,
+    // so a wind charge thrown at your feet would land behind you and fling you forward.
+    const m = f.networked ? tmpMove.set(f.pos.x - f.prevPos.x, f.pos.y - f.prevPos.y, f.pos.z - f.prevPos.z) : f.knownMove;
+    this.vel.set(dx + m.x, dy + (f.onGround ? 0 : m.y), dz + m.z);
   }
 
   tick(world: World) {
@@ -138,6 +141,10 @@ export class Thrown {
         this.owner.pearlTeleport(lastX, lastY, lastZ);
         world.emit({ type: 'pearl', x: lastX, y: lastY, z: lastZ });
         return;
+      }
+      // AbstractWindCharge.onHitBlock: the burst goes off a quarter block out from the face it hit.
+      if (this.kind === 'wind' && hitsBlock && !victim && !crystal) {
+        this.pos.set(this.pos.x + rayHit.nx * 0.25, this.pos.y + rayHit.ny * 0.25, this.pos.z + rayHit.nz * 0.25);
       }
       this.impact(world, victim);
       return;

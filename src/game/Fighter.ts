@@ -295,6 +295,11 @@ export class Fighter {
   readonly vel = new V3();
   /** Server-side copy of the velocity: physics without input, never keeps knockback. */
   readonly serverVel = new V3();
+  /**
+   * How far we really moved last tick (vanilla Entity.getKnownMovement: a player's last move
+   * packet). Thrown things inherit this, not `vel` — on the ground `vel` is already cut by friction.
+   */
+  readonly knownMove = new V3();
   yaw = 0;
   pitch = 0;
   prevYaw = 0;
@@ -448,6 +453,7 @@ export class Fighter {
   reset(x: number, z: number, yaw: number, kit: Loadout) {
     this.pos.set(x, this.world.floorY, z);
     this.prevPos.copy(this.pos);
+    this.knownMove.set(0, 0, 0);
     // Grounded entities rest at vy = -0.0784 (gravity applied after the floor collision).
     this.vel.set(0, -C.GRAVITY * C.VERTICAL_DRAG, 0);
     this.serverVel.set(0, -C.GRAVITY * C.VERTICAL_DRAG, 0);
@@ -1639,6 +1645,7 @@ export class Fighter {
 
   /** Copies current state into the "previous" slots used for render interpolation. */
   snapshot() {
+    this.knownMove.set(this.pos.x - this.prevPos.x, this.pos.y - this.prevPos.y, this.pos.z - this.prevPos.z);
     this.prevPos.copy(this.pos);
     this.prevYaw = this.yaw;
     this.prevPitch = this.pitch;

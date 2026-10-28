@@ -116,7 +116,8 @@ describe('SMP bot', () => {
   it('blocks, disables shields, buffs, eats, mends, pearls and swaps its totem in', () => {
     const used = { disables: 0, pots: 0, gapples: 0, xp: 0, pearls: 0, swaps: 0, blocked: 0 };
     let finished = 0;
-    for (let seed = 1; seed <= 3; seed++) {
+    // Mending only shows up in the longer fights, so look across a few more seeds than the rest needs.
+    for (let seed = 1; seed <= 8; seed++) {
       // LT1: the first tier with every item (hotbar totem + F, pearls out, attribute swaps).
       const m = new Match(smp, DIFFICULTIES.lt1, seed);
       const pb = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.lt1, new Rng(seed + 99), () => performAttack(m.player, m.bot));
@@ -143,7 +144,7 @@ describe('SMP bot', () => {
         used.blocked += f.stats.blocked;
       }
     }
-    expect(finished).toBeGreaterThanOrEqual(2);
+    expect(finished).toBeGreaterThanOrEqual(5);
     expect(used.disables).toBeGreaterThan(0);
     expect(used.blocked).toBeGreaterThan(0);
     expect(used.pots).toBeGreaterThan(5);
