@@ -212,6 +212,12 @@ export class BotBrain {
   private launching = 0;
   /** In the air from a launch (wind charge, Wind Burst) rather than an ordinary jump. */
   private maceFlight = false;
+  /** Spear Mace: how this approach goes in (spear-first, or the usual wind-charge launch). */
+  private spearApproach = false;
+  /** Ticks into a running spear charge (0 = none), and the wait before the next one. */
+  private spearCharge = 0;
+  private spearCooldown = 0;
+  private spearRolled = false;
 
   /** This round it throws Strength and Speed on itself. */
   private buffs = true;
@@ -320,6 +326,9 @@ export class BotBrain {
     this.launchCooldown = 40;
     this.launching = 0;
     this.maceFlight = false;
+    this.spearApproach = false;
+    this.spearCharge = 0;
+    this.spearCooldown = 60;
     this.smpKit = !this.crystalKit && !this.maceKit && b.hasShield() && b.countItem('splash_potion') > 0;
     this.axe = b.countItem('netherite_axe') > 0 ? 'netherite_axe' : 'diamond_axe';
     this.offhandReact = -1;
@@ -1619,8 +1628,11 @@ export class BotBrain {
       }
     }
 
-    // ---- Launch: sprint in and wind-charge ourselves up.
+    // ---- Spear (Spear Mace): a charge from range, or walk in with it out and Lunge-jab.
     this.updateState(trueDist);
+    if (this.spearStep(per, trueDist, input)) return;
+
+    // ---- Launch: sprint in and wind-charge ourselves up.
     if (this.state === 'engage' && this.launchCooldown === 0 && b.onGround && !b.cooldowns.has('wind_charge') && b.slotOf('wind_charge') >= 0) {
       if (this.launching > 0 || (trueDist > 2.6 && trueDist < 6.5 && T.onGround)) {
         if (this.launching === 0 && !this.rng.chance(M.launch)) {
@@ -1633,6 +1645,84 @@ export class BotBrain {
     if (this.state === 'engage') this.engageShield(per, dist, justHurt, input);
     else if (this.state === 'retreat') this.retreat(per, trueDist, input);
     else this.eat(per, trueDist, input);
+  }
+
+  /**
+   * The spear, for kits that have one. Each time they get away (8+ blocks) the bot picks how it
+   * comes back in: about half the time (more on higher tiers) spear-first —
+   * - from 6–11 blocks, sometimes a charge: spear lowered, sprinting straight at them, until it
+   *   lands (the speed does the damage), they are past it, or it has run for 3 s;
+   * - otherwise it walks in with the spear out so the cooldown is full on arrival, and jabs from
+   *   2.4–4.3 blocks — Lunge carries it the rest of the way in — then back to the sword.
+   * True while it owns the tick.
+   */
+  private spearStep(per: Perceived, trueDist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    if (b.slotOf('netherite_spear') < 0) return false;
+    const M = this.profile.mace;
+    if (this.spearCooldown > 0) this.spearCooldown--;
+    const aim = () => this.aimAt(per.x, per.y + 1.1, per.z, 1.2);
+    // A charge under way: keep running at them.
+    if (b.usingItem && b.useKind() === 'spear') {
+      this.potLabel = 'Spear charge';
+      this.spearCharge++;
+      aim();
+      input.forward = 1;
+      input.sprint = true;
+      input.jump = false;
+      const landed = b.events.some((e) => e.type === 'spearCharge');
+      if (landed || trueDist < 1.8 || this.spearCharge > 60) {
+        b.stopUsingItem();
+        this.spearCharge = 0;
+        this.spearCooldown = 50;
+        this.spearApproach = false;
+      }
+      return true;
+    }
+    // Decided once each time they get away.
+    if (trueDist > 9 && !this.spearRolled) {
+      this.spearApproach = this.rng.chance(0.35 + M.launch * 0.3);
+      this.spearRolled = true;
+    } else if (trueDist < 6) this.spearRolled = false;
+    if (!this.spearApproach || this.state !== 'engage' || !b.onGround) return false;
+    // Start a charge from range.
+    if (this.spearCooldown === 0 && trueDist > 6 && trueDist < 11 && this.rng.chance(0.04 + M.launch * 0.06)) {
+      if (!this.equip('netherite_spear')) return false;
+      if (b.startUsingItem(true)) {
+        this.spearCharge = 1;
+        aim();
+        input.forward = 1;
+        input.sprint = true;
+        return true;
+      }
+    }
+    // Walk in with it out (drawn early: it takes 1.15 s to charge); jab on arrival.
+    if (trueDist <= 12 && trueDist >= 2.2) {
+      this.potLabel = 'Spear';
+      if (!this.equip('netherite_spear')) return false;
+      aim();
+      const ready = b.attackStrengthScale(0.5) >= 1;
+      // In the band but still charging: hold it at 3–4 blocks rather than walk in under 2.
+      input.forward = trueDist > 4.2 ? 1 : !ready && trueDist < 3 ? -1 : 0;
+      input.sprint = trueDist > 4.2;
+      if (ready && trueDist <= 4.3 && this.facing(per, 0.12)) {
+        const r = this.doAttack();
+        this.spearApproach = false;
+        this.spearCooldown = 30;
+        if (r.hit) this.hitsTaken = 0;
+        return true;
+      }
+      return true;
+    }
+    this.spearApproach = false;
+    return false;
+  }
+
+  /** Whether our crosshair is within `tol` radians of their chest. */
+  private facing(per: Perceived, tol: number): boolean {
+    const b = this.bot;
+    const want = yawTowards(per.x - b.pos.x, per.z - b.pos.z);
+    return Math.abs(wrapAngle(want - b.yaw)) < tol;
   }
 
   /** Look straight down with a wind charge and throw it while running at them. */

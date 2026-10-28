@@ -47,6 +47,8 @@ export type ItemId =
   | 'tnt_minecart'
   | 'flint_and_steel'
   | 'red_shulker_box'
+  | 'purple_shulker_box'
+  | 'netherite_spear'
   | 'wooden_sword'
   | 'stone_sword'
   | 'iron_sword'
@@ -137,7 +139,7 @@ export const HARMFUL_EFFECTS: ReadonlySet<EffectId> = new Set([
 ]);
 
 /** How an item behaves on right click. */
-export type UseKind = 'none' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip' | 'sword_block' | 'cart' | 'ignite' | 'tnt';
+export type UseKind = 'none' | 'spear' | 'food' | 'shield' | 'bow' | 'crossbow' | 'throw' | 'place' | 'bucket' | 'crystal' | 'equip' | 'sword_block' | 'cart' | 'ignite' | 'tnt';
 
 /** Mining tool classes (the mineable/* block tags). */
 export type ToolKind = 'axe' | 'pickaxe' | 'sword' | 'shears';
@@ -302,6 +304,12 @@ export interface ItemDef {
   cooldown?: number;
   food?: FoodProps;
   armor?: ArmorProps;
+  /**
+   * Spears (1.21.11): a jab reaches 2–4.5 blocks and needs a full cooldown; holding use lowers
+   * it for a charge that hits for `chargeMult` × closing speed (blocks/s) once `chargeDelay`
+   * ticks have passed.
+   */
+  spear?: { reachMin: number; reachMax: number; chargeMult: number; chargeDelay: number };
 }
 
 /** Per-stack enchantments. Kits decide these, so the same sword can be plain or Sharpness V. */
@@ -334,6 +342,8 @@ export interface Enchants {
   depthStrider?: number;
   /** Bow: arrows leave on fire (they set what they hit alight, and TNT minecarts off). */
   flame?: number;
+  /** Spear: a jab throws you forward 0.458 blocks/tick per level (costs hunger). */
+  lunge?: number;
 }
 
 export interface ItemStack {
@@ -348,7 +358,7 @@ export interface ItemStack {
   potion?: PotionId;
   /** Durability used up (ItemStack damage value). */
   damage?: number;
-  /** Shulker box: how many Minecarts with TNT are inside (0–27). */
+  /** Shulker box: how many items are inside (0–27): TNT carts (red), or potions (purple). */
   stored?: number;
 }
 
@@ -497,6 +507,21 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   tnt_minecart: { id: 'tnt_minecart', name: 'Minecart with TNT', maxStack: 1, ...MELEE_FIST, use: 'cart' },
   // Place it and right-click it to take out the 27 Minecarts with TNT it holds.
   red_shulker_box: { id: 'red_shulker_box', name: 'Red Shulker Box', maxStack: 1, ...MELEE_FIST, use: 'place', places: 16 },
+  // Spear Mace: 27 splash potions, Strength II and Speed II in turn (14 + 13).
+  purple_shulker_box: { id: 'purple_shulker_box', name: 'Purple Shulker Box', maxStack: 1, ...MELEE_FIST, use: 'place', places: 23 },
+  // Netherite spear (minecraft.wiki/w/Spear): jab 5 damage at 0.87 attacks/s, charge 1.2× closing speed after 8 ticks.
+  netherite_spear: {
+    id: 'netherite_spear',
+    name: 'Netherite Spear',
+    maxStack: 1,
+    attackDamage: 5,
+    attackSpeed: 0.87,
+    use: 'spear',
+    handheld: true,
+    maxDamage: 2031,
+    hitCost: 1,
+    spear: { reachMin: 2, reachMax: 4.5, chargeMult: 1.2, chargeDelay: 8 },
+  },
   flint_and_steel: { id: 'flint_and_steel', name: 'Flint and Steel', maxStack: 1, ...MELEE_FIST, use: 'ignite', maxDamage: 64 },
   // ---- Bed Wars / SkyWars tiers (unbreakable, like the minigame servers make them)
   wooden_sword: { id: 'wooden_sword', name: 'Wooden Sword', maxStack: 1, attackDamage: 4, attackSpeed: 1.6, use: 'none', handheld: true, hitCost: 0, tool: 'sword', toolSpeed: 15 },
@@ -650,6 +675,7 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.swiftSneak) out.push(`Swift Sneak ${roman(e.swiftSneak)}`);
   if (e?.depthStrider) out.push(`Depth Strider ${roman(e.depthStrider)}`);
   if (e?.flame) out.push('Flame');
+  if (e?.lunge) out.push(`Lunge ${roman(e.lunge)}`);
   if (e?.efficiency) out.push(`Efficiency ${roman(e.efficiency)}`);
   if (e?.silkTouch) out.push('Silk Touch');
   if (e?.multishot) out.push('Multishot');
@@ -660,6 +686,12 @@ export function stackLore(s: ItemStack): string[] {
   if (e?.mending) out.push('Mending');
   if (s.charged) out.push('Projectile: [Arrow]');
   if (s.id === 'red_shulker_box') out.push(s.stored ? `Minecart with TNT x${s.stored}` : 'Empty');
+  if (s.id === 'purple_shulker_box') {
+    const n = s.stored ?? 0;
+    const str = shulkerPotions(n).filter((p) => p === 'strength').length;
+    out.push(n ? `Splash Potion of Strength x${str}` : 'Empty');
+    if (n - str) out.push(`Splash Potion of Swiftness x${n - str}`);
+  }
   if (s.potion && s.id === 'tipped_arrow') {
     out.push(`${EFFECT_NAMES[POTIONS[s.potion].effect as EffectId]} (${formatTicks(POTIONS[s.potion].duration / 8)})`);
   } else if (s.potion) {
@@ -694,4 +726,14 @@ export function stackLore(s: ItemStack): string[] {
 
 function fmt(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+/**
+ * What is left in a purple shulker box holding `n` potions: the box is packed Strength, Speed,
+ * Strength… (14 + 13 = 27), and the first ones come out first, so `n` alone says what is inside.
+ */
+export function shulkerPotions(n: number): PotionId[] {
+  const out: PotionId[] = [];
+  for (let i = 27 - Math.max(0, Math.min(27, n)); i < 27; i++) out.push(i % 2 === 0 ? 'strength' : 'swiftness');
+  return out;
 }

@@ -21,10 +21,10 @@ export interface ArmorStats {
   legacyFallEpf: number;
 }
 
-export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars';
+export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'spear_mace' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars';
 /** Built-in kits, and kits players made in the kit editor (`custom:<id>`). */
 export type KitId = BuiltinKitId | `custom:${string}`;
-export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars';
+export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'spear_mace';
 
 /** Everything a fighter spawns with. */
 export interface Loadout {
@@ -393,6 +393,44 @@ function diamondSmpLoadout(): Loadout {
 }
 
 /**
+ * Spear Mace, laid out as in the reference inventory: sword, pearls, axe, gapples, steak, wind
+ * charges, the mace and the Lunge spear in the hotbar; three more stacks of wind charges, two of
+ * pearls, the purple shulker box (27 more pots), a spare totem and 10 + 10 splash Strength II /
+ * Speed II in the inventory; a totem in the off hand. Netherite armor, Prot IV, Feather Falling
+ * IV boots, all Unbreaking III.
+ */
+function spearMaceLoadout(): Loadout {
+  const ub = { unbreaking: 3 };
+  const armor: ItemStack[] = [
+    { id: 'netherite_helmet', count: 1, ench: { protection: 4, ...ub } },
+    { id: 'netherite_chestplate', count: 1, ench: { protection: 4, ...ub } },
+    { id: 'netherite_leggings', count: 1, ench: { protection: 4, ...ub } },
+    { id: 'netherite_boots', count: 1, ench: { protection: 4, featherFalling: 4, ...ub } },
+  ];
+  const W = (): ItemStack => ({ id: 'wind_charge', count: 64 });
+  const P = (): ItemStack => ({ id: 'ender_pearl', count: 16 });
+  const S = () => pot('strength');
+  const V = () => pot('swiftness');
+  const hotbar: (ItemStack | null)[] = [
+    { id: 'netherite_sword', count: 1, ench: { sharpness: 5, ...ub } },
+    P(),
+    { id: 'netherite_axe', count: 1, ench: { sharpness: 5, ...ub } },
+    { id: 'golden_apple', count: 64 },
+    { id: 'cooked_beef', count: 64 },
+    W(),
+    { id: 'mace', count: 1, ench: { density: 5, windBurst: 1, ...ub } },
+    { id: 'netherite_spear', count: 1, ench: { lunge: 3, sharpness: 5, ...ub } },
+    null,
+  ];
+  const main: ItemStack[] = [
+    W(), P(), { id: 'purple_shulker_box', count: 1, stored: 27 }, S(), { id: 'totem_of_undying', count: 1 }, S(), V(), S(), V(),
+    W(), P(), V(), S(), V(), S(), V(), S(), V(),
+    W(), S(), V(), S(), V(), S(), V(), S(), V(),
+  ];
+  return { hotbar, main, armor, offhand: { id: 'totem_of_undying', count: 1 } };
+}
+
+/**
  * The Cart subtier, laid out as in the reference inventory: sword, axe, gapples, webs, a TNT
  * minecart, the Flame bow, a crossbow (shot through fire for a burning bolt), pearls and rails
  * in the hotbar; totems, eight more carts, two red
@@ -585,6 +623,22 @@ export const KITS: KitDef[] = [
       '13× Strength II · 8× Speed II (splash)',
     ],
     ...maceLoadout(),
+    armorLabel: 'Netherite · Prot IV',
+  },
+  {
+    id: 'spear_mace',
+    name: 'Spear Mace',
+    icon: 'spear_mace',
+    available: true,
+    summary: 'The 1.21.11 spear: Lunge jabs and running charges, with the mace and wind charges for smashes.',
+    contents: [
+      'Netherite Armor — Prot IV, Unbreaking III (Feather Falling IV boots)',
+      'Netherite Spear — Lunge III, Sharp V · Mace — Density V, Wind Burst I',
+      'Netherite Sword & Axe — Sharp V (all weapons Unbreaking III)',
+      '256× Wind Charge · 48× Ender Pearl · 64× Golden Apple · 64× Steak · 2× Totem',
+      '10× Strength II · 10× Speed II (splash) + a purple shulker box with 27 more',
+    ],
+    ...spearMaceLoadout(),
     armorLabel: 'Netherite · Prot IV',
   },
   {

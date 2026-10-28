@@ -39,6 +39,8 @@ export const B = {
   CHEST: 21,
   /** Bed Wars item shop counter: right-click to buy. Unbreakable. */
   SHOP: 22,
+  /** Purple shulker box (Spear Mace): `amount` is the splash potions still inside. */
+  SHULKER_POTS: 23,
   /** Floor and walls: solid, unbreakable, never stored. */
   BEDROCK: 255,
 } as const;
@@ -61,6 +63,7 @@ export type BlockName =
   | 'oak_log'
   | 'rail'
   | 'red_shulker_box'
+  | 'purple_shulker_box'
   | 'wool'
   | 'end_stone'
   | 'glass'
@@ -85,6 +88,7 @@ export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.OAK_LOG]: 'oak_log',
   [B.RAIL]: 'rail',
   [B.SHULKER]: 'red_shulker_box',
+  [B.SHULKER_POTS]: 'purple_shulker_box',
   [B.WOOL]: 'wool',
   [B.END_STONE]: 'end_stone',
   [B.GLASS]: 'glass',
@@ -104,7 +108,7 @@ export interface BlockProps {
   /** Drops nothing unless mined with that tool (requiresCorrectToolForDrops). */
   needsTool: boolean;
   /** Item it drops (null: nothing). */
-  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | 'oak_log' | 'rail' | 'red_shulker_box' | 'end_stone' | 'glass' | 'red_wool' | 'blue_wool' | null;
+  drop: 'oak_planks' | 'cobblestone' | 'obsidian' | 'glowstone' | 'respawn_anchor' | 'ender_chest' | 'oak_log' | 'rail' | 'red_shulker_box' | 'purple_shulker_box' | 'end_stone' | 'glass' | 'red_wool' | 'blue_wool' | null;
 }
 
 /**
@@ -130,6 +134,7 @@ export function blastResistance(id: number): number {
       return 0.7;
     case B.OAK_LOG:
     case B.SHULKER:
+    case B.SHULKER_POTS:
       return 2;
     case B.DIRT:
       return 0.5;
@@ -174,6 +179,7 @@ export const BLOCK_PROPS: Record<number, BlockProps> = {
   [B.RAIL]: { hardness: 0.7, tool: 'pickaxe', needsTool: false, drop: 'rail' },
   // Keeps what is inside when broken.
   [B.SHULKER]: { hardness: 2, tool: 'pickaxe', needsTool: false, drop: 'red_shulker_box' },
+  [B.SHULKER_POTS]: { hardness: 2, tool: 'pickaxe', needsTool: false, drop: 'purple_shulker_box' },
   // Wool drops its own colour (Fighter.breakBlock); shears cut it fastest.
   [B.WOOL]: { hardness: 0.8, tool: 'shears', needsTool: false, drop: 'red_wool' },
   [B.END_STONE]: { hardness: 3, tool: 'pickaxe', needsTool: true, drop: 'end_stone' },
@@ -187,6 +193,7 @@ export function isSolid(id: number): boolean {
     id === B.PLANKS ||
     id === B.OAK_LOG ||
     id === B.SHULKER ||
+    id === B.SHULKER_POTS ||
     id === B.WOOL ||
     id === B.END_STONE ||
     id === B.GLASS ||
@@ -362,7 +369,7 @@ export class Blocks {
     if (before === B.AIR && id !== B.AIR) this.count++;
     else if (before !== B.AIR && id === B.AIR) this.count--;
     this.id[i] = id;
-    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL || id === B.SHULKER || id === B.WOOL || id === B.BED ? amount : 0;
+    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL || id === B.SHULKER || id === B.SHULKER_POTS || id === B.WOOL || id === B.BED ? amount : 0;
     this.flags[i] = isFluid(id) ? (source ? 1 : 0) | (falling ? 2 : 0) : 0;
     this.placed[i] = 0;
     this.version++;
@@ -434,11 +441,13 @@ export class Blocks {
 
   /** Minecarts with TNT left in a placed shulker box. */
   shulkerCarts(x: number, y: number, z: number): number {
-    return this.get(x, y, z) === B.SHULKER ? this.amount[this.index(x, y, z)] : 0;
+    const id = this.get(x, y, z);
+    return id === B.SHULKER || id === B.SHULKER_POTS ? this.amount[this.index(x, y, z)] : 0;
   }
 
   setShulkerCarts(x: number, y: number, z: number, n: number) {
-    if (this.get(x, y, z) !== B.SHULKER) return;
+    const id = this.get(x, y, z);
+    if (id !== B.SHULKER && id !== B.SHULKER_POTS) return;
     const i = this.index(x, y, z);
     this.amount[i] = Math.max(0, Math.min(27, n));
     this.version++;

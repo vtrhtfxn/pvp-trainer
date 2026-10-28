@@ -183,7 +183,7 @@ until nothing overlaps. The **Resource Packs** tab shows the active pack; more a
   sprint, toggle sneak, double-tap-W sprint, invert hotbar scroll.
 - **Key Binds** — every action, including mouse buttons 4/5.
 - **Sound** — master, players, footsteps, blocks & world, menus.
-- **HUD** — the practice panel and each of its lines, opponent bar and nametag, effect list,
+- **HUD** — the practice panel and each of its lines, the versus bar (both fighters' health) and nametag, effect list,
   hitboxes.
 - **Chat** — shown / commands only / hidden, text and background opacity, size, width.
 
@@ -343,6 +343,7 @@ when they do not, which is what keeps it playable on integrated graphics.
 | **Crystal** — Netherite armor (Prot IV helmet and chestplate, Blast Protection IV leggings and boots, Feather Falling IV boots; all Unbreaking III + Mending), Netherite Sword (Sharpness V, Knockback I), Netherite Pickaxe (Efficiency V, Silk Touch), 128 end crystals, 128 obsidian, 128 respawn anchors, 128 glowstone, 8 totems (one in the off hand), 64 golden apples, 80 ender pearls, 32 ender chests, Crossbow (Multishot, Quick Charge III) with 64 Slow Falling arrows, 128 XP bottles, 4× Strength II, 4× Speed II · diggable ground | ✅ Playable (vs bot) |
 | **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
 | **Mace** — Netherite armor (Protection IV, Unbreaking III), Elytra, Mace (Density V, Wind Burst III), Mace (Breach IV), Netherite Sword and Axe (Sharpness V), Shield, 2 totems (one in the off hand), 128 wind charges, 64 ender pearls, 128 golden apples, 13× Strength II and 8× Speed II splash (as laid out in the reference inventory) | ✅ Playable (vs bot) |
+| **Spear Mace** — Netherite armor (Protection IV, Unbreaking III; Feather Falling IV boots), Netherite Spear (Lunge III, Sharpness V), Mace (Density V, Wind Burst I), Netherite Sword and Axe (Sharpness V), all Unbreaking III; 256 wind charges, 48 ender pearls, 64 golden apples, 64 steak, 2 totems (one in the off hand), 10× Strength II and 10× Speed II splash, and a purple shulker box with 14 Strength II + 13 Speed II more | ✅ Playable (vs bot) |
 | **Bed Wars** — 1v1 on a void map: forge iron/gold, buy from the shop, bridge over, break their bed, final-kill them (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
 | **SkyWars** — 1v1 Solo Normal: caged on your island, loot chests, knock them into the void (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
 
@@ -366,6 +367,30 @@ A 1v1 version of Hypixel's Solo Normal SkyWars on **Floating Pair**: each player
 - **Bot:** loots its island, puts on the best armor, then (higher tiers) bridges to the middle chests before hunting you; it bridges with sneak, avoids fighting with its back to the void, and throws snowballs/eggs.
 
 Sources for rules and prices: [Hypixel Wiki — Bed Wars](https://hypixel.fandom.com/wiki/Bed_Wars), [Hypixel forums — Bed Wars price list](https://hypixel.net/threads/bed-wars-price-list.1335731/), [Hypixel forums — SkyWars chest guide](https://hypixel.net/threads/chest-guide-newest-hypixel-chest-guide.748358/), [Badlion — SkyWars guide](https://www.badlion.net/minecraft-blog/minecraft-skywars). The maps are original and simplified for 1v1.
+
+### Spear Mace and the spear
+
+The spear is 1.21.11's new weapon, with the netherite spear's numbers from the Minecraft Wiki:
+
+- **Jab** (left click): 5 damage (+3 from Sharpness V), 0.87 attacks/s (1.15 s), reaches **2 to 4.5
+  blocks** (nothing under 2), and only with a full cooldown — clicking early does nothing. Jabs never
+  crit or sprint-knock, and they jab even at a block (a spear never digs).
+- **Lunge** (on every jab): throws you forward 0.458 × level blocks/tick along your facing, flat (Lunge
+  III: 27.5 blocks/s). Not in water, while gliding or under 7 food; costs 4 × level exhaustion and 1
+  durability.
+- **Charge** (hold right click): after 8 ticks the spear is lowered; an opponent in front of it within
+  2–4.5 blocks whom you close on at **4.6 blocks/s** or more takes **1.2 × the closing speed** (from
+  5.1 blocks/s it knocks them back). It stays lowered for 8.75 s. Holding it doesn't slow you, so you
+  can sprint at them — that follows 1.21.11's spear use settings as far as I could find; the jab and
+  charge numbers are from the wiki.
+- The **purple shulker box** holds 27 splash potions (Strength II and Speed II in turn): place it and
+  right-click it to take them.
+
+The bot uses the spear too: about half its approaches (more on higher tiers) come in spear-first —
+walking in with it drawn so it's charged on arrival and jabbing from 2.4–4.3 blocks so Lunge carries it
+in, or from 6–11 blocks a sprinting charge — and the rest of the time it plays the Mace kit's wind-charge
+launches and smashes. The spear and purple shulker textures are drawn by the game (they're newer than
+the bundled resource pack).
 
 ### Subtiers
 
@@ -528,6 +553,45 @@ The technique list comes from Minecraft Wiki mechanics, PvP guides and tier-list
 tricks (block-hitting — play the 1.8 Sword kit for those) and macros are left out. Each drill's page explains the steps and the mechanic
 behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and checks it can be passed
 (and that the wrong technique is called out).
+
+### Versus bar
+
+The top of the screen shows both fighters like a tournament broadcast: you on the left, your opponent
+on the right, the fight clock between. Each side has a tier badge, the name, a big health number and
+a slanted health bar split into hearts, coloured green → yellow → red with the health left. A hit
+leaves a white trail that drains after a beat, healing flashes green, absorption is a gold stripe and
+a bar under 30% pulses. Under each bar: the current combo, totems left (totem kits) and the bot's
+status. Options → HUD → Versus Health Bar turns it off. In a "first to" series, the pips between the
+bars show the score (◆ won, ◇ to go).
+
+After a duel the results screen is a **Match Breakdown**, styled after the PvP Champs tournament
+broadcast (PvPHQ / Tubbo Events): the matchup, a WINNER or DEFEAT plate, the stats side by side with
+the better number bright, and the final score between the two faces. The display type is Bebas Neue
+(SIL Open Font License, bundled via `@fontsource/bebas-neue`).
+
+### Gauntlet
+
+**Gauntlet** (title screen → Play) puts you against every tier in a row — LT5, HT5, LT4 … up to HT1 —
+in the kit picked on the title screen, one round each, with **3 lives**. A win moves you up a tier; a
+loss costs a life and you face the same tier again. The HUD shows the round, the tier and your lives;
+the run ends when you clear HT1 (Gauntlet Champion) or run out of lives, and your best run per kit is
+kept (Locker → Gauntlet bests). Starting any other duel ends the run.
+
+### Advancements and kill effects (Locker)
+
+Minecraft-style **advancements** pop up as toasts (Advancement Made / Goal Reached / Challenge
+Complete) with the chat line, and are kept across sessions — 16 of them: first win, 5- and 10-hit
+combos, 8 crits in a duel, a win in under 15 s, a win on 2 hearts or less, a flawless win, earning a
+tier, beating HT3+ and HT1, wins with 5 different kits, an online win, passing 5 and all Trainer
+drills, and clearing 3 rounds or a whole Gauntlet. Duels changed by commands don't count, and the
+Practice bot doesn't count for the speed and flawless ones.
+
+Some advancements unlock a **kill effect** — a finisher that plays where your opponent goes down:
+Lightning (First Blood), Heartbreaker (5-hit combo), Totem Burst (Clutch), Firework (Untouchable),
+Ender (5 kits), Rainbow Finale (Gauntlet Champion) and Dragon's Breath (beat HT1). Pick one in the
+**Locker** (title screen, next to My Tiers); clicking it previews it on the bot fighting behind the menu.
+Effects play in duels against bots and online, not in the Trainer or Bot vs Bot. The logic is in
+`src/game/fun.ts` (tests: `tests/fun.test.ts`).
 
 ### Bot vs Bot
 
@@ -917,6 +981,6 @@ HUD sprites in `src/assets/pack/`; team leather armor is dyed the vanilla way) �
 for private practice; Mojang's terms don't allow redistributing their assets.
 The UI font is Minecraft's own, built from the pack's glyph sheets by `scripts/build-font.py`.
 Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005.
-Sounds: crits, knockback, sweeps, the totem pop, the mace smash and explosions are Minecraft's own
+Sounds: crits, knockback, sweeps, the totem pop, the mace smash, explosions and the spear lunge are Minecraft's own
 sound effects (`src/assets/sounds/`, trimmed and converted to mono Ogg) — © Mojang; the rest are
 synthesised in `src/audio/Sound.ts`. Not affiliated with Mojang or Microsoft.

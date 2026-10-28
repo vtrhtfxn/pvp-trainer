@@ -57,6 +57,8 @@ function faceTexture(id: number, kind: 'top' | 'bottom' | 'side', blocks: Blocks
       return kind === 'side' ? 'oak_log' : 'oak_log_top';
     case B.SHULKER:
       return kind === 'top' ? 'red_shulker_box_top' : 'red_shulker_box';
+    case B.SHULKER_POTS:
+      return kind === 'top' ? 'purple_shulker_box_top' : 'purple_shulker_box';
     case B.WOOL:
       return `${WOOL_COLORS[blocks.data(x, y, z)] ?? 'white'}_wool`;
     case B.END_STONE:

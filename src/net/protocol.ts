@@ -100,7 +100,7 @@ export function fromSlot(slot: Slot | undefined): ItemStack | null {
   if (slot[5]) out.charged = true;
   if (typeof slot[6] === 'string' && Object.hasOwn(POTIONS, slot[6])) out.chargedPotion = slot[6] as PotionId;
   const stored = Number(slot[7]) | 0;
-  if (id === 'red_shulker_box' && stored > 0) out.stored = Math.min(27, stored);
+  if ((id === 'red_shulker_box' || id === 'purple_shulker_box') && stored > 0) out.stored = Math.min(27, stored);
   return out;
 }
 

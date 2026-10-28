@@ -262,6 +262,8 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
   const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0, blocked: false, disabled: false, swap: false };
   if (attacker.dead || attacker.usingItem || attacker.gameMode === 'spectator') return miss;
   if (attacker.world.legacyCombat) return performLegacyAttack(attacker, target, picked, miss);
+  const spear = defOf(attacker.heldStack()).spear;
+  if (spear) return performJab(attacker, target, spear, miss);
   attacker.stats.swings++;
   let reach = picked ?? rayDistanceToTarget(attacker, target);
   // A picked hit must still be plausible now (a tick later, a knockback or a teleport away).
@@ -607,4 +609,140 @@ export function pushApart(a: Fighter, b: Fighter) {
   a.vel.z -= dz;
   b.vel.x += dx;
   b.vel.z += dz;
+}
+
+// ------------------------------------------------------------------ spear (1.21.11)
+
+/** Spears: how far the attack box is grown for a jab or a charge (minecraft.wiki: 0.125). */
+const SPEAR_MARGIN = 0.125;
+/** Lunge: horizontal impulse per level, blocks/tick (9.16 blocks/s at I). */
+export const LUNGE_IMPULSE = 0.458;
+/** Lunge needs at least this much food; it costs 4 × level exhaustion. */
+export const LUNGE_MIN_FOOD = 7;
+/** A charge stays lowered this long after it engages (netherite: 8.75 s), then is put away. */
+const CHARGE_TICKS = 175;
+/** Closing speeds (blocks/s) a charge needs: any damage, and knockback. */
+export const CHARGE_MIN_SPEED = 4.6;
+const CHARGE_KB_SPEED = 5.1;
+
+/**
+ * A spear jab (left click). It only happens with a full cooldown — clicking early does nothing,
+ * there is no weak jab — reaches 2 to 4.5 blocks, never crits or sprint-knocks, and with Lunge
+ * throws you forward whether it lands or not.
+ */
+function performJab(attacker: Fighter, target: Fighter, spear: NonNullable<ReturnType<typeof defOf>['spear']>, miss: AttackOutcome): AttackOutcome {
+  if (attacker.attackStrengthScale(0.5) < 1) return miss;
+  attacker.stats.swings++;
+  const weapon = attacker.heldStack();
+  const t = rayDistanceToTarget(attacker, target, spear.reachMax, SPEAR_MARGIN);
+  const reach = t >= spear.reachMin ? t : -1;
+  const damage = attacker.attackDamage() + sharpnessBonus(weapon?.ench?.sharpness ?? 0);
+  attacker.resetAttackStrength();
+  attacker.swing();
+  lunge(attacker, weapon?.ench?.lunge ?? 0);
+  if (reach < 0) {
+    attacker.events.push({ type: 'miss' });
+    return miss;
+  }
+  if (target.isBlocking() && shieldFaces(target, attacker.pos.x, attacker.pos.z)) {
+    return hitShield(attacker, target, reach, 1, false, damage);
+  }
+  const kbVel = target.serverVel.clone();
+  const res = hurt(target, damage, attacker, false);
+  if (!res.damaged) {
+    attacker.events.push({ type: 'noDamage', target });
+    return { ...miss, reach, scale: 1 };
+  }
+  if (weapon) attacker.damageItem(attacker.selected, defOf(weapon).hitCost ?? 1);
+  if (res.fullHit) {
+    applyKnockback(kbVel, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), attacker.pos.x - target.pos.x, attacker.pos.z - target.pos.z, target.onGround, target.world.rng);
+    const vy = target.onGround ? kbVel.y : target.vel.y;
+    target.vel.set(kbVel.x, vy, kbVel.z);
+    target.serverVel.set(kbVel.x, vy, kbVel.z);
+  }
+  attacker.causeExhaustion(C.EXHAUSTION_ATTACK);
+  countHit(attacker, res.dealt, reach);
+  attacker.events.push({
+    type: 'attack',
+    target,
+    crit: false,
+    sprint: false,
+    strong: true,
+    enchanted: (weapon?.ench?.sharpness ?? 0) > 0,
+    scale: 1,
+    damage: res.dealt,
+    reach,
+    fullHit: res.fullHit,
+    swap: false,
+  });
+  return { hit: true, reach, crit: false, sprint: false, scale: 1, damage: res.dealt, blocked: false, disabled: false, swap: false };
+}
+
+/**
+ * The Lunge enchantment, on every jab: an instant push of 0.458 × level blocks/tick along your
+ * facing, flattened to the horizontal (looking up or down adds nothing). Not in water, while
+ * gliding, or under 7 food; costs 4 × level exhaustion and 1 durability.
+ */
+export function lunge(f: Fighter, level: number): boolean {
+  if (level <= 0 || f.inWater || f.fallFlying || (f.food.level < LUNGE_MIN_FOOD && !f.instabuild())) return false;
+  const ax = -Math.sin(f.yaw) * LUNGE_IMPULSE * level;
+  const az = -Math.cos(f.yaw) * LUNGE_IMPULSE * level;
+  f.vel.x += ax;
+  f.vel.z += az;
+  f.serverVel.x += ax;
+  f.serverVel.z += az;
+  f.causeExhaustion(4 * level);
+  f.damageItem(f.selected, 1);
+  f.events.push({ type: 'lunge', level });
+  return true;
+}
+
+/**
+ * One tick of a lowered spear (holding use): once it has engaged, an opponent in front of it
+ * (2–4.5 blocks) whom you close on at 4.6 blocks/s or more takes chargeMult × that closing speed;
+ * from 5.1 blocks/s it knocks them back too. Strength and Sharpness don't add to it.
+ */
+export function spearChargeTick(f: Fighter) {
+  const spear = defOf(f.stackIn(f.useHand)).spear;
+  if (!spear) return;
+  const ticks = f.useTicks();
+  if (ticks < spear.chargeDelay) return;
+  if (ticks > spear.chargeDelay + CHARGE_TICKS) {
+    f.stopUsingItem();
+    return;
+  }
+  for (const target of f.world.fighters) {
+    if (target === f || target.dead || target.gameMode === 'spectator' || target.invulnerableTime > C.IFRAME_WINDOW) continue;
+    const t = rayDistanceToTarget(f, target, spear.reachMax, SPEAR_MARGIN);
+    if (t < spear.reachMin) continue;
+    const dx = target.pos.x - f.pos.x;
+    const dy = target.pos.y - f.pos.y;
+    const dz = target.pos.z - f.pos.z;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    // How fast the gap closes, in blocks per second (both fighters' motion counts).
+    const closing = (((f.vel.x - target.vel.x) * dx + (f.vel.y - target.vel.y) * dy + (f.vel.z - target.vel.z) * dz) / len) * 20;
+    if (closing < CHARGE_MIN_SPEED) continue;
+    const kbVel = target.serverVel.clone();
+    const res = hurt(target, spear.chargeMult * closing, f, false);
+    if (!res.damaged) continue;
+    if (res.fullHit && closing >= CHARGE_KB_SPEED) {
+      applyKnockback(kbVel, C.BASE_KNOCKBACK * (1 - target.armor.knockbackResistance), -dx, -dz, target.onGround, target.world.rng);
+      const vy = target.onGround ? kbVel.y : target.vel.y;
+      target.vel.set(kbVel.x, vy, kbVel.z);
+      target.serverVel.set(kbVel.x, vy, kbVel.z);
+    }
+    f.damageItem(f.handSlot(f.useHand), 1);
+    countHit(f, res.dealt, t);
+    f.events.push({ type: 'spearCharge', target, speed: closing, damage: res.dealt });
+  }
+}
+
+function countHit(attacker: Fighter, dealt: number, reach: number) {
+  const s = attacker.stats;
+  s.hits++;
+  s.damageDealt += dealt;
+  s.combo++;
+  s.maxCombo = Math.max(s.maxCombo, s.combo);
+  s.reachSum += reach;
+  s.maxReach = Math.max(s.maxReach, reach);
 }

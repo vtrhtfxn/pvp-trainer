@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import playerUrl from '../assets/models/player.glb?url';
-import { registerGoldenHead } from './itemIcons';
+import { registerGoldenHead, registerSpearMace } from './itemIcons';
 import { loadPack } from './pack';
 
 export type PartName = 'head' | 'body' | 'rightArm' | 'leftArm' | 'rightLeg' | 'leftLeg';
@@ -144,5 +144,6 @@ export async function loadAssets(): Promise<Assets> {
   const [player] = await Promise.all([load(playerUrl), loadPack()]);
   const rig = buildRig(player);
   registerGoldenHead();
+  registerSpearMace();
   return { rig };
 }

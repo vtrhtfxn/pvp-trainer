@@ -201,12 +201,19 @@ describe('trainer drills can be completed', () => {
   });
 
   it('spacing: hits from the edge of reach count, close ones are called out', () => {
-    const run = play('spacing', (_run, m) => {
+    // Like a player: hold ground at the edge of reach, hit it as it walks in, S-tap after the hit.
+    // (Backing off whenever it came close used to walk into the wall on unlucky runs.)
+    let hitAt = -99;
+    const run = play('spacing', (run, m) => {
       lookAt(m);
       const p = m.player;
       const d = dist(m);
-      p.input = { forward: d > 3.1 ? 1 : d < 2.9 ? -1 : 0, strafe: 0, jump: false, sneak: false, sprint: false };
-      if (p.attackStrengthScale(0.5) >= 1 && d > 2.85) m.queueClick();
+      const sTap = run.t - hitAt < 5;
+      p.input = { forward: sTap ? -1 : d > 3.1 ? 1 : 0, strafe: 0, jump: false, sneak: false, sprint: false };
+      if (p.attackStrengthScale(0.5) >= 1 && d > 2.85 && d < 3.25) {
+        m.queueClick();
+        hitAt = run.t;
+      }
     });
     expect(run.result?.passed).toBe(true);
   });

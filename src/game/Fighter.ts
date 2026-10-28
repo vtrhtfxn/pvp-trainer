@@ -1,12 +1,12 @@
 import * as C from '../core/constants';
 import { V3, clamp, forwardX, forwardZ, lookDir, rayAABB, wrapAngle, type AABB } from '../core/math';
 import { Arrow } from './Arrow';
-import { FIST, INSTANT_EFFECTS, ITEMS, POTIONS, cloneStack, defOf, legacyAttackDamage, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
+import { FIST, INSTANT_EFFECTS, ITEMS, POTIONS, cloneStack, shulkerPotions, defOf, legacyAttackDamage, sameItem, type EffectId, type ItemDef, type ItemId, type ItemStack, type PotionId, type UseKind } from './items';
 import { ATTRIBUTES, defaultAttributes, type AttributeId, type Attributes, type GameMode } from './attributes';
 import { armorStatsOf, type ArmorStats, type Loadout } from './kits';
 import { B, BLOCK_PROPS, Blocks, isFluid, isSolid, type RayHit } from './Blocks';
 import { DroppedItem } from './DroppedItem';
-import { burn, fallHurt, hurt, lavaHurt, type DamageKind } from './combat';
+import { burn, fallHurt, hurt, lavaHurt, spearChargeTick, type DamageKind } from './combat';
 import { canPlaceCrystal, detonateAnchor, placeCrystal } from './crystals';
 import { canHoldFire, canPlaceCart, placeCart, spawnPrimedTnt } from './TntCart';
 import { Thrown } from './Thrown';
@@ -130,6 +130,12 @@ export type FighterEvent =
   | { type: 'windLaunch'; vx: number; vy: number; vz: number }
   /** A mace smash attack landed. */
   | { type: 'smash'; fall: number; damage: number }
+  /** Spear: lowered for a charge. */
+  | { type: 'spearRaise' }
+  /** Spear: a Lunge jab threw us forward. */
+  | { type: 'lunge'; level: number }
+  /** Spear: a charge landed on `target` at `speed` blocks/s. */
+  | { type: 'spearCharge'; target: Fighter; speed: number; damage: number }
   /** A splash potion's effect reached you (`own`: you threw it). */
   | { type: 'splashed'; potion: PotionId; scale: number; own: boolean }
   | { type: 'totem' }
@@ -986,7 +992,7 @@ export class Fighter {
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
       }
-      if (hit && hit.id === B.SHULKER) {
+      if (hit && (hit.id === B.SHULKER || hit.id === B.SHULKER_POTS)) {
         this.openShulker(hit.x, hit.y, hit.z);
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
@@ -1147,10 +1153,12 @@ export class Fighter {
   openShulker(x: number, y: number, z: number): number {
     const blocks = this.world.blocks;
     let left = blocks.shulkerCarts(x, y, z);
+    // A purple box holds splash potions (Strength and Speed in turn), a red one TNT carts.
+    const potions = blocks.get(x, y, z) === B.SHULKER_POTS ? shulkerPotions(left) : null;
     let moved = 0;
     for (let i = 0; i < INV_SIZE && left > 0; i++) {
       if (this.inventory[i]) continue;
-      this.inventory[i] = { id: 'tnt_minecart', count: 1 };
+      this.inventory[i] = potions ? { id: 'splash_potion', count: 1, potion: potions[moved] } : { id: 'tnt_minecart', count: 1 };
       left--;
       moved++;
     }
@@ -1241,7 +1249,7 @@ export class Fighter {
         ? Math.abs(Math.sin(this.yaw)) > Math.abs(Math.cos(this.yaw))
           ? 1
           : 0
-        : id === B.SHULKER
+        : id === B.SHULKER || id === B.SHULKER_POTS
           ? Math.min(27, s.stored ?? 0)
           : (ITEMS[s.id].blockData ?? 0);
     if (!this.world.canPlace(this, x, y, z)) return false;
@@ -1376,7 +1384,7 @@ export class Fighter {
     const props = BLOCK_PROPS[block]!;
     const def = this.heldDef();
     const correct = !!def.tool && def.tool === props.tool;
-    const stored = block === B.SHULKER ? this.world.blocks.shulkerCarts(x, y, z) : 0;
+    const stored = block === B.SHULKER || block === B.SHULKER_POTS ? this.world.blocks.shulkerCarts(x, y, z) : 0;
     this.world.blocks.set(x, y, z, B.AIR);
     this.world.emit({ type: 'blockBreak', x, y, z, block });
     const wool = block === B.WOOL ? (this.world.blocks.data(x, y, z) === 1 ? 'blue_wool' : 'red_wool') : null;
@@ -1406,6 +1414,11 @@ export class Fighter {
         this.events.push({ type: 'eatStart' });
         return true;
       }
+      case 'spear':
+        // Lowering the spear for a charge; works with the jab still on cooldown.
+        this.beginUse(hand, s.id, C.USE_FOREVER);
+        this.events.push({ type: 'spearRaise' });
+        return true;
       case 'shield':
         if (this.shieldCooldown > 0) return false;
         this.beginUse(hand, s.id, C.USE_FOREVER);
@@ -1755,6 +1768,7 @@ export class Fighter {
     const def = ITEMS[stack.id];
     if (def.use !== 'food') {
       this.useItemRemaining--;
+      if (def.use === 'spear' && !this.replica) spearChargeTick(this);
       if (def.use === 'crossbow' && this.useTicks() === this.crossbowChargeTicks(stack)) this.events.push({ type: 'crossbowLoaded' });
       if (def.use === 'shield' && this.shieldCooldown > 0) this.stopUsingItem();
       return;
@@ -1800,7 +1814,9 @@ export class Fighter {
       fwd *= mult;
       str *= mult;
     }
-    if (this.usingItem) {
+    // A lowered spear (1.21.11's use_effects: can_sprint, full speed) doesn't slow you down.
+    const slowUse = this.usingItem && this.useKind() !== 'spear';
+    if (slowUse) {
       fwd *= C.USE_ITEM_INPUT_MULT;
       str *= C.USE_ITEM_INPUT_MULT;
       this.sprintTriggerTime = 0;
@@ -1808,7 +1824,7 @@ export class Fighter {
     if (this.sprintTriggerTime > 0) this.sprintTriggerTime--;
     const enough = fwd >= 0.8;
     const foodOk = this.food.level > C.SPRINT_MIN_FOOD;
-    const canStart = enough && foodOk && !this.usingItem && !sneak && !this.dead;
+    const canStart = enough && foodOk && !slowUse && !sneak && !this.dead;
     if (this.doubleTapSprint && !this.sprinting && canStart && this.onGround && !this.hadEnoughImpulse) {
       if (this.sprintTriggerTime <= 0 && !this.input.sprint) this.sprintTriggerTime = C.DOUBLE_TAP_SPRINT_WINDOW;
       else this.sprinting = true;

@@ -4,6 +4,7 @@ import sweepUrl from '../assets/sounds/sweep.ogg?url';
 import totemUrl from '../assets/sounds/totem.ogg?url';
 import smashUrl from '../assets/sounds/smash.ogg?url';
 import explodeUrl from '../assets/sounds/explode.ogg?url';
+import lungeUrl from '../assets/sounds/lunge.ogg?url';
 
 /**
  * Small WebAudio synth for combat feedback, plus recorded samples for crits, knockback hits,
@@ -11,7 +12,7 @@ import explodeUrl from '../assets/sounds/explode.ogg?url';
  * or if the browser can't decode Ogg).
  */
 
-type SampleName = 'crit' | 'knockback' | 'sweep' | 'totem' | 'smash' | 'explode';
+type SampleName = 'crit' | 'knockback' | 'sweep' | 'totem' | 'smash' | 'explode' | 'lunge';
 
 export interface Listener {
   x: number;
@@ -91,6 +92,7 @@ export class Sound {
       ['totem', totemUrl],
       ['smash', smashUrl],
       ['explode', explodeUrl],
+      ['lunge', lungeUrl],
     ] as const;
     for (const [name, url] of list) {
       fetch(url)
@@ -513,6 +515,56 @@ export class Sound {
       this.tone(d, t, 0.18, 'square', 880, 880, 0.2);
       this.tone(d, t + 0.09, 0.3, 'square', 1320, 1320, 0.2);
     } else this.tone(d, t, 0.14, 'square', 587, 587, 0.2);
+  }
+
+  /** entity.lightning_bolt.impact + thunder: a sharp crack right there, then the rumble. */
+  lightning(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1.2);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.12, 'highpass', 5000, 1500, 0.8, 1);
+    this.noiseBurst(d, t + 0.03, 0.5, 'bandpass', 1800, 300, 0.6, 0.7);
+    this.thunder();
+  }
+
+  /** entity.firework_rocket.blast (+ twinkle): a pop, then a crackle of sparks. */
+  firework(pos: { x: number; y: number; z: number }, big = false) {
+    const d = this.out(pos, big ? 1.1 : 0.9);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, big ? 0.6 : 0.4, 'lowpass', 1400, 120, 0.9, 1);
+    this.tone(d, t, 0.25, 'sine', 120, 50, 0.6);
+    for (let i = 0; i < 9; i++) {
+      const at = t + 0.35 + Math.random() * 0.8;
+      this.noiseBurst(d, at, 0.04, 'highpass', 4000 + Math.random() * 3000, 2500, 1, 0.25);
+    }
+  }
+
+  /** item.spear.lunge: the recorded whoosh (a synth swish until it is loaded). */
+  lunge(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    if (this.sample('lunge', d, 0.9)) return;
+    this.noiseBurst(d, this.ctx!.currentTime, 0.3, 'bandpass', 600, 2200, 1.2, 0.6);
+  }
+
+  /** A low growl that rises and falls: the Dragon's Breath finisher. */
+  roar(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 1.3, 'sawtooth', 90, 55, 0.35);
+    this.tone(d, t + 0.05, 1.2, 'sawtooth', 135, 70, 0.2);
+    this.noiseBurst(d, t, 1.2, 'bandpass', 500, 200, 1.5, 0.6);
+  }
+
+  /** ui.toast.challenge_complete / in: a bright rising fanfare for an advancement. */
+  advancement(challenge: boolean) {
+    const d = this.out(undefined, 0.4, 'ui');
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    const notes = challenge ? [523, 659, 784, 1047, 1319] : [784, 1047];
+    notes.forEach((f, i) => this.tone(d, t + i * 0.09, challenge ? 0.5 : 0.35, 'triangle', f, f, 0.22));
   }
 
   jingle(win: boolean) {
