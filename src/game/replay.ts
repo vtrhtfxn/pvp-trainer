@@ -20,6 +20,8 @@ export type ReplayAction =
   | { k: 'open' | 'takeAll'; x: number; y: number; z: number }
   | { k: 'take' | 'put'; x: number; y: number; z: number; i: number }
   | { k: 'stopUse' }
+  /** Ready: the inventory part of the countdown is skipped. */
+  | { k: 'ready' }
   /** /weather, /time or /gamerule changed the world (rain puts out fire, rules change damage). */
   | { k: 'env'; raining: boolean; dayTime: number; rules: GameRules };
 
@@ -68,6 +70,8 @@ export interface ReplayHeader {
   gameModes: { player: string; bot: string };
   dayTime: number;
   raining: boolean;
+  /** Countdown length in ticks (older replays: the 3 s one). */
+  prep?: number;
   /** Date.now() when the duel started. */
   date: number;
 }
@@ -204,6 +208,7 @@ export interface ReplayTarget extends ModeHost {
   queueSlot(i: number): void;
   queueUse(): void;
   queueSwapHands(): void;
+  skipPrep?(): void;
 }
 
 /** Runs a screen action against the match (live, and again when replaying). */
@@ -213,6 +218,9 @@ export function runAction(m: ReplayTarget, a: ReplayAction): string | null | und
   switch (a.k) {
     case 'stopUse':
       if (p.usingItem) p.stopUsingItem();
+      return undefined;
+    case 'ready':
+      m.skipPrep?.();
       return undefined;
     case 'env':
       m.world.raining = a.raining;

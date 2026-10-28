@@ -364,7 +364,7 @@ export class InventoryScreen {
     ctx.clearRect(0, 0, 16, 16);
     if (st) {
       const icon = itemIcon(st);
-      if (icon) ctx.drawImage(icon, 0, 0);
+      if (icon) ctx.drawImage(icon, 0, 0, 16, 16);
       drawDurabilityBar(ctx, st, -1, 0);
     } else if (empty) {
       const icon = emptySlotIcon(empty);

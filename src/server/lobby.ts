@@ -5,6 +5,7 @@
  */
 
 import { Duel } from '../net/Duel';
+import { PREP_TICKS } from '../game/Match';
 import { KITS, type KitId } from '../game/kits';
 import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, cleanChat, cleanName, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
 
@@ -141,6 +142,8 @@ class Room {
     if (this.players.length !== 2 || this.duel) return;
     const names: [string, string] = [this.seats[0]!.name, this.seats[1]!.name];
     this.duel = new Duel(names, this.kit);
+    // 10 s to sort inventories before the 3-2-1, like an offline duel.
+    this.duel.countdownTicks = PREP_TICKS;
     this.rematchVotes.clear();
     this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
     this.startClock();

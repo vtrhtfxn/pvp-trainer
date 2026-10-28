@@ -20,6 +20,7 @@ export function replayProfile(d: ReplayData): BotProfile {
 /** Builds the match a replay starts from: same kit, tier, seed and starting rules. */
 export function replayMatch(d: ReplayData): Match {
   const m = new Match(replayKit(d), replayProfile(d), d.seed);
+  m.countdownTicks = d.prep ?? COUNTDOWN_TICKS;
   m.player.name = d.playerName;
   m.bot.name = d.botName;
   Object.assign(m.world.rules, d.rules);
@@ -76,7 +77,11 @@ export class ReplayWatch implements Watch {
 
   /** Where watching starts: just before the countdown ends. */
   get start(): number {
-    return Math.min(this.total, Math.max(0, COUNTDOWN_TICKS - LEAD_IN));
+    // The fight starts when the countdown ends, or 3 s after you said you were ready.
+    let fight = this.data.prep ?? COUNTDOWN_TICKS;
+    const ready = this.data.frames.findIndex((f) => f.a?.some((a) => a.k === 'ready'));
+    if (ready >= 0) fight = Math.min(fight, ready + COUNTDOWN_TICKS);
+    return Math.min(this.total, Math.max(0, fight - LEAD_IN));
   }
 
   get nameA(): string {

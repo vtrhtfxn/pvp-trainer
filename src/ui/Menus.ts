@@ -26,6 +26,8 @@ export interface MenuCallbacks {
   drillProgress(): Record<string, DrillBest>;
   /** Gauntlet: every tier in a row in the picked kit. */
   onGauntlet(): void;
+  /** Tournament: a double-elimination bracket against bots. */
+  onTournament(): void;
   /** Best Gauntlet run per kit (rounds cleared). */
   gauntletBest(): Record<string, number>;
   /** Locker: the advancements earned and the kill effect in use. */
@@ -343,6 +345,9 @@ export class Menus {
         'Play',
         Object.assign(this.button('Gauntlet', () => this.cb.onGauntlet(), 'gauntlet-btn'), {
           title: `Every tier from LT5 to HT1 in a row with ${GAUNTLET_LIVES} lives, in the kit picked above. How far can you get?`,
+        }),
+        Object.assign(this.button('Tournament', () => this.cb.onTournament(), 'tourney-btn'), {
+          title: '4 to 32 fighters, double elimination: ban a kit, pick a kit, and the decider is drawn at random.',
         }),
         this.button('Multiplayer', () => this.show('multiplayer'), 'online'),
         this.button('Bot vs Bot', () => this.show('versus')),
