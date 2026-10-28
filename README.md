@@ -529,6 +529,30 @@ tricks (block-hitting — play the 1.8 Sword kit for those) and macros are left 
 behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and checks it can be passed
 (and that the wrong technique is called out).
 
+### Gauntlet
+
+**Gauntlet** (title screen → Play) puts you against every tier in a row — LT5, HT5, LT4 … up to HT1 —
+in the kit picked on the title screen, one round each, with **3 lives**. A win moves you up a tier; a
+loss costs a life and you face the same tier again. The HUD shows the round, the tier and your lives;
+the run ends when you clear HT1 (Gauntlet Champion) or run out of lives, and your best run per kit is
+kept (Locker → Gauntlet bests). Starting any other duel ends the run.
+
+### Advancements and kill effects (Locker)
+
+Minecraft-style **advancements** pop up as toasts (Advancement Made / Goal Reached / Challenge
+Complete) with the chat line, and are kept across sessions — 16 of them: first win, 5- and 10-hit
+combos, 8 crits in a duel, a win in under 15 s, a win on 2 hearts or less, a flawless win, earning a
+tier, beating HT3+ and HT1, wins with 5 different kits, an online win, passing 5 and all Trainer
+drills, and clearing 3 rounds or a whole Gauntlet. Duels changed by commands don't count, and the
+Practice bot doesn't count for the speed and flawless ones.
+
+Some advancements unlock a **kill effect** — a finisher that plays where your opponent goes down:
+Lightning (First Blood), Heartbreaker (5-hit combo), Totem Burst (Clutch), Firework (Untouchable),
+Ender (5 kits), Rainbow Finale (Gauntlet Champion) and Dragon's Breath (beat HT1). Pick one in the
+**Locker** (title screen, next to My Tiers); clicking it previews it on the bot fighting behind the menu.
+Effects play in duels against bots and online, not in the Trainer or Bot vs Bot. The logic is in
+`src/game/fun.ts` (tests: `tests/fun.test.ts`).
+
 ### Bot vs Bot
 
 **Bot vs Bot** lets any tier fight any tier in any kit while you watch — round after round, with both

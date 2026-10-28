@@ -515,6 +515,48 @@ export class Sound {
     } else this.tone(d, t, 0.14, 'square', 587, 587, 0.2);
   }
 
+  /** entity.lightning_bolt.impact + thunder: a sharp crack right there, then the rumble. */
+  lightning(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1.2);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.12, 'highpass', 5000, 1500, 0.8, 1);
+    this.noiseBurst(d, t + 0.03, 0.5, 'bandpass', 1800, 300, 0.6, 0.7);
+    this.thunder();
+  }
+
+  /** entity.firework_rocket.blast (+ twinkle): a pop, then a crackle of sparks. */
+  firework(pos: { x: number; y: number; z: number }, big = false) {
+    const d = this.out(pos, big ? 1.1 : 0.9);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, big ? 0.6 : 0.4, 'lowpass', 1400, 120, 0.9, 1);
+    this.tone(d, t, 0.25, 'sine', 120, 50, 0.6);
+    for (let i = 0; i < 9; i++) {
+      const at = t + 0.35 + Math.random() * 0.8;
+      this.noiseBurst(d, at, 0.04, 'highpass', 4000 + Math.random() * 3000, 2500, 1, 0.25);
+    }
+  }
+
+  /** A low growl that rises and falls: the Dragon's Breath finisher. */
+  roar(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 1);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.tone(d, t, 1.3, 'sawtooth', 90, 55, 0.35);
+    this.tone(d, t + 0.05, 1.2, 'sawtooth', 135, 70, 0.2);
+    this.noiseBurst(d, t, 1.2, 'bandpass', 500, 200, 1.5, 0.6);
+  }
+
+  /** ui.toast.challenge_complete / in: a bright rising fanfare for an advancement. */
+  advancement(challenge: boolean) {
+    const d = this.out(undefined, 0.4, 'ui');
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    const notes = challenge ? [523, 659, 784, 1047, 1319] : [784, 1047];
+    notes.forEach((f, i) => this.tone(d, t + i * 0.09, challenge ? 0.5 : 0.35, 'triangle', f, f, 0.22));
+  }
+
   jingle(win: boolean) {
     const d = this.out(undefined, 0.45, 'ui');
     if (!d) return;

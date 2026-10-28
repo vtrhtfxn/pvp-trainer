@@ -10,6 +10,7 @@ import { Arena, SKY_HORIZON, type SkyState } from './Arena';
 import { ArrowView } from './Arrows';
 import { BlocksView } from './BlocksView';
 import { CrystalView, ExplosionView } from './CrystalView';
+import { BoltView } from './BoltView';
 import { CartView } from './CartView';
 import { FireView } from './FireView';
 import { ThrownView } from './ThrownView';
@@ -92,6 +93,8 @@ export class SceneRenderer {
   readonly crystals = new CrystalView();
   readonly carts = new CartView();
   readonly explosions = new ExplosionView();
+  /** Lightning (the kill effect). */
+  readonly bolts = new BoltView();
   private readonly playerFire = new FireView();
   private readonly botFire = new FireView();
   // Inventory-screen player preview: its own tiny scene, rendered off-screen.
@@ -170,7 +173,7 @@ export class SceneRenderer {
     this.scene.add(this.nametag.sprite);
     this.scene.add(this.hitboxes.group);
     this.firstPerson = new FirstPersonView(assets, glintMat);
-    this.scene.add(this.arrows.group, this.thrown.group, this.playerFire.group, this.botFire.group, this.blocks.group, this.crystals.group, this.carts.group, this.explosions.group);
+    this.scene.add(this.arrows.group, this.thrown.group, this.playerFire.group, this.botFire.group, this.blocks.group, this.crystals.group, this.carts.group, this.explosions.group, this.bolts.group);
 
     this.previewModel = new PlayerModel(assets, glintMat);
     this.previewModel.shadow.visible = false;
@@ -343,7 +346,7 @@ export class SceneRenderer {
    */
   private standIns(): THREE.Group {
     const group = new THREE.Group();
-    const views: object[] = [this.blocks, this.crystals, this.carts, this.arrows, this.thrown, this.explosions, this.playerFire];
+    const views: object[] = [this.blocks, this.crystals, this.carts, this.arrows, this.thrown, this.explosions, this.playerFire, this.bolts];
     const mats = new Set<THREE.Material>();
     const take = (v: unknown) => {
       if (v instanceof THREE.Material) mats.add(v);
@@ -606,6 +609,7 @@ export class SceneRenderer {
     this.crystals.update(player.world.crystals, alpha);
     this.carts.update(player.world.carts, alpha, performance.now() / 1000);
     this.explosions.update(dt);
+    this.bolts.update(dt);
     this.playerFire.update(player, alpha, this.camera, time, !firstPerson);
     this.botFire.update(bot, alpha, this.camera, time, true);
     this.particles.setViewport(this.renderer.domElement.height, this.camera.fov);

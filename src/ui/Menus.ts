@@ -12,6 +12,7 @@ import type { CoachReport } from '../game/coach';
 import logoUrl from '../assets/logo.png';
 import { DRILLS, DRILL_GROUPS, DRILL_SPEEDS, loadDrillSpeed, saveDrillSpeed, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 import { loadRelay, parseRelayUrls, saveRelay } from '../net/relay';
+import { ADVANCEMENTS, GAUNTLET_LIVES, GAUNTLET_TIERS, KILL_EFFECTS, effectUnlocked, type KillEffectId } from '../game/fun';
 import { BEGINNER_STEPS, beginnerHidden, beginnerProgress, setBeginnerHidden, stepDone, type BeginnerStep } from './beginner';
 
 export interface MenuCallbacks {
@@ -22,6 +23,14 @@ export interface MenuCallbacks {
   onDrill(id: string): void;
   /** Trainer: the best result of each drill. */
   drillProgress(): Record<string, DrillBest>;
+  /** Gauntlet: every tier in a row in the picked kit. */
+  onGauntlet(): void;
+  /** Best Gauntlet run per kit (rounds cleared). */
+  gauntletBest(): Record<string, number>;
+  /** Locker: the advancements earned and the kill effect in use. */
+  locker(): { unlocked: Set<string>; selected: KillEffectId };
+  /** Picks (and previews) a kill effect. */
+  onKillEffect(id: KillEffectId): void;
   onResume(): void;
   onRestart(): void;
   onQuit(): void;
@@ -59,7 +68,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers' | 'replays' | 'coach';
+type ScreenName = 'locker' | 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers' | 'replays' | 'coach';
 
 export interface ResultData {
   won: boolean;
@@ -147,6 +156,7 @@ export class Menus {
       subtiers: h('div', { class: 'screen subtiers' }),
       replays: h('div', { class: 'screen replays' }),
       coach: h('div', { class: 'screen coach' }),
+      locker: h('div', { class: 'screen locker' }),
     };
     this.kitEditor = new KitEditor(this.screens.kits, customKits, {
       onUiSound: () => this.cb.onUiSound(),
@@ -186,6 +196,7 @@ export class Menus {
     if (name === 'kits') this.kitEditor.render();
     if (name === 'subtiers') this.renderSubtiers();
     if (name === 'replays') this.renderReplays();
+    if (name === 'locker') this.renderLocker();
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -327,6 +338,9 @@ export class Menus {
       ),
       group(
         'Play',
+        Object.assign(this.button('Gauntlet', () => this.cb.onGauntlet(), 'gauntlet-btn'), {
+          title: `Every tier from LT5 to HT1 in a row with ${GAUNTLET_LIVES} lives, in the kit picked above. How far can you get?`,
+        }),
         this.button('Multiplayer', () => this.show('multiplayer'), 'online'),
         this.button('Bot vs Bot', () => this.show('versus')),
         this.button('Subtiers', () => this.show('subtiers'), 'subtier-btn'),
@@ -340,10 +354,11 @@ export class Menus {
     actions.append(
       h(
         'div',
-        { class: 'btn-row four mm-extras' },
+        { class: 'btn-row n5 mm-extras' },
         this.button('Settings', () => this.openSettings('main')),
         this.button('Controls', () => this.show('controls')),
         this.button('My Tiers', () => this.show('tiers')),
+        this.button('Locker', () => this.show('locker'), 'locker-btn'),
         market,
       ),
     );
@@ -1174,6 +1189,94 @@ export class Menus {
       );
     } else panel.append(this.button('Try again (R)', onRetry, 'big'));
     panel.append(h('div', { class: 'btn-row' }, this.button('All drills', () => this.show('trainer')), this.button('Title Screen', () => this.cb.onQuit())));
+    root.append(panel);
+    this.show('results');
+  }
+
+  // ------------------------------------------------------------------ Locker
+
+  /** Kill effects to pick (unlocked by advancements), the advancements, and Gauntlet bests. */
+  private renderLocker() {
+    const root = this.screens.locker;
+    root.replaceChildren();
+    const { unlocked, selected } = this.cb.locker();
+    const panel = h('div', { class: 'menu-panel locker-panel' });
+    panel.append(h('div', { class: 'screen-title' }, 'Locker'));
+    panel.append(h('div', { class: 'tiers-sub' }, `${unlocked.size} / ${ADVANCEMENTS.length} advancements · earn them to unlock kill effects`));
+
+    panel.append(h('div', { class: 'section-title' }, 'Kill effect'));
+    const grid = h('div', { class: 'effect-grid' });
+    for (const e of KILL_EFFECTS) {
+      const open = effectUnlocked(e, unlocked);
+      const need = e.unlock ? ADVANCEMENTS.find((a) => a.id === e.unlock) : undefined;
+      const card = this.button('', () => {
+        if (!open) return;
+        this.cb.onKillEffect(e.id);
+        this.renderLocker();
+      }, `effect-card effect-${e.id}${open ? '' : ' locked'}${e.id === selected ? ' selected' : ''}`);
+      card.replaceChildren(
+        h('span', { class: 'effect-name' }, open ? e.name : `🔒 ${e.name}`),
+        h('span', { class: 'effect-desc' }, open ? e.desc : `Unlock: ${need?.title ?? ''} — ${need?.desc ?? ''}`),
+      );
+      grid.append(card);
+    }
+    panel.append(grid);
+    panel.append(h('div', { class: 'trainer-meta' }, 'Click one to use it — it plays on the bot behind this menu. It plays when you win a duel.'));
+
+    panel.append(h('div', { class: 'section-title' }, 'Advancements'));
+    const list = h('div', { class: 'adv-list' });
+    for (const a of ADVANCEMENTS) {
+      const done = unlocked.has(a.id);
+      list.append(
+        h(
+          'div',
+          { class: `adv adv-${a.frame}${done ? ' done' : ''}` },
+          h('span', { class: 'adv-icon' }, done ? (a.frame === 'challenge' ? '★' : a.frame === 'goal' ? '◆' : '✔') : '·'),
+          h('span', { class: 'adv-title' }, a.title),
+          h('span', { class: 'adv-desc' }, a.desc),
+        ),
+      );
+    }
+    panel.append(list);
+
+    const best = this.cb.gauntletBest();
+    const runs = Object.entries(best).filter(([, n]) => n > 0);
+    panel.append(h('div', { class: 'section-title' }, 'Gauntlet bests'));
+    panel.append(
+      h(
+        'div',
+        { class: 'trainer-meta' },
+        runs.length ? runs.map(([k, n]) => `${kitById(k as KitId).name}: ${n}/${GAUNTLET_TIERS.length}`).join(' · ') : 'No runs yet — Gauntlet on the title screen.',
+      ),
+    );
+    panel.append(this.button('Back', () => this.show('main')));
+    root.append(panel);
+  }
+
+  showGauntletResult(r: { kit: string; cleared: number; total: number; champion: boolean; newBest: boolean; best: number }, onAgain: () => void) {
+    const root = this.screens.results;
+    root.replaceChildren();
+    root.classList.toggle('won', r.champion);
+    root.classList.toggle('lost', !r.champion);
+    const panel = h('div', { class: 'menu-panel' });
+    panel.append(h('div', { class: 'result-title' }, r.champion ? 'Gauntlet Champion!' : 'Gauntlet Over'));
+    panel.append(h('div', { class: 'result-sub' }, `${r.kit} · cleared ${r.cleared} of ${r.total} tiers`));
+    const ladder = h('div', { class: 'gauntlet-ladder' });
+    GAUNTLET_TIERS.forEach((t, i) => {
+      const d = DIFFICULTIES[t];
+      const step = h('span', { class: i < r.cleared ? 'done' : i === r.cleared ? 'fell' : '' }, d.name);
+      step.style.setProperty('--tier', d.color);
+      ladder.append(step);
+    });
+    panel.append(ladder);
+    if (r.newBest) panel.append(h('div', { class: 'result-tier' }, `New best in ${r.kit}: ${r.cleared}/${r.total}!`));
+    else panel.append(h('div', { class: 'result-note' }, `Best in ${r.kit}: ${r.best}/${r.total}`));
+    panel.append(this.button('Run it again', onAgain, 'big'));
+    panel.append(h('div', { class: 'btn-row' }, this.button('Locker', () => {
+          // Leave the finished run for the title screen first: the Locker sits over the menu.
+          this.cb.onQuit();
+          this.show('locker');
+        }), this.button('Title Screen', () => this.cb.onQuit())));
     root.append(panel);
     this.show('results');
   }

@@ -121,7 +121,7 @@ export class Particles {
   /** The Particles+ mod: extra crit and sharpness sparks. */
   critBoost = 1;
   private stars = new ParticleLayer(600, 'star');
-  private squares = new ParticleLayer(400, 'square');
+  private squares = new ParticleLayer(900, 'square');
   private smoke = new ParticleLayer(200, 'smoke');
 
   constructor() {
@@ -308,6 +308,106 @@ export class Particles {
         maxLife: life,
         gravity: 0,
         drag: 0.9,
+        grow: 0,
+      });
+    }
+  }
+
+  /**
+   * A firework star burst (kill effects): sparks thrown out on a sphere at (x, y, z), slowing and
+   * drifting down as they fade, in the given colours.
+   */
+  firework(x: number, y: number, z: number, colors: number[], big = false) {
+    const n = this.amount(big ? 160 : 110);
+    const speed = big ? 0.32 : 0.24;
+    for (let i = 0; i < n; i++) {
+      // Even-ish spread over the sphere.
+      const u = Math.random() * 2 - 1;
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(1 - u * u);
+      const sp = speed * (0.85 + Math.random() * 0.3);
+      const c = colors[i % colors.length];
+      const life = 1.1 + Math.random() * 0.7;
+      const layer = i % 3 === 0 ? this.stars : this.squares;
+      layer.spawn({
+        x,
+        y,
+        z,
+        vx: r * Math.cos(a) * sp,
+        vy: u * sp,
+        vz: r * Math.sin(a) * sp,
+        r: ((c >> 16) & 255) / 255,
+        g: ((c >> 8) & 255) / 255,
+        b: (c & 255) / 255,
+        size: layer === this.stars ? 0.22 : 0.13,
+        life,
+        maxLife: life,
+        gravity: 0.004,
+        drag: 0.86,
+        grow: 0,
+      });
+    }
+  }
+
+  /**
+   * A heart drawn in red sparks, facing the viewer (`yaw` is the camera's), then breaking apart
+   * and floating up.
+   */
+  hearts(x: number, y: number, z: number, yaw: number) {
+    // Right of the camera's view (our convention: forward = (-sin, -cos)).
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
+    const n = this.amount(90);
+    for (let i = 0; i < n; i++) {
+      // The classic heart curve, scaled to about a block across.
+      const t = (i / n) * Math.PI * 2;
+      const hx = 16 * Math.sin(t) ** 3;
+      const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      const k = 0.07;
+      const pink = Math.random() < 0.3;
+      const life = 1.2 + Math.random() * 0.6;
+      this.squares.spawn({
+        x: x + rx * hx * k,
+        y: y + hy * k,
+        z: z + rz * hx * k,
+        vx: rx * hx * 0.0015 + (Math.random() - 0.5) * 0.01,
+        vy: 0.02 + Math.random() * 0.02,
+        vz: rz * hx * 0.0015 + (Math.random() - 0.5) * 0.01,
+        r: 1,
+        g: pink ? 0.45 : 0.12,
+        b: pink ? 0.6 : 0.18,
+        size: 0.14,
+        life,
+        maxLife: life,
+        gravity: -0.0008,
+        drag: 0.93,
+        grow: 0,
+      });
+    }
+  }
+
+  /** The Ender kill effect: a tall swirl of big purple specks that spirals up and fades. */
+  ender(x: number, y: number, z: number) {
+    for (let i = 0, n = this.amount(120); i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.2 + Math.random() * 0.6;
+      const life = 0.9 + Math.random() * 0.9;
+      const shade = 0.6 + Math.random() * 0.4;
+      this.squares.spawn({
+        x: x + Math.cos(a) * r,
+        y: y + Math.random() * 2,
+        z: z + Math.sin(a) * r,
+        vx: -Math.sin(a) * 0.06,
+        vy: 0.03 + Math.random() * 0.05,
+        vz: Math.cos(a) * 0.06,
+        r: 0.75 * shade,
+        g: 0.25 * shade,
+        b: shade,
+        size: 0.12,
+        life,
+        maxLife: life,
+        gravity: -0.002,
+        drag: 0.94,
         grow: 0,
       });
     }

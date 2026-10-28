@@ -29,6 +29,23 @@ import { CHAT_MAX, type ChatKind, type ServerMsg } from '../net/protocol';
 import type { AttributeId } from './attributes';
 import { performAttack, rayDistanceToTarget, renderedPick } from './combat';
 import type { Fighter, FighterEvent } from './Fighter';
+import {
+  GAUNTLET_TIERS,
+  earnAdvancements,
+  gauntletRound,
+  gauntletTier,
+  loadAdvancements,
+  loadGauntletBest,
+  loadKillEffect,
+  newGauntlet,
+  rewardsOf,
+  saveGauntletBest,
+  saveKillEffect,
+  type AdvEvent,
+  type Gauntlet,
+  type KillEffectId,
+} from './fun';
+import { Toasts } from '../ui/Toasts';
 import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
 import { KITS, isCustomKit, kitById, type KitId } from './kits';
 import { loadCustomKits } from './customKits';
@@ -59,7 +76,7 @@ import { Bedwars } from './modes/Bedwars';
 import { Skywars } from './modes/Skywars';
 import { SpectatorHud } from '../ui/SpectatorHud';
 import { DrillHud } from '../ui/DrillHud';
-import { DrillRun, drillById, loadDrillProgress, loadDrillSpeed, recordDrill } from '../trainer/drills';
+import { DRILLS, DrillRun, drillById, loadDrillProgress, loadDrillSpeed, recordDrill } from '../trainer/drills';
 
 type State = 'menu' | 'playing' | 'paused' | 'results' | 'spectating';
 /** Game drives either the offline Match or its online stand-in; they share a surface. */
@@ -95,6 +112,12 @@ export class Game {
   private readonly myTiers: MyTiers = loadMyTiers();
   /** The "first to" series the current duel belongs to. */
   private series: Series | null = null;
+  /** A Gauntlet run in progress (every tier in a row on three lives), or null. */
+  private gauntlet: Gauntlet | null = null;
+  /** Advancements earned (kept across sessions). */
+  private readonly advancements = loadAdvancements();
+  private killEffect: KillEffectId = loadKillEffect(this.advancements);
+  private readonly toasts: Toasts;
   private acc = 0;
   private last = performance.now();
   private time = 0;
@@ -201,6 +224,7 @@ export class Game {
     this.shopUi = new ShopScreen(uiRoot, overlayCb);
     this.chestUi = new ChestScreen(uiRoot, overlayCb);
     this.drillHud = new DrillHud(uiRoot);
+    this.toasts = new Toasts(uiRoot);
     this.modHud = new ModHud(uiRoot, this.mods);
     this.modHud.avoid = this.hud.practice;
     this.damage = new DamageIndicators(uiRoot);
@@ -230,6 +254,16 @@ export class Game {
       onDeleteReplay: (id) => this.deleteReplay(id),
       onDrill: (id) => this.startDrill(id),
       drillProgress: () => this.drillProgress,
+      onGauntlet: () => this.startGauntlet(),
+      gauntletBest: () => loadGauntletBest(),
+      locker: () => ({ unlocked: this.advancements, selected: this.killEffect }),
+      onKillEffect: (id) => {
+        this.killEffect = id;
+        saveKillEffect(id);
+        // Preview it on the bot fighting in the title-screen background.
+        const b = this.match.bot;
+        if (id !== 'none') this.playKillEffect(id, b.pos);
+      },
       myTiers: () => this.myTiers,
       onResume: () => this.resume(),
       onRestart: () => {
@@ -871,6 +905,7 @@ export class Game {
 
   private toMenu() {
     this.spec = null;
+    this.gauntlet = null;
     this.scoreboard.hide();
     this.shopUi.hide();
     this.chestUi.hide();
@@ -907,13 +942,16 @@ export class Game {
     this.leaveOnline(false);
     const drillDef = drillId ? drillById(drillId) ?? null : null;
     this.lastDrill = drillDef ? drillDef.id : null;
-    const kit = kitById(drillDef ? drillDef.kit : this.settings.kit);
-    const profile = DIFFICULTIES[drillDef ? drillDef.profile ?? 'practice' : this.settings.difficulty];
+    // A new duel from anywhere but the Gauntlet's own rounds ends the run.
+    if (drillDef || !nextRound) this.gauntlet = null;
+    const g = this.gauntlet;
+    const kit = kitById(drillDef ? drillDef.kit : g ? g.kit : this.settings.kit);
+    const profile = DIFFICULTIES[drillDef ? drillDef.profile ?? 'practice' : g ? gauntletTier(g) : this.settings.difficulty];
     const s = this.series;
     if (!nextRound || !s || s.kit !== kit.id || s.tier !== profile.id) {
       this.series = newSeries(kit.id, profile.id, this.settings.firstTo);
     }
-    this.hud.setSeries(!drillDef && this.series!.target > 1 ? this.seriesScore() : null);
+    this.hud.setSeries(g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
     this.match = new Match(kit, profile, seed);
     // A new duel keeps what commands set up (rules, reach, game modes, time…) but not the rest.
@@ -977,6 +1015,7 @@ export class Game {
     const r = run.result!;
     // Slow-motion practice is for learning the timing; only full-speed runs tick a drill off.
     const newBest = r.speed >= 1 ? recordDrill(this.drillProgress, run.def.id, r) : false;
+    this.earn({ kind: 'drills', passed: Object.values(this.drillProgress).filter((d) => d.passed).length, total: DRILLS.length });
     this.drill = null;
     this.drillHud.hide();
     this.state = 'results';
@@ -1285,6 +1324,10 @@ export class Game {
         if (this.state === 'playing' || this.state === 'paused') {
           const won = msg.winner === this.net.you;
           this.hud.showCenter(msg.winner === null ? 'DRAW' : won ? 'VICTORY' : 'YOU DIED', won ? 'win' : 'lose', 40);
+          const nm = this.netMatch;
+          if (nm) {
+            this.earn({ kind: 'duel', won, kit: nm.kit.id, tier: 'online', stats: nm.player.stats, seconds: nm.fightTicks / 20, health: nm.player.health, online: true, tierEarned: false, kitsWon: this.kitsWon() });
+          }
           this.autoGG(won);
           this.resultTimer = 30;
         }
@@ -1363,6 +1406,131 @@ export class Game {
     return `FT${s.target} · You ${s.you} – ${s.bot} Bot`;
   }
 
+  // ------------------------------------------------------------------ gauntlet, advancements
+
+  /** The Gauntlet: every tier from LT5 to HT1 in a row, in the kit picked on the title screen. */
+  private startGauntlet() {
+    this.gauntlet = newGauntlet(this.settings.kit);
+    this.startDuel(true);
+    this.hud.showCenter(`Gauntlet — Round 1: ${DIFFICULTIES[gauntletTier(this.gauntlet!)].name}`, 'toast', 60);
+  }
+
+  private gauntletLine(): string {
+    const g = this.gauntlet!;
+    return `Gauntlet · ${Math.min(g.round + 1, GAUNTLET_TIERS.length)}/${GAUNTLET_TIERS.length} · ${DIFFICULTIES[gauntletTier(g)].name} · ${'❤'.repeat(g.lives)}`;
+  }
+
+  private finishGauntletRound(won: boolean) {
+    const g = this.gauntlet!;
+    const beaten = DIFFICULTIES[gauntletTier(g)].name;
+    const step = gauntletRound(g, won);
+    if (step === 'next' || step === 'retry') {
+      this.chat.print([
+        step === 'next'
+          ? { t: `${beaten} down! Next: ${DIFFICULTIES[gauntletTier(g)].name}`, c: COLOR.green }
+          : { t: `Lost a life — ${g.lives} left. ${beaten} again.`, c: COLOR.red },
+      ]);
+      this.startDuel(true);
+      this.hud.showCenter(step === 'next' ? `Round ${g.round + 1}: ${DIFFICULTIES[gauntletTier(g)].name}` : `${'❤'.repeat(g.lives)} left`, 'toast', 60);
+      return;
+    }
+    this.gauntlet = null;
+    const best = saveGauntletBest(g.kit, g.cleared);
+    this.earn({ kind: 'gauntlet', cleared: g.cleared, total: GAUNTLET_TIERS.length });
+    this.state = 'results';
+    this.chat.hide();
+    this.input.enabled = false;
+    this.input.unlock();
+    this.sound.jingle(step === 'cleared');
+    this.menus.showGauntletResult(
+      { kit: kitById(g.kit).name, cleared: g.cleared, total: GAUNTLET_TIERS.length, champion: step === 'cleared', newBest: best, best: loadGauntletBest()[g.kit] ?? 0 },
+      () => this.startGauntlet(),
+    );
+  }
+
+  /** Kits with at least one recorded win (for Jack of All Trades). */
+  private kitsWon(): number {
+    const kits = new Set<string>();
+    for (const [key, r] of Object.entries(this.records)) if (r.wins > 0) kits.add(key.split(':')[0]);
+    return kits.size;
+  }
+
+  private duelAdvancements(m: AnyMatch, won: boolean, tierEarned: boolean) {
+    if (this.cheated) return;
+    this.earn({
+      kind: 'duel',
+      won,
+      kit: m.kit.id,
+      tier: m.profile.id,
+      stats: m.player.stats,
+      seconds: m.fightTicks / 20,
+      health: m.player.health,
+      online: false,
+      tierEarned,
+      kitsWon: this.kitsWon(),
+    });
+  }
+
+  /** Checks for new advancements: a toast, the fanfare and a chat line for each. */
+  private earn(e: AdvEvent) {
+    for (const a of earnAdvancements(e, this.advancements)) {
+      this.toasts.advancement(a, rewardsOf(a.id));
+      this.sound.advancement(a.frame === 'challenge');
+      const verb = a.frame === 'challenge' ? 'completed the challenge' : a.frame === 'goal' ? 'reached the goal' : 'made the advancement';
+      this.chat.print([
+        { t: `${loadPlayerName()} has ${verb} `, c: COLOR.white },
+        { t: `[${a.title}]`, c: a.frame === 'challenge' ? '#ff55ff' : COLOR.green },
+      ]);
+    }
+  }
+
+  /** A kill effect at (pos): what the opponent gets when they go down (also the Locker preview). */
+  private playKillEffect(id: KillEffectId, pos: { x: number; y: number; z: number }) {
+    const fx = this.view.particles;
+    const { x, y, z } = pos;
+    const at = { x, y: y + 1, z };
+    const rainbow = [0xff5555, 0xffaa00, 0xffff55, 0x55ff55, 0x55ffff, 0x5555ff, 0xff55ff];
+    switch (id) {
+      case 'lightning':
+        this.view.bolts.strike(x, y, z);
+        this.flash = 1;
+        this.sound.lightning(at);
+        fx.poof(x, y, z);
+        break;
+      case 'hearts':
+        fx.hearts(x, y + 2.2, z, this.sound.listener.yaw);
+        this.sound.xp(at);
+        break;
+      case 'totem':
+        fx.totem(x, y, z);
+        this.sound.totem(at);
+        break;
+      case 'firework': {
+        const pick = rainbow[Math.floor(Math.random() * rainbow.length)];
+        fx.firework(x, y + 3, z, [pick, 0xffffff]);
+        this.sound.firework(at);
+        break;
+      }
+      case 'ender':
+        fx.ender(x, y, z);
+        this.sound.pearl(at, true);
+        break;
+      case 'rainbow':
+        [0, 280, 560].forEach((ms, i) =>
+          setTimeout(() => {
+            fx.firework(x + (i - 1) * 1.5, y + 3 + i * 0.6, z, rainbow.slice(i * 2, i * 2 + 3).concat(0xffffff), i === 2);
+            this.sound.firework(at, i === 2);
+          }, ms),
+        );
+        break;
+      case 'dragon':
+        fx.firework(x, y + 2.5, z, [0xaa00aa, 0xff55ff, 0xffaa00], true);
+        fx.ender(x, y, z);
+        this.sound.roar(at);
+        break;
+    }
+  }
+
   private finishDuel() {
     const m = this.match;
     const won = m.winner === m.player;
@@ -1379,6 +1547,11 @@ export class Game {
       saveRecords(this.records);
     }
     if (this.sprinting) this.finishSprint();
+    if (this.gauntlet) {
+      this.duelAdvancements(m, won, false);
+      this.finishGauntletRound(won);
+      return;
+    }
     const series = this.series ?? newSeries(m.kit.id, this.settings.difficulty, 1);
     const outcome = scoreRound(series, won, this.cheated);
     // Winning a series against a tier bot earns that tier in this kit (My Tiers).
@@ -1387,6 +1560,7 @@ export class Game {
       earned = true;
       saveMyTiers(this.myTiers);
     }
+    this.duelAdvancements(m, won, earned);
     if (outcome === null) {
       // The series goes on: straight into the next round against the same bot.
       this.chat.print([{ t: `${won ? 'Round won' : 'Round lost'} — ${this.seriesScore()}`, c: won ? COLOR.green : COLOR.red }]);
@@ -2082,6 +2256,8 @@ export class Game {
           if (live && e.damage > 0) this.showDamage(f, e.damage, e.crit);
           break;
         case 'death':
+          // Your kill effect, where the opponent went down (not in drills or Bot vs Bot).
+          if (live && f === m.bot && !this.drill && this.state === 'playing' && this.killEffect !== 'none') this.playKillEffect(this.killEffect, f.pos);
           // Vanilla death messages in chat (/gamerule showDeathMessages).
           if (live && !this.netMatch && this.session.rules.showDeathMessages) {
             this.chat.print(deathMessage(f, (x) => (x === m.player ? loadPlayerName() : x.name)));
