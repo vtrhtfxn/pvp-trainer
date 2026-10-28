@@ -94,8 +94,9 @@ export function attacker(opts: {
       performAttack(b, p);
       opts.onSwing?.(t);
       stayUntil = t + (opts.linger ?? 20);
-      // A slower pace means more time between its swings.
-      const gap = opts.interval[0] + Math.floor(Math.random() * (opts.interval[1] - opts.interval[0] + 1));
+      // A slower pace means more time between its swings. The match's own random numbers, so a
+      // drill (and its replay or test) plays out the same way from the same seed.
+      const gap = m.world.rng.int(opts.interval[0], opts.interval[1]);
       next = t + Math.round(gap / Math.max(0.5, pace));
       opts.onPlan?.(next);
     }
