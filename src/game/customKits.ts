@@ -59,6 +59,7 @@ export function enchantsFor(id: ItemId): (keyof Enchants)[] {
   if (def.tool === 'axe') return ['sharpness', 'efficiency', 'silkTouch', ...keep];
   if (def.tool === 'pickaxe') return ['efficiency', 'silkTouch', ...keep];
   if (id === 'mace') return ['density', 'breach', 'windBurst', 'fireAspect', ...keep];
+  if (ITEMS[id].spear) return ['lunge', 'sharpness', 'fireAspect', 'knockback', ...keep];
   if (id === 'bow') return ['power', ...keep];
   if (id === 'crossbow') return ['multishot', 'quickCharge', 'piercing', ...keep];
   const a = def.armor;
@@ -104,7 +105,7 @@ export function cleanStack(raw: unknown): ItemStack | null {
     const p = typeof raw.potion === 'string' && Object.hasOwn(POTIONS, raw.potion) ? (raw.potion as PotionId) : 'healing';
     s.potion = id === 'tipped_arrow' && p === 'healing' ? 'slow_falling' : p;
   }
-  if (id === 'red_shulker_box') {
+  if (id === 'red_shulker_box' || id === 'purple_shulker_box') {
     const n = Math.floor(Number(raw.stored));
     if (Number.isFinite(n) && n > 0) s.stored = Math.min(n, 27);
   }

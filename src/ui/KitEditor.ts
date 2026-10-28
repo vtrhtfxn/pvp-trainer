@@ -145,7 +145,7 @@ export class KitEditor {
     }
     const prev = this.get(this.slot);
     const s: ItemStack = { id, count: ITEMS[id].maxStack };
-    if (id === 'red_shulker_box') s.stored = 27;
+    if (id === 'red_shulker_box' || id === 'purple_shulker_box') s.stored = 27;
     if (takesPotion(id)) s.potion = prev && prev.potion && takesPotion(prev.id) ? prev.potion : id === 'tipped_arrow' ? 'slow_falling' : 'healing';
     // Swapping one weapon or armor piece for another keeps whatever enchantments still apply.
     if (prev?.ench) {
@@ -370,7 +370,7 @@ export class KitEditor {
       );
     }
 
-    if (s.id === 'red_shulker_box') {
+    if (s.id === 'red_shulker_box' || s.id === 'purple_shulker_box') {
       const n = h('input', { type: 'number', min: '0', max: '27', value: String(s.stored ?? 0), class: 'ke-num' });
       n.addEventListener('change', () => {
         const v = Math.floor(Number(n.value));

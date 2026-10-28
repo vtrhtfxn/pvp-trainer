@@ -208,6 +208,7 @@ export class Game {
     kitIcons.sword18 = itemIcon({ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }) ?? makeKitIcon('sword');
     kitIcons.custom = makeKitIcon('custom');
     kitIcons.cart = itemIcon({ id: 'tnt_minecart', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.spear_mace = itemIcon({ id: 'netherite_spear', count: 1 }) ?? makeKitIcon('mace');
     kitIcons.bedwars = itemIcon({ id: 'red_wool', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.skywars = itemIcon({ id: 'ender_pearl', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.dia_smp = itemIcon({ id: 'diamond_chestplate', count: 1 }) ?? makeKitIcon('axe');
@@ -2324,6 +2325,15 @@ export class Game {
           break;
         case 'equip':
           this.sound.equipArmor(f.pos, e.id === 'elytra');
+          break;
+        case 'lunge':
+          this.sound.swing(f.pos);
+          this.sound.windBurst(f.pos, 0.6);
+          break;
+        case 'spearCharge':
+          this.sound.hit('knockback', e.target.pos);
+          fx.crit(e.target.pos.x, e.target.pos.y + 1, e.target.pos.z, false, 20);
+          if (isPlayer && live && this.settings.hitFeedback) this.hud.showFeedback(`CHARGE ${e.speed.toFixed(1)} b/s · ${(e.damage / 2).toFixed(1)} ❤`, 'kb');
           break;
         case 'smash':
           this.sound.smash(f.pos, e.fall > 5);

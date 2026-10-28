@@ -30,7 +30,7 @@ export function registerAllItemTextures() {
 
 /** Block items drawn as a little isometric cube (the vanilla GUI block model). */
 export function isCubeItem(id: string): boolean {
-  return id === 'oak_planks' || id === 'oak_log' || id === 'red_shulker_box' || id === 'red_wool' || id === 'blue_wool' || id === 'end_stone' || id === 'tnt' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';
+  return id === 'oak_planks' || id === 'oak_log' || id === 'red_shulker_box' || id === 'purple_shulker_box' || id === 'red_wool' || id === 'blue_wool' || id === 'end_stone' || id === 'tnt' || id === 'cobblestone' || id === 'obsidian' || id === 'glowstone' || id === 'respawn_anchor' || id === 'ender_chest';
 }
 
 /** Top texture of a cube item when it differs from its sides. */
@@ -38,6 +38,7 @@ function cubeTop(id: string): string | null {
   if (id === 'respawn_anchor') return 'block/respawn_anchor_top_off';
   if (id === 'oak_log') return 'block/oak_log_top';
   if (id === 'red_shulker_box') return 'block/red_shulker_box_top';
+  if (id === 'purple_shulker_box') return 'block/purple_shulker_box_top';
   if (id === 'tnt') return 'block/tnt_top';
   if (id === 'ender_chest') return enderChestLid();
   return null;
@@ -151,6 +152,53 @@ function paintHead(rows: string[]): HTMLCanvasElement {
  * The server's Golden Head is a golden player-head item. Drawn as an isometric head and
  * registered as the pack texture item/golden_head (icons, hand, dropped items all use it).
  */
+/**
+ * Spear Mace: the netherite spear (newer than the bundled resource pack, so it is drawn here —
+ * a dark shaft running corner to corner with a binding and a long netherite head) and the purple
+ * shulker box (the red one's textures, shifted to purple).
+ */
+export function registerSpearMace() {
+  const [c, ctx] = blank();
+  const px = (x: number, y: number, col: string) => {
+    if (x < 0 || y < 0 || x > 15 || y > 15) return;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, 1, 1);
+  };
+  // Shaft: bottom-left to the binding, a dark outline under a lighter core.
+  for (let x = 1; x <= 9; x++) {
+    px(x, 15 - x + 1, '#241a1d');
+    px(x, 15 - x, x % 3 === 0 ? '#5b4247' : '#4a363b');
+  }
+  // Binding: a short cross-piece where the head meets the shaft.
+  px(8, 5, '#2b2326');
+  px(9, 5, '#6d5a5f');
+  px(10, 6, '#6d5a5f');
+  px(10, 7, '#2b2326');
+  // Head: three pixels wide, tapering to the point at the top right.
+  for (let x = 10; x <= 15; x++) {
+    const y = 15 - x;
+    px(x, y, x >= 14 ? '#b8b0b4' : '#8f878b');
+    if (x <= 13) {
+      px(x - 1, y, '#5e575b');
+      px(x, y + 1, '#3d373a');
+    }
+  }
+  px(15, 0, '#dcd6d9');
+  registerPackImage('item/netherite_spear', c);
+  for (const face of ['', '_top']) {
+    const src = packImage(`block/red_shulker_box${face}`);
+    if (!src) continue;
+    const t = document.createElement('canvas');
+    t.width = src.width;
+    t.height = src.height;
+    const tx = t.getContext('2d')!;
+    tx.imageSmoothingEnabled = false;
+    tx.filter = 'hue-rotate(285deg) saturate(0.85) brightness(0.95)';
+    tx.drawImage(src, 0, 0);
+    registerPackImage(`block/purple_shulker_box${face}`, t);
+  }
+}
+
 export function registerGoldenHead() {
   registerPackImage('item/golden_head', isoCube(paintHead(HEAD_TOP), paintHead(HEAD_SIDE), paintHead(HEAD_FACE)));
 }

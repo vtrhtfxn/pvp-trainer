@@ -65,6 +65,12 @@ function nextHit(p: Fighter, target: Fighter): { text: string; cls: string } {
     return { text: `SMASH +${smashBonus(p.fallDistance, e.density ?? 0).toFixed(0)} · ${p.fallDistance.toFixed(1)} blocks`, cls: 'kb' };
   }
   if (p.fallFlying) return { text: 'gliding · swap to the chestplate, then smash', cls: 'mid' };
+  // Spear: a jab only with a full bar, 2–4.5 blocks; a lowered spear hits on closing speed.
+  if (p.heldDef().spear) {
+    if (p.useKind() === 'spear') return { text: p.useTicks() < p.heldDef().spear!.chargeDelay ? 'lowering…' : 'CHARGE · run at them (4.6+ b/s)', cls: 'kb' };
+    if (charge < 1) return { text: `spear charging ${Math.round(charge * 100)}%`, cls: 'no' };
+    return { text: 'JAB · 2–4.5 blocks · Lunge', cls: 'ok' };
+  }
   if (p.world.legacyCombat) {
     // 1.8: sprint knockback and crits stack, and there is no charge to wait for.
     const crit = p.fallDistance > 0 && !p.onGround;

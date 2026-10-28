@@ -250,11 +250,13 @@ export class Match {
         // gets hit (and blows up) instead of them.
         if (hitNearerEntity(p, onScreen ?? rayDistanceToTarget(p, this.bot))) continue;
         // The opponent on screen in front of a block is an attack, not a dig.
-        if (!mined && !(onScreen !== undefined && onScreen >= 0) && p.tickMining(true, true)) mined = true;
+        // A spear never digs: it jabs even at a block (and reaches past the usual 3 blocks).
+        const spear = !!p.heldDef().spear;
+        if (!mined && !spear && !(onScreen !== undefined && onScreen >= 0) && p.tickMining(true, true)) mined = true;
         else if (!mined) this.lastPlayerAttack = performAttack(p, this.bot, onScreen);
       }
       this.queuedClicks.length = 0;
-      if (!mined && !this.externalMining) p.tickMining(this.attackHeld, false);
+      if (!mined && !this.externalMining) p.tickMining(this.attackHeld && !p.heldDef().spear, false);
       while (this.queuedUse > 0) {
         this.queuedUse--;
         p.startUsingItem(true);
