@@ -341,7 +341,6 @@ anti-aliasing stays off on PCs under 8 GB or 4 cores.
 | Mode | Status |
 | --- | --- |
 | **Sword** — Diamond Sword (Sharpness V), Diamond armor (Protection IV) · no golden apples, hunger off (you can always sprint) | ✅ Playable |
-| **1.8 Sword** — the Sword kit under 1.8 combat rules (see below) | ✅ Playable |
 | **Custom** — any kit you build in the kit editor (see below) | ✅ Playable (vs bot, Bot vs Bot) |
 | **Axe** — Diamond Axe, Diamond Sword, Crossbow, Bow, 6 Arrows, Shield (off hand), Diamond armor (unenchanted) | ✅ Playable (vs bot) |
 | **NethPot** — Netherite Sword (Sharpness V, Fire Aspect II, Unbreaking III, Mending), Netherite armor (Protection IV, Unbreaking III, Mending), 3 totems (one in the off hand), 64 golden apples, 3× Strength II, 3× Speed II, 3× Fire Resistance (8:00), 21× Splash Healing II, 2 stacks of Bottles o' Enchanting | ✅ Playable (vs bot) |
@@ -350,8 +349,6 @@ anti-aliasing stays off on PCs under 8 GB or 4 cores.
 | **Crystal** — Netherite armor (Prot IV helmet and chestplate, Blast Protection IV leggings and boots, Feather Falling IV boots; all Unbreaking III + Mending), Netherite Sword (Sharpness V, Knockback I), Netherite Pickaxe (Efficiency V, Silk Touch), 128 end crystals, 128 obsidian, 128 respawn anchors, 128 glowstone, 8 totems (one in the off hand), 64 golden apples, 80 ender pearls, 32 ender chests, Crossbow (Multishot, Quick Charge III) with 64 Slow Falling arrows, 128 XP bottles, 4× Strength II, 4× Speed II · diggable ground | ✅ Playable (vs bot) |
 | **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
 | **Mace** — Netherite armor (Protection IV, Unbreaking III), Elytra, Mace (Density V, Wind Burst III), Mace (Breach IV), Netherite Sword and Axe (Sharpness V), Shield, 2 totems (one in the off hand), 128 wind charges, 64 ender pearls, 128 golden apples, 13× Strength II and 8× Speed II splash (as laid out in the reference inventory) | ✅ Playable (vs bot) |
-| **Bed Wars** — 1v1 on a void map: forge iron/gold, buy from the shop, bridge over, break their bed, final-kill them (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
-| **SkyWars** — 1v1 Solo Normal: caged on your island, loot chests, knock them into the void (see below) | ✅ Playable (vs bot, Bot vs Bot, online) |
 
 The arena is 80 × 80 blocks (walls 16 high); Bed Wars and SkyWars use their own void maps. Every built-in kit, Bed Wars and SkyWars included, also works online (see Multiplayer).
 
@@ -410,9 +407,12 @@ the bundled resource pack).
 
 | Subtier | Kit |
 | --- | --- |
+| **1.8 Sword** | The Sword kit under 1.8 combat rules (see below) |
 | **Spear Mace** | Netherite armor (Protection IV, Unbreaking III; Feather Falling IV boots), Netherite Spear (Lunge III, Sharpness V), Mace (Density V, Wind Burst I), Netherite Sword and Axe (Sharpness V), all Unbreaking III; 256 wind charges, 48 ender pearls, 64 golden apples, 64 steak, 2 totems (one in the off hand), 10× Strength II and 10× Speed II splash, and a purple shulker box with 14 Strength II + 13 Speed II more |
 | **Cart** | Netherite armor (Prot IV, Unbreaking III, Mending), Netherite Sword and Axe (Sharp V), Bow (Power V, Flame), Crossbow (Quick Charge III, Unbreaking III, Mending), 64 arrows, 9 minecarts with TNT plus 2 red shulker boxes holding 27 more each (63 carts), 64 rails, flint and steel, 64 cobwebs, 8 totems (one in the off hand), 183 golden apples, 16 ender pearls, 5× Strength II and 1× Speed II splash · diggable ground |
 | **Diamond SMP** | Diamond Sword (Sharp V, Fire Aspect II, Unbreaking III), Diamond Axe (Sharp V, Unbreaking III), Shield (Unbreaking III, Mending), Diamond armor (Prot IV, Unbreaking III, Mending; boots Feather Falling IV + Depth Strider III, leggings Swift Sneak III), 128 golden apples, Netherite Pickaxe (Silk Touch, Efficiency V, Unbreaking III, Mending), 64 oak logs, 48 cobwebs, 4 water buckets, 64 XP bottles, 12 ender pearls, 3 chorus fruit, 1 totem, 15× Strength II, 3× Speed I (8:00) and 3× Fire Resistance (8:00) splash |
+| **Bed Wars** | 1v1 on a void map: forge iron/gold, buy from the shop, bridge over, break their bed, final-kill them (see Bed Wars above) · vs bot, Bot vs Bot, online |
+| **SkyWars** | 1v1 Solo Normal: caged on your island, loot chests, knock them into the void (see SkyWars above) · vs bot, Bot vs Bot, online |
 
 What's new for them:
 
@@ -524,7 +524,7 @@ first duel against the Practice bot (win or lose), the Spacing (S-tap) drill, an
 LT5 bot. The dots fill in as you pass each one (from your drill results and duel records), and the
 Trainer opens on the next drill, marked **Start here**. **Hide** puts it away; **Trainer → Show
 Getting started** brings it back. The rest of the title screen is grouped: **Start Duel**, then
-**Improve** (Trainer, Replays & Coach), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
+**Improve** (Trainer, Replays & Coach, Progress), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
 (Settings, Controls, My Tiers, Marketplace).
 
 ### Trainer
@@ -599,8 +599,8 @@ bracket, where a second loss knocks you out. The upper-bracket winner meets the 
 in a single **Grand Final**.
 
 Every match is a **best of three**, drafted on the **Kit Selection** screen from twelve kits — the
-main ones (Sword, 1.8 Sword, Axe, UHC, Diamond Pot, NethPot, Crystal, SMP, Mace) and the subtiers
-(Spear Mace, Cart, Diamond SMP): Team A (the higher seed)
+main ones (Sword, Axe, UHC, Diamond Pot, NethPot, Crystal, SMP, Mace) and the subtiers (1.8
+Sword, Spear Mace, Cart, Diamond SMP): Team A (the higher seed)
 bans, Team B bans, Team A picks, Team B picks, and the **Decider** is drawn at random from what's
 left. Game 1 is played on Team A's pick, game 2 on Team B's, game 3 on the decider. Bots pick their
 favourite kits and ban your best one. Your games are real duels; bot-vs-bot matches are simulated
@@ -666,6 +666,16 @@ come out the same, every time. A checksum every second notices a replay recorded
 version that no longer plays out the same ("drifted from the original"). Duels changed by commands
 (reach, attributes, /tick…) and online duels aren't recorded; `/weather`, `/time` and `/gamerule`
 are.
+
+### Progress
+
+**Progress** (Improve group on the title screen) keeps a history of your finished duels — against
+bots, in the Gauntlet, in tournaments and online — on this computer (the last 400). It shows your
+duels, win rate and win streaks; trend lines over your last 30 duels for accuracy, crit rate, best
+combo and damage trade (each a 5-duel rolling average, with the change since the start); a **Focus**
+card that picks the stat furthest below its mark over your last 10 duels and opens the Trainer drill
+that practises it (Aim, Jump crits, Sprint hits, Spacing); your record per kit; and your latest duels.
+**Reset history** clears it. Duels where you used cheats aren't recorded.
 
 ### Coach
 

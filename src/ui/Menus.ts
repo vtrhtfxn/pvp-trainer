@@ -13,6 +13,7 @@ import logoUrl from '../assets/logo.png';
 import { DRILLS, DRILL_GROUPS, DRILL_SPEEDS, loadDrillSpeed, saveDrillSpeed, type DrillBest, type DrillDef, type DrillResult } from '../trainer/drills';
 import { loadRelay, parseRelayUrls, saveRelay } from '../net/relay';
 import { faceUrl } from './faces';
+import { focus, perKit, rates, streaks, trend, type DuelEntry } from '../game/history';
 import { ADVANCEMENTS, GAUNTLET_LIVES, GAUNTLET_TIERS, KILL_EFFECTS, effectUnlocked, type KillEffectId } from '../game/fun';
 import { BEGINNER_STEPS, beginnerHidden, beginnerProgress, setBeginnerHidden, stepDone, type BeginnerStep } from './beginner';
 
@@ -24,6 +25,9 @@ export interface MenuCallbacks {
   onDrill(id: string): void;
   /** Trainer: the best result of each drill. */
   drillProgress(): Record<string, DrillBest>;
+  /** Progress: every finished duel, oldest first. */
+  history(): DuelEntry[];
+  clearHistory(): void;
   /** Gauntlet: every tier in a row in the picked kit. */
   onGauntlet(): void;
   /** Tournament: a double-elimination bracket against bots. */
@@ -73,7 +77,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   chat: 'Chat',
 };
 
-type ScreenName = 'locker' | 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers' | 'replays' | 'coach';
+type ScreenName = 'progress' | 'locker' | 'main' | 'pause' | 'settings' | 'controls' | 'results' | 'multiplayer' | 'tiers' | 'versus' | 'trainer' | 'kits' | 'subtiers' | 'replays' | 'coach';
 
 export interface ResultData {
   won: boolean;
@@ -108,6 +112,36 @@ function h<K extends keyof HTMLElementTagNameMap>(
   }
   for (const c of children) e.append(c);
   return e;
+}
+
+/** A small line chart (inline SVG) of `pts`, scaled to its own range. */
+function sparkline(pts: number[], color: string): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const W = 200;
+  const H = 44;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('class', 'pg-spark');
+  if (pts.length < 2) return svg;
+  let lo = Math.min(...pts);
+  let hi = Math.max(...pts);
+  if (hi - lo < 1e-6) {
+    lo -= 0.5;
+    hi += 0.5;
+  }
+  const xy = pts.map((v, i) => [(i / (pts.length - 1)) * (W - 4) + 2, H - 3 - ((v - lo) / (hi - lo)) * (H - 6)]);
+  const line = document.createElementNS(NS, 'polyline');
+  line.setAttribute('points', xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '));
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', color);
+  line.setAttribute('stroke-width', '2');
+  line.setAttribute('stroke-linejoin', 'round');
+  const area = document.createElementNS(NS, 'polygon');
+  area.setAttribute('points', `2,${H} ${xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')} ${W - 2},${H}`);
+  area.setAttribute('fill', color);
+  area.setAttribute('opacity', '0.12');
+  svg.append(area, line);
+  return svg;
 }
 
 /** Title screen, pause menu, settings, controls and the post-duel results screen. */
@@ -164,6 +198,7 @@ export class Menus {
       replays: h('div', { class: 'screen replays' }),
       coach: h('div', { class: 'screen coach' }),
       locker: h('div', { class: 'screen locker' }),
+      progress: h('div', { class: 'screen progress' }),
     };
     this.kitEditor = new KitEditor(this.screens.kits, customKits, {
       onUiSound: () => this.cb.onUiSound(),
@@ -204,6 +239,7 @@ export class Menus {
     if (name === 'subtiers') this.renderSubtiers();
     if (name === 'replays') this.renderReplays();
     if (name === 'locker') this.renderLocker();
+    if (name === 'progress') this.renderProgress();
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -342,6 +378,9 @@ export class Menus {
         'Improve',
         this.button('Trainer', () => this.show('trainer'), 'trainer-btn'),
         this.button('Replays & Coach', () => this.show('replays'), 'replay-btn'),
+        Object.assign(this.button('Progress', () => this.show('progress'), 'progress-btn'), {
+          title: 'Your aim, crits, combos and trades over your last duels — and what to practise next.',
+        }),
       ),
       group(
         'Play',
@@ -1311,6 +1350,111 @@ export class Menus {
         }), this.button('Title Screen', () => this.cb.onQuit())));
     root.append(panel);
     this.show('results');
+  }
+
+  // ------------------------------------------------------------------ Progress
+
+  private renderProgress() {
+    const root = this.screens.progress;
+    root.replaceChildren();
+    const list = this.cb.history();
+    const panel = h('div', { class: 'menu-panel progress-panel' });
+    panel.append(h('div', { class: 'screen-title' }, 'Progress'));
+    if (!list.length) {
+      panel.append(h('div', { class: 'tiers-sub' }, 'Finish a duel (against a bot, online, in a Gauntlet or a tournament) and your stats start here: aim, crits, combos and trades over time, and what to practise next.'));
+      panel.append(h('div', { class: 'btn-row' }, this.button('Back', () => this.show('main'))));
+      root.append(panel);
+      return;
+    }
+    const all = rates(list);
+    const st = streaks(list);
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    const stat = (label: string, value: string) => h('div', { class: 'pg-stat' }, h('b', {}, value), h('span', {}, label));
+    panel.append(
+      h(
+        'div',
+        { class: 'pg-stats' },
+        stat('Duels', String(list.length)),
+        stat('Win rate', pct(all.winRate)),
+        stat('Win streak', String(st.current)),
+        stat('Best streak', String(st.best)),
+      ),
+    );
+
+    // ---- Trends over the last 30 duels (each point a 5-duel average).
+    const charts = h('div', { class: 'pg-charts' });
+    const chart = (label: string, pick: (r: ReturnType<typeof rates>) => number, fmt: (v: number) => string, color: string) => {
+      const pts = trend(list, pick);
+      const box = h('div', { class: 'pg-chart' });
+      const last = pts[pts.length - 1] ?? 0;
+      const first = pts[0] ?? 0;
+      const delta = last - first;
+      const arrow = pts.length < 2 || Math.abs(delta) < 1e-6 ? '' : delta > 0 ? ' ▲' : ' ▼';
+      box.append(h('div', { class: 'pg-chart-head' }, h('span', {}, label), h('b', { class: delta > 0 ? 'up' : delta < 0 ? 'down' : '' }, `${fmt(last)}${arrow}`)));
+      box.append(sparkline(pts, color));
+      charts.append(box);
+    };
+    chart('Accuracy', (r) => r.accuracy, pct, '#55ffff');
+    chart('Crit rate', (r) => r.critRate, pct, '#ffff55');
+    chart('Best combo', (r) => r.combo, (v) => v.toFixed(1), '#ff55ff');
+    chart('Damage trade', (r) => r.trade, (v) => `${v.toFixed(2)}×`, '#55ff55');
+    panel.append(h('div', { class: 'section-title' }, `Last ${Math.min(30, list.length)} duels`), charts);
+
+    // ---- What to work on.
+    const f = focus(list);
+    if (f) {
+      const card = h('div', { class: 'pg-focus' }, h('div', { class: 'pg-focus-title' }, `Focus: ${f.title}`), h('div', {}, f.why));
+      if (f.drill) {
+        const d = DRILLS.find((x) => x.id === f.drill);
+        if (d) card.append(this.button(`Practise: ${d.name}`, () => this.cb.onDrill(d.id), 'big start-btn'));
+      }
+      panel.append(card);
+    }
+
+    // ---- By kit, and the latest duels.
+    const kits = h('div', { class: 'pg-kits' });
+    for (const k of perKit(list).slice(0, 8)) {
+      const kit = KITS.find((x) => x.id === k.kit) ?? customKitList().find((x) => x.id === k.kit);
+      const icon = h('canvas', { width: '16', height: '16' });
+      const src = kit ? this.kitIcons[kit.icon] : undefined;
+      if (src) {
+        const ctx = icon.getContext('2d')!;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(src, 0, 0, 16, 16);
+      }
+      kits.append(h('div', { class: 'pg-kit' }, icon, h('span', {}, kit?.name ?? k.kit), h('span', {}, `${k.duels} duel${k.duels === 1 ? '' : 's'}`), h('span', {}, `${pct(k.wins / k.duels)} won`), h('span', {}, `${pct(k.accuracy)} aim`)));
+    }
+    panel.append(h('div', { class: 'section-title' }, 'By kit'), kits);
+    const recent = h('div', { class: 'pg-recent' });
+    for (const e of list.slice(-8).reverse()) {
+      const kit = KITS.find((x) => x.id === e.kit)?.name ?? e.kit;
+      const who = e.tier === 'online' ? 'online' : (DIFFICULTIES as Record<string, { name: string }>)[e.tier]?.name ?? e.tier;
+      const when = new Date(e.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      recent.append(
+        h(
+          'div',
+          { class: `pg-duel ${e.won ? 'won' : 'lost'}` },
+          h('b', {}, e.won ? 'W' : 'L'),
+          h('span', {}, `${kit} · ${who}${e.mode === 'gauntlet' || e.mode === 'tournament' ? ` · ${e.mode}` : ''}`),
+          h('span', {}, `${e.hits}/${e.swings} hits · ${e.crits} crits · ${e.combo} combo`),
+          h('span', { class: 'pg-when' }, when),
+        ),
+      );
+    }
+    panel.append(h('div', { class: 'section-title' }, 'Latest duels'), recent);
+    panel.append(
+      h(
+        'div',
+        { class: 'btn-row' },
+        this.button('Back', () => this.show('main')),
+        this.button('Reset history', () => {
+          if (!confirm('Delete your whole duel history? Records and tiers stay.')) return;
+          this.cb.clearHistory();
+          this.renderProgress();
+        }),
+      ),
+    );
+    root.append(panel);
   }
 
   // ------------------------------------------------------------------ Bot vs Bot

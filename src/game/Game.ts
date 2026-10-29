@@ -51,6 +51,7 @@ import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
 import { KITS, isCustomKit, kitById, type KitId } from './kits';
 import { isYours, recordGame, roundName, saveTournament } from './tournament';
 import { TournamentUI } from '../ui/Tournament';
+import { entryFrom, loadHistory, recordDuel, saveHistory, type DuelEntry } from './history';
 import { netheriteSpearLogo, uhcLogo } from '../ui/kitLogos';
 import type { TourView } from '../net/tourney';
 import { loadCustomKits } from './customKits';
@@ -115,6 +116,8 @@ export class Game {
   private readonly sound = new Sound();
   private records: Records;
   private readonly myTiers: MyTiers = loadMyTiers();
+  /** Every finished duel (Progress screen), oldest first. */
+  private history: DuelEntry[] = loadHistory();
   /** The "first to" series the current duel belongs to. */
   private series: Series | null = null;
   /** A Gauntlet run in progress (every tier in a row on three lives), or null. */
@@ -300,6 +303,11 @@ export class Game {
         if (id !== 'none') this.playKillEffect(id, b.pos);
       },
       myTiers: () => this.myTiers,
+      history: () => this.history,
+      clearHistory: () => {
+        this.history = [];
+        saveHistory(this.history);
+      },
       onResume: () => this.resume(),
       onRestart: () => {
         if (!this.online) this.restartCurrent();
@@ -1500,6 +1508,7 @@ export class Game {
           const nm = this.netMatch;
           if (nm) {
             this.earn({ kind: 'duel', won, kit: nm.kit.id, tier: 'online', stats: nm.player.stats, seconds: nm.fightTicks / 20, health: nm.player.health, online: true, tierEarned: false, kitsWon: this.kitsWon() });
+            if (msg.winner !== null) recordDuel(this.history, entryFrom(nm.player.stats, { kit: nm.kit.id, tier: 'online', mode: this.tourView ? 'tournament' : 'online', won, secs: nm.fightTicks / 20 }));
           }
           this.autoGG(won);
           this.resultTimer = 30;
@@ -1844,6 +1853,8 @@ export class Game {
       rec.bestCombo = Math.max(rec.bestCombo, m.player.stats.maxCombo);
       this.records[key] = rec;
       saveRecords(this.records);
+      const mode = this.tourneyGame ? 'tournament' : this.gauntlet ? 'gauntlet' : 'bot';
+      recordDuel(this.history, entryFrom(m.player.stats, { kit: m.kit.id, tier: m.profile.id, mode, won, secs: m.fightTicks / 20 }));
     }
     if (this.sprinting) this.finishSprint();
     if (this.tourneyGame) {
