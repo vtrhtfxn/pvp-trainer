@@ -319,7 +319,8 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
     attacker.impulseY = attacker.pos.y;
     attacker.stats.smashes++;
     attacker.stats.maxSmash = Math.max(attacker.stats.maxSmash, res.dealt);
-    attacker.events.push({ type: 'smash', fall, damage: res.dealt });
+    // The sound depends on whether they were on the ground when it landed (MaceItem).
+    attacker.events.push({ type: 'smash', fall, damage: res.dealt, ground: target.onGround });
   }
   if (!res.damaged) {
     attacker.events.push({ type: 'noDamage', target });

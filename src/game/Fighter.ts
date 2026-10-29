@@ -129,7 +129,7 @@ export type FighterEvent =
   /** A wind explosion pushed us (online: the server sends the new velocity to that client). */
   | { type: 'windLaunch'; vx: number; vy: number; vz: number }
   /** A mace smash attack landed. */
-  | { type: 'smash'; fall: number; damage: number }
+  | { type: 'smash'; fall: number; damage: number; ground?: boolean }
   /** Spear: lowered for a charge. */
   | { type: 'spearRaise' }
   /** Spear: a Lunge jab threw us forward. */

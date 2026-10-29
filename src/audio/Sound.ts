@@ -3,6 +3,9 @@ import knockbackUrl from '../assets/sounds/knockback.ogg?url';
 import sweepUrl from '../assets/sounds/sweep.ogg?url';
 import totemUrl from '../assets/sounds/totem.ogg?url';
 import smashUrl from '../assets/sounds/smash.ogg?url';
+import smashGroundUrl from '../assets/sounds/smash_ground.ogg?url';
+import crossbowShootUrl from '../assets/sounds/crossbow_shoot.ogg?url';
+import shieldBlockUrl from '../assets/sounds/shield_block.ogg?url';
 import explodeUrl from '../assets/sounds/explode.ogg?url';
 import lungeUrl from '../assets/sounds/lunge.ogg?url';
 
@@ -12,7 +15,7 @@ import lungeUrl from '../assets/sounds/lunge.ogg?url';
  * or if the browser can't decode Ogg).
  */
 
-type SampleName = 'crit' | 'knockback' | 'sweep' | 'totem' | 'smash' | 'explode' | 'lunge';
+type SampleName = 'crit' | 'knockback' | 'sweep' | 'totem' | 'smash' | 'smashGround' | 'crossbowShoot' | 'shieldBlock' | 'explode' | 'lunge';
 
 export interface Listener {
   x: number;
@@ -91,6 +94,9 @@ export class Sound {
       ['sweep', sweepUrl],
       ['totem', totemUrl],
       ['smash', smashUrl],
+      ['smashGround', smashGroundUrl],
+      ['crossbowShoot', crossbowShootUrl],
+      ['shieldBlock', shieldBlockUrl],
       ['explode', explodeUrl],
       ['lunge', lungeUrl],
     ] as const;
@@ -251,10 +257,12 @@ export class Sound {
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.09, 'lowpass', 500, 150, 0.7, 0.6);
   }
 
-  /** Wooden thunk of a hit landing on a raised shield. */
+  /** item.shield.block: a hit (or an arrow) landing on a raised shield. */
   shieldBlock(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.9);
     if (!d) return;
+    // Vanilla varies the pitch a little per block (0.8–1.2).
+    if (this.sample('shieldBlock', d, 1, 0.85 + Math.random() * 0.3)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.09, 'lowpass', 700, 180, 1.2, 0.9);
     this.tone(d, t, 0.12, 'triangle', 150, 70, 0.6);
@@ -273,6 +281,14 @@ export class Sound {
   shieldRaise(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.35);
     if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.06, 'bandpass', 500, 900, 1.5, 0.3);
+  }
+
+  /** item.crossbow.shoot (the recording). */
+  crossbowShoot(pos: { x: number; y: number; z: number }) {
+    const d = this.out(pos, 0.9);
+    if (!d) return;
+    if (this.sample('crossbowShoot', d)) return;
+    this.bowShoot(pos, 1);
   }
 
   bowShoot(pos: { x: number; y: number; z: number }, power: number) {
@@ -403,13 +419,16 @@ export class Sound {
     this.tone(d, t, 0.18, 'sine', 140, 60, 0.5);
   }
 
-  /** item.mace.smash_air / smash_ground(_heavy). */
-  smash(pos: { x: number; y: number; z: number }, heavy: boolean) {
+  /**
+   * MaceItem: item.mace.smash_air when the one hit is off the ground, smash_ground when they
+   * stand on it — smash_ground_heavy (deeper, with a thump under it) after a fall over 5 blocks.
+   */
+  smash(pos: { x: number; y: number; z: number }, heavy: boolean, ground = true) {
     const d = this.out(pos, 1);
     if (!d) return;
     const t = this.ctx!.currentTime;
-    // The recorded smash; a heavy one (a long fall) plays deeper with a thump under it.
-    if (this.sample('smash', d, 1, heavy ? 0.85 : 1)) {
+    if (!ground && this.sample('smash', d, 1, 1)) return;
+    if (ground && this.sample('smashGround', d, 1, heavy ? 0.85 : 1)) {
       if (heavy) this.tone(d, t, 0.35, 'sine', 90, 35, 0.6);
       return;
     }

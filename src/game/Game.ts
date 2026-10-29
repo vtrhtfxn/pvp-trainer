@@ -2573,7 +2573,8 @@ export class Game {
           if (live) this.sound.shieldRaise(f.pos);
           break;
         case 'shoot':
-          this.sound.bowShoot(f.pos, e.power);
+          if (e.crossbow) this.sound.crossbowShoot(f.pos);
+          else this.sound.bowShoot(f.pos, e.power);
           break;
         case 'crossbowLoading':
           this.sound.crossbowLoad(f.pos, false);
@@ -2630,7 +2631,7 @@ export class Game {
           if (isPlayer && live && this.settings.hitFeedback) this.hud.showFeedback(`CHARGE ${e.speed.toFixed(1)} b/s · ${(e.damage / 2).toFixed(1)} ❤`, 'kb');
           break;
         case 'smash':
-          this.sound.smash(f.pos, e.fall > 5);
+          this.sound.smash(f.pos, e.fall > 5, e.ground !== false);
           fx.crit(f.pos.x, f.pos.y - 1, f.pos.z, false, 40);
           if (isPlayer && live && this.settings.hitFeedback) this.hud.showFeedback(`SMASH ${(e.damage / 2).toFixed(1)} ❤ · ${e.fall.toFixed(0)} blocks`, 'crit');
           break;
