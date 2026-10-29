@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { B } from '../src/game/Blocks';
-import type { KitId } from '../src/game/kits';
+import { KITS, type KitId } from '../src/game/kits';
 import { Bedwars, RESPAWN_TICKS } from '../src/game/modes/Bedwars';
 import { Skywars } from '../src/game/modes/Skywars';
 import { Duel } from '../src/net/Duel';
@@ -86,6 +86,18 @@ describe('online, every kit', () => {
       // The opponent's gear too (it is drawn in their hands and on their body).
       expect(r.clients[0].bot.armorSlots.map((s) => s?.id)).toEqual(r.duel.fighters[1].armorSlots.map((s) => s?.id));
       if (kit === 'crystal') expect(r.clients[1].world.blocks.depth).toBe(4);
+    }
+  });
+
+  it('every subtier starts and runs online too', () => {
+    for (const kit of KITS.filter((k) => k.subtier).map((k) => k.id)) {
+      const r = room(kit);
+      r.toFight();
+      expect(r.clients[0].kit.id).toBe(kit);
+      expect(r.clients[1].kit.id).toBe(kit);
+      if (r.duel.fighters[0].inventory[0]) expect(r.clients[0].player.countItem(r.duel.fighters[0].inventory[0].id)).toBeGreaterThan(0);
+      for (let t = 0; t < 100; t++) r.tick();
+      expect(r.duel.phase).toBe('fight');
     }
   });
 

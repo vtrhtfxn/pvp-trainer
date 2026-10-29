@@ -160,6 +160,8 @@ export class Menus {
   private readonly settingsRepaint: (() => void)[] = [];
   private netStatusEl!: HTMLDivElement;
   private netRoomEl!: HTMLDivElement;
+  /** Multiplayer: the kit you host with (main kits and subtiers). */
+  private mpKitSel!: HTMLSelectElement;
   private nameInput!: HTMLInputElement;
   private roomInput!: HTMLInputElement;
   private serverInput!: HTMLInputElement;
@@ -240,6 +242,7 @@ export class Menus {
     if (name === 'replays') this.renderReplays();
     if (name === 'locker') this.renderLocker();
     if (name === 'progress') this.renderProgress();
+    if (name === 'multiplayer') this.mpKitSel.value = isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit;
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -1004,6 +1007,23 @@ export class Menus {
       ),
     );
     this.nameInput = field(panel, 'Your name', loadNetName(), 'Steve', 16);
+    // The kit you host with: every main kit and every subtier (Bed Wars, SkyWars, Cart, …).
+    this.mpKitSel = h('select', { class: 'mc-input mp-select mp-kit' });
+    for (const [label, sub] of [
+      ['Game modes', false],
+      ['Subtiers', true],
+    ] as const) {
+      const group = h('optgroup', { label });
+      for (const k of KITS.filter((x) => x.available && !!x.subtier === sub)) group.append(h('option', { value: k.id }, k.name));
+      this.mpKitSel.append(group);
+    }
+    this.mpKitSel.addEventListener('change', () => {
+      this.cb.onUiSound();
+      this.settings.kit = this.mpKitSel.value as KitId;
+      saveSettings(this.settings);
+      this.refreshMain();
+    });
+    panel.append(h('label', { class: 'mp-field' }, h('span', {}, 'Kit'), this.mpKitSel));
     this.netRoomEl = h('div', { class: 'mp-room' });
     this.netStatusEl = h('div', { class: 'mp-status' });
     panel.append(this.netRoomEl, this.netStatusEl);
@@ -1036,7 +1056,7 @@ export class Menus {
       if (e.key === 'Enter') join();
     });
     panel.append(h('div', { class: 'mp-join' }, code, this.button('Join', join, 'big')));
-    panel.append(h('div', { class: 'mp-hint' }, 'The host\u2019s kit (picked on the main menu) is the one you both play.'));
+    panel.append(h('div', { class: 'mp-hint' }, 'The host\u2019s kit — any game mode or subtier, picked above — is the one you both play.'));
     panel.append(this.buildRelay(field));
 
     // ---- same network: the Node server (rooms, many players, browsers without the app)
