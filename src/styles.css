@@ -2291,7 +2291,7 @@ body {
 
 .spec-progress {
   position: absolute;
-  bottom: 44px;
+  bottom: 74px;
   left: 50%;
   transform: translateX(-50%);
   width: min(560px, 80vw);
@@ -4488,15 +4488,7 @@ body {
   border-color: #ffffa0;
   background: rgba(60, 60, 0, 0.6);
 }
-.spec-hotbar {
-  position: absolute;
-  bottom: 76px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(182px * 2);
-  height: 44px;
-  image-rendering: pixelated;
-}
+
 @media (max-width: 720px) {
   .spec-cams {
     flex-wrap: wrap;
@@ -4504,9 +4496,22 @@ body {
     width: 94vw;
     bottom: 64px;
   }
-  .spec-hotbar {
-    bottom: 128px;
-    width: 182px;
-    height: 22px;
-  }
+}
+/* POV: the real HUD shows health and the hotbar; keep the camera bar above the hotbar. */
+.spec-hud.pov .spec-side,
+.spec-hud.pov .spec-score {
+  display: none;
+}
+.spec-hud.pov .spec-cams {
+  bottom: auto;
+  top: 96px;
+}
+.spec-hud.pov .spec-help {
+  bottom: auto;
+  top: 126px;
+}
+
+.spec-hud.pov .spec-progress {
+  bottom: auto;
+  top: 158px;
 }

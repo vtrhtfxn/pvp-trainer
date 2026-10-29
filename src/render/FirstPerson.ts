@@ -86,6 +86,20 @@ export class FirstPersonView {
     this.shownOff = null;
   }
 
+  /**
+   * Straight to what `p` holds, already raised: for watching someone (a new camera, a seek in a
+   * replay), where nobody just switched items and there is no reason to lower the hand.
+   */
+  snap(p: Fighter) {
+    this.shownMain = stackKey(p.heldStack());
+    this.shownOff = stackKey(p.offhand);
+    const f = p.attackStrengthScale(1);
+    this.mainHandHeight = this.oMainHandHeight = f * f * f;
+    this.offHandHeight = this.oOffHandHeight = 1;
+    this.xBob = this.xBobO = p.pitch / DEG;
+    this.yBob = this.yBobO = p.yaw / DEG;
+  }
+
   /** Per game tick (ItemInHandRenderer.tick + LocalPlayer bob). */
   tick(p: Fighter) {
     this.oMainHandHeight = this.mainHandHeight;

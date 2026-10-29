@@ -1,5 +1,4 @@
 import type { Fighter } from '../game/Fighter';
-import type { ItemStack } from '../game/items';
 import type { SpecCam, Watch } from '../game/Spectate';
 
 const CAMS: SpecCam[] = ['orbit', 'followA', 'followB', 'povA', 'povB', 'free'];
@@ -52,14 +51,10 @@ export class SpectatorHud {
   /** Camera buttons (click one, or press its number). */
   private readonly cams: HTMLDivElement;
   private readonly camButtons = new Map<SpecCam, HTMLButtonElement>();
-  /** In a POV camera: the watched fighter's hotbar, as they see it. */
-  private readonly hotbar: HTMLCanvasElement;
-  private hotbarKey = '';
 
   constructor(
     parent: HTMLElement,
     private readonly onCam: (cam: SpecCam) => void = () => {},
-    private readonly icon: (s: ItemStack) => CanvasImageSource | undefined = () => undefined,
   ) {
     this.root = el('div', 'spec-hud', parent);
     const side = (cls: string): Side => {
@@ -75,9 +70,6 @@ export class SpectatorHud {
     this.score = el('div', 'spec-score', this.root);
     this.banner = el('div', 'spec-banner', this.root);
     this.help = el('div', 'spec-help', this.root);
-    this.hotbar = el('canvas', 'spec-hotbar', this.root);
-    this.hotbar.width = 9 * 20 + 2;
-    this.hotbar.height = 22;
     this.cams = el('div', 'spec-cams', this.root);
     CAMS.forEach((cam, i) => {
       const b = el('button', 'spec-cam', this.cams);
@@ -92,6 +84,11 @@ export class SpectatorHud {
     this.barFill = el('div', 'spec-progress-fill', this.bar);
     this.barText = el('div', 'spec-progress-text', this.bar);
     this.hide();
+  }
+
+  /** Through someone's eyes the real HUD is up: the overlay keeps only its camera bar and controls. */
+  setPov(on: boolean) {
+    this.root.classList.toggle('pov', on);
   }
 
   show() {
@@ -133,9 +130,6 @@ export class SpectatorHud {
         b.classList.toggle('on', cam === s.cam);
       }
     }
-    const pov = s.cam === 'povA' ? s.match.player : s.cam === 'povB' ? s.match.bot : null;
-    this.hotbar.style.display = pov ? '' : 'none';
-    if (pov) this.paintHotbar(pov);
     const pr = s.progress();
     this.bar.style.display = pr ? '' : 'none';
     if (pr) {
@@ -145,36 +139,6 @@ export class SpectatorHud {
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt;
       if (this.bannerTimer <= 0.5) this.banner.style.opacity = String(Math.max(0, this.bannerTimer / 0.5));
-    }
-  }
-
-  /** The watched fighter's nine hotbar slots, the selected one outlined. */
-  private paintHotbar(f: Fighter) {
-    const key = `${f.selected}|${f.inventory
-      .slice(0, 9)
-      .map((st) => (st ? `${st.id}:${st.count}` : ''))
-      .join(',')}`;
-    if (key === this.hotbarKey) return;
-    this.hotbarKey = key;
-    const ctx = this.hotbar.getContext('2d')!;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, this.hotbar.width, this.hotbar.height);
-    for (let i = 0; i < 9; i++) {
-      const x = 1 + i * 20;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(x, 1, 20, 20);
-      ctx.strokeStyle = i === f.selected ? '#ffffff' : '#555';
-      ctx.lineWidth = i === f.selected ? 2 : 1;
-      ctx.strokeRect(x + 0.5, 1.5, 19, 19);
-      const st = f.inventory[i];
-      const img = st ? this.icon(st) : undefined;
-      if (img) ctx.drawImage(img, x + 2, 3, 16, 16);
-      if (st && st.count > 1) {
-        ctx.font = '8px monospace';
-        ctx.fillStyle = '#fff';
-        ctx.textAlign = 'right';
-        ctx.fillText(String(st.count), x + 19, 19);
-      }
     }
   }
 }

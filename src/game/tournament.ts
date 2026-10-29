@@ -16,8 +16,8 @@ import type { KitId } from './kits';
 export type TourneySize = 4 | 8 | 16 | 32;
 export const TOURNEY_SIZES: TourneySize[] = [4, 8, 16, 32];
 
-/** The kits a tournament drafts from: the main modes (no Bed Wars, SkyWars or subtiers). */
-export const TOURNEY_KITS: KitId[] = ['sword', 'sword18', 'axe', 'uhc', 'diamond_pot', 'neth_pot', 'crystal', 'smp', 'mace'];
+/** The kits a tournament drafts from: the main modes and the subtiers (no Bed Wars or SkyWars). */
+export const TOURNEY_KITS: KitId[] = ['sword', 'sword18', 'axe', 'uhc', 'diamond_pot', 'neth_pot', 'crystal', 'smp', 'mace', 'spear_mace', 'cart', 'dia_smp'];
 
 export type FieldId = 'rising' | 'contender' | 'elite' | 'open';
 

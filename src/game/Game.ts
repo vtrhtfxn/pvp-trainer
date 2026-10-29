@@ -243,7 +243,6 @@ export class Game {
         this.enterSpectateCam(was);
         this.sound.ui();
       },
-      (st) => itemIcon(st),
     );
     this.scoreboard = new ScoreboardHud(uiRoot);
     const overlayCb = {
@@ -1181,12 +1180,16 @@ export class Game {
       this.match = spec.match;
       this.view.particles.clear();
       this.damage.clear();
+      this.snapPov(spec);
       return;
     }
     const m = spec.match;
     // Through a fighter's eyes: their hand and held item move like they would for them.
     const pov = spec.cam === 'povA' ? m.player : spec.cam === 'povB' ? m.bot : null;
-    if (pov) this.view.firstPerson.tick(pov);
+    if (pov) {
+      this.view.firstPerson.tick(pov);
+      this.hud.tick(pov);
+    }
     this.tickModeUi(m, m.player, true);
     this.handleEvents(m.player, false);
     this.handleEvents(m.bot, false);
@@ -1221,6 +1224,8 @@ export class Game {
         this.damage.clear();
         this.acc = 0;
       }
+      // After a jump in time the hand shows what they hold now, not what they held before.
+      this.snapPov(spec);
     } else if (e.code === 'Escape') {
       const back = this.spec instanceof ReplayWatch ? this.replayBack : null;
       this.toMenu();
@@ -1243,8 +1248,8 @@ export class Game {
   private enterSpectateCam(was: SpecCam | null) {
     const spec = this.spec;
     if (!spec) return;
-    // A new pair of eyes: their hand comes up fresh (not the last fighter's item).
-    if (spec.cam !== was) this.view.firstPerson.reset();
+    // A new pair of eyes: their hand and HUD come up fresh (not the last fighter's).
+    if (spec.cam !== was) this.snapPov(spec);
     if (spec.cam === 'free' && was !== 'free') {
       const f = this.free;
       const cam = this.view.camera;
@@ -1274,6 +1279,15 @@ export class Game {
     this.input.closeGuard = false;
     if (wantInput) void this.input.lock(false);
     else this.input.unlock();
+  }
+
+  /** Watching through someone's eyes from a standing start: their hand and HUD as they are now. */
+  private snapPov(spec: Watch) {
+    const f = spec.cam === 'povB' ? spec.match.bot : spec.match.player;
+    this.view.firstPerson.snap(f);
+    this.hud.resetRound(f);
+    // Not the "VICTORY" of the duel you just played.
+    this.hud.clearCenter();
   }
 
   /** WASD + mouse fly the spectator camera: Space up, Shift down, sprint (Ctrl) faster. */
@@ -2144,19 +2158,41 @@ export class Game {
       this.view.cameraMode = spec.cam === 'orbit' ? 'orbit' : spec.cam === 'free' ? 'free' : spec.cam.startsWith('pov') ? 'first' : 'third';
       if (spec.cam === 'free') this.updateFreeCam(dt);
       else this.view.extras.freeCam = null;
-      // A bot turns once per tick: without smoothing its eyes judder at 20 fps.
-      this.view.extras.smoothLook = true;
+      // Through someone's eyes it's 1:1 with what they saw: their look exactly as it was each tick
+      // (interpolated between ticks), their hand, their HUD and crosshair. Following from behind,
+      // the camera is smoothed instead, so a bot's 20 turns a second don't judder.
+      const pov = spec.cam === 'povA' || spec.cam === 'povB';
+      this.view.extras.lerpLook = pov;
+      this.view.extras.smoothLook = !pov;
       const [cp, cb] = onB ? [m.bot, m.player] : [m.player, m.bot];
       tag.name = cb.name;
       tag.color = onB ? spec.colorA : spec.colorB;
       tag.status = spec.label(onB ? 'a' : 'b');
-      this.view.crosshairOn = false;
+      this.view.crosshairOn = pov && this.hud.crosshairShown;
+      this.view.crosshairGui = this.hud.guiScale;
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);
       this.specHud.update(spec, dt);
+      this.specHud.setPov(pov);
+      this.hud.setVisible(pov);
+      if (pov) {
+        this.hud.update(cp, cb, s, {
+          aimingAtBot: rayDistanceToTarget(cp, cb) >= 0,
+          botName: cb.name,
+          botColor: onB ? spec.colorA : spec.colorB,
+          botStatus: spec.label(onB ? 'a' : 'b'),
+          botTag: onB ? 'A' : 'B',
+          playerName: onB ? spec.nameB : spec.nameA,
+          fightTicks: m.fightTicks,
+          lastReach: null,
+          now: performance.now(),
+          firstPerson: true,
+        });
+      }
       const cam = this.view.camera.position;
       Object.assign(this.sound.listener, { x: cam.x, y: cam.y, z: cam.z, yaw: spec.cam === 'free' ? this.free.yaw : onB ? m.bot.yaw : p.yaw });
     } else {
       this.view.extras.smoothLook = false;
+      this.view.extras.lerpLook = false;
       this.view.extras.freeCam = null;
       this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;
       tag.name = m.bot.name;

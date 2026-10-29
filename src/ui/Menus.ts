@@ -692,12 +692,12 @@ export class Menus {
         slider(
           'Render Scale',
           20,
-          100,
+          150,
           5,
           () => (s.renderScale === 0 ? 20 : s.renderScale),
           (v) => (s.renderScale = v < 25 ? 0 : v),
           (v) => (v < 25 ? 'Auto' : `${v}%`),
-          'Auto lowers the resolution only when frames get slow. Lower = smoother on weak computers',
+          'Auto: your screen\u2019s full resolution (it only trims a high-density screen when frames get slow). Lower = smoother on weak computers; above 100% = extra sharp on strong ones',
         );
         const native = window.pvpNative;
         // Not offered on macOS, where switching VSync off starves the window server (see electron/main.cjs).

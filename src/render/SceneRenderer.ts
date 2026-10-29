@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { preloadPixels } from './pack';
 import { registerAllItemTextures } from './itemIcons';
-import { lerp } from '../core/math';
+import { lerp, lerpAngle } from '../core/math';
+import { setMaxAnisotropy } from './textures';
 import { LookSmoother } from './lookSmooth';
 import { rayDistanceToTarget } from '../game/combat';
 import { Fighter } from '../game/Fighter';
@@ -69,6 +70,11 @@ export interface ViewExtras {
   sky: SkyState;
   /** Spectating a bot: smooth its look angles (it turns once per tick, you render many frames). */
   smoothLook: boolean;
+  /**
+   * Watching through someone's eyes: their look from one tick to the next, exactly as recorded
+   * (in your own duel the mouse turns the camera every frame; a replay only has it per tick).
+   */
+  lerpLook: boolean;
   /** Spectator free camera (CameraMode 'free'): where it is and where it looks. */
   freeCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null;
 }
@@ -134,6 +140,7 @@ export class SceneRenderer {
     hurtcam: null,
     sky: { dayTime: 6000, rain: 0, thunder: 0, flash: 0 },
     smoothLook: false,
+    lerpLook: false,
     freeCam: null,
   };
   /** Smoothed look of the followed fighter (spectating): reset when the camera moves to another. */
@@ -145,6 +152,8 @@ export class SceneRenderer {
     this.pixelRatio = this.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.autoClear = false;
+    // Block faces seen at a slant (the floor, walls) stay sharp instead of smearing into mush.
+    setMaxAnisotropy(this.renderer.capabilities.getMaxAnisotropy());
     this.scene.background = this.background;
     this.fog = new THREE.Fog(SKY_HORIZON.clone(), 55, 150);
     this.scene.fog = this.fog;
@@ -198,7 +207,8 @@ export class SceneRenderer {
     if (renderScale !== this.fixedScale) {
       this.fixedScale = renderScale;
       // A fixed setting wins; switching back to Auto starts from full resolution.
-      this.setPixelRatio(renderScale > 0 ? Math.max(0.25, (this.maxPixelRatio * renderScale) / 100) : this.maxPixelRatio);
+      // Above 100% it supersamples (sharper edges and textures, for strong graphics cards).
+      this.setPixelRatio(renderScale > 0 ? Math.min(3, Math.max(0.25, (this.maxPixelRatio * renderScale) / 100)) : this.maxPixelRatio);
       this.raiseAfter = 3;
     }
     if (renderScale > 0) return;
@@ -208,10 +218,13 @@ export class SceneRenderer {
       this.adaptCooldown -= dt;
       return;
     }
-    const min = 0.6;
-    // Below ~42 fps: drop a step. Rise again only after a few seconds at ~55 fps or better —
+    // Auto never goes below the screen's own resolution: dropping to 60% (as it used to) made
+    // everything soft and blurry. It only trims the extra pixels of a high-density screen. Lower
+    // than that is the Render Scale setting's job.
+    const min = Math.min(this.maxPixelRatio, Math.max(1, this.maxPixelRatio * 0.65));
+    // Below ~33 fps: drop a step. Rise again only after a few seconds at ~55 fps or better —
     // measured against a 60 Hz display, where frames never get much faster than 16.7 ms.
-    if (this.smoothedFrameMs > 24 && this.pixelRatio > min) {
+    if (this.smoothedFrameMs > 30 && this.pixelRatio > min) {
       this.setPixelRatio(Math.max(min, this.pixelRatio - 0.25));
       this.adaptCooldown = 1;
       this.calm = 0;
@@ -436,7 +449,11 @@ export class SceneRenderer {
     const free = this.extras.freelook;
     let yaw = p.yaw;
     let pitch = p.pitch;
-    if (this.extras.smoothLook) {
+    if (this.extras.lerpLook) {
+      yaw = lerpAngle(p.prevYaw, p.yaw, a);
+      pitch = lerp(p.prevPitch, p.pitch, a);
+      this.look.reset();
+    } else if (this.extras.smoothLook) {
       this.look.update(p, p.prevYaw, p.yaw, p.prevPitch, p.pitch, a, this.frameDt);
       yaw = this.look.yaw;
       pitch = this.look.pitch;
@@ -532,8 +549,8 @@ export class SceneRenderer {
     this.fog.color.copy(this.arena.horizon);
     this.background.copy(this.arena.horizon);
     // Rain brings the fog in a little, like vanilla's weather fog.
-    this.fog.near = 55 - sky.rain * 25;
-    this.fog.far = 150 - sky.rain * 50;
+    this.fog.near = 75 - sky.rain * 35;
+    this.fog.far = 175 - sky.rain * 65;
     this.scene.fog = view.fog ? this.fog : null;
     this.arena.clouds.visible = clouds;
   }

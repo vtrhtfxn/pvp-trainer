@@ -326,8 +326,11 @@ play-with-friends server, not a hardened one.
 | Server | [`src/server/main.ts`](src/server/main.ts) |
 | WebSocket (no deps) | [`src/server/ws.ts`](src/server/ws.ts) |
 
-Rendering adapts: the device pixel ratio drops automatically when frames run long and climbs back
-when they do not, which is what keeps it playable on integrated graphics. Behind a screen it draws
+Rendering stays sharp: on Auto it draws at your screen's full resolution and only trims the extra
+pixels of a high-density screen when frames run slow (it no longer drops below native, which made
+everything blurry). **Render Scale** goes from 25% (smoother on weak computers) to 150%
+(supersampling, extra crisp on strong ones). Block textures use the graphics card's best
+anisotropic filtering, so the ground and walls stay sharp at a slant, and the fog sits further out. Behind a screen it draws
 less: 30 FPS for the title-screen duel and results, 10 FPS paused offline or minimized (the
 simulation keeps its 20 ticks). Every shader is compiled and linked behind the loading screen, the
 inventory's player preview is only redrawn when the mouse or your gear changes, and Auto
@@ -595,8 +598,9 @@ tier in My Tiers. The upper bracket plays round by round; a loss there drops you
 bracket, where a second loss knocks you out. The upper-bracket winner meets the lower-bracket winner
 in a single **Grand Final**.
 
-Every match is a **best of three**, drafted on the **Kit Selection** screen from the nine main kits
-(Sword, 1.8 Sword, Axe, UHC, Diamond Pot, NethPot, Crystal, SMP, Mace): Team A (the higher seed)
+Every match is a **best of three**, drafted on the **Kit Selection** screen from twelve kits — the
+main ones (Sword, 1.8 Sword, Axe, UHC, Diamond Pot, NethPot, Crystal, SMP, Mace) and the subtiers
+(Spear Mace, Cart, Diamond SMP): Team A (the higher seed)
 bans, Team B bans, Team A picks, Team B picks, and the **Decider** is drawn at random from what's
 left. Game 1 is played on Team A's pick, game 2 on Team B's, game 3 on the decider. Bots pick their
 favourite kits and ban your best one. Your games are real duels; bot-vs-bot matches are simulated
@@ -640,8 +644,9 @@ second, 14 while you hold `Ctrl` (Toggle Sprint/Sneak don't apply to it), and it
 go. It has no body, so you can't touch, hit, place or break anything. Click to grab the mouse for
 looking around (`Esc` lets go of it). The camera bar at the bottom (click, or `V` / `1`–`6`)
 switches between orbit, following either fighter, **either fighter's POV** — their hand, held item
-and hotbar as they see them — and the free camera; the POV views are smoothed, so they glide instead
-of snapping at the bots' 20 turns a second. `[` `]` change the speed (¼× to 4×), `P` pauses (`Space` too, outside
+and hotbar as they see them — and the free camera. A POV is 1:1 with what that fighter saw: their look exactly as it was each
+tick, their hand and held item, their HUD (hearts, hunger, armor, hotbar) and the crosshair — in
+**Replays** too, so watching your own duel back looks like playing it. `[` `]` change the speed (¼× to 4×), `P` pauses (`Space` too, outside
 the free camera), `R` starts a new round and `Esc` leaves. A round with no kill after 3 minutes goes
 to whoever has more health (and totems) left.
 
