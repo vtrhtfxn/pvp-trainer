@@ -1,9 +1,9 @@
 import * as C from '../core/constants';
 import { DEG, V3, clamp, rayAABB, wrapAngle, yawTowards } from '../core/math';
 import type { Rng } from '../core/rng';
-import { rayDistanceToTarget, shieldFaces, type AttackOutcome } from '../game/combat';
+import { LUNGE_MIN_FOOD, rayDistanceToTarget, shieldFaces, type AttackOutcome } from '../game/combat';
 import { B, isSolid as isSolidBlock, type RayHit } from '../game/Blocks';
-import { SLOT_ARMOR, SLOT_OFFHAND, type Fighter, type MoveInput } from '../game/Fighter';
+import { SLOT_ARMOR, SLOT_OFFHAND, bowPower, type Fighter, type MoveInput } from '../game/Fighter';
 import { ITEMS, POTIONS, durabilityFraction, type ItemId, type PotionId } from '../game/items';
 import type { World } from '../game/World';
 import type { EndCrystal } from '../game/EndCrystal';
@@ -37,7 +37,20 @@ type ThrowPlan = { what: PotionId | 'xp'; left: number };
 type UhcPlan =
   | { kind: 'water'; x: number; y: number; z: number; phase: 'place' | 'wait' | 'pickup'; timer: number }
   | { kind: 'lava'; x: number; y: number; z: number; phase: 'place' | 'wait' | 'pickup'; timer: number }
-  | { kind: 'web'; x: number; y: number; z: number; ax: number; ay: number; az: number; timer: number }
+  | {
+      kind: 'web';
+      x: number;
+      y: number;
+      z: number;
+      ax: number;
+      ay: number;
+      az: number;
+      timer: number;
+      /** What it places (a cobweb unless said): planks for an arrow wall. */
+      item?: ItemId;
+      /** A second block to put on top once this one is down (a two-high wall). */
+      then?: { x: number; y: number; z: number };
+    }
   | { kind: 'mine'; x: number; y: number; z: number; timer: number; started: boolean }
   | { kind: 'pillar'; baseY: number; height: number; timer: number; phase: 'build' | 'eat'; x: number; z: number }
   | { kind: 'head'; timer: number; count: number };
@@ -87,7 +100,10 @@ interface InvPlan {
 }
 
 /** Sub-plans the Axe-kit bot runs at range. */
-type RangedPlan = 'none' | 'loadCrossbow' | 'fireCrossbow' | 'drawBow';
+/** A bow tap (UHC finisher): drawn this many ticks, a quarter-second short of a full draw. */
+const TAP_TICKS = 10;
+
+type RangedPlan = 'none' | 'tapBow' | 'loadCrossbow' | 'fireCrossbow' | 'drawBow';
 
 interface Perceived extends Seen {
   vx: number;
@@ -202,6 +218,18 @@ export class BotBrain {
   /** Ticks before it will pearl again (pearling back and forth wastes them). */
   private pearlCooldown = 0;
   private pearledThisRetreat = false;
+  /** Game sense: ticks before it thinks about another escape. */
+  private escapeCooldown = 0;
+  /** A Lunge or wind-charge escape being set up (turning away, looking down). */
+  private escaping: { kind: 'lunge' | 'wind'; timer: number } | null = null;
+  /** The web being placed on a chaser is an escape (run by the escape step in every kit). */
+  private escapeWeb = false;
+  /** In the air after a wind-charge escape: drifting away (eating on the way), not back for a smash. */
+  private escapeFlight = false;
+  /** Running off to mend: flees until there's room to throw the XP bottles. */
+  private mendRunTicks = 0;
+  /** UHC: whether it goes for the finish while they are low this time (rolled once per chance). */
+  private finishRoll: boolean | null = null;
 
   // ---- Mace
   private maceKit = false;
@@ -212,6 +240,10 @@ export class BotBrain {
   private launching = 0;
   /** In the air from a launch (wind charge, Wind Burst) rather than an ordinary jump. */
   private maceFlight = false;
+  /** The launch being set up is a slide (from mid range, onto them) rather than straight up. */
+  private slideLaunch = false;
+  /** Ticks before it considers another slide (its own timer: the close launch's doesn't apply). */
+  private slideCooldown = 0;
   /** Spear Mace: how this approach goes in (spear-first, or the usual wind-charge launch). */
   private spearApproach = false;
   /** Ticks into a running spear charge (0 = none), and the wait before the next one. */
@@ -274,6 +306,13 @@ export class BotBrain {
 
   resetRound() {
     this.state = 'engage';
+    this.escapeCooldown = 0;
+    this.escaping = null;
+    this.escapeWeb = false;
+    this.escapeFlight = false;
+    this.mendRunTicks = 0;
+    this.finishRoll = null;
+    this.slideCooldown = 0;
     this.seen = [];
     this.stateTimer = 0;
     this.hitsTaken = 0;
@@ -932,9 +971,31 @@ export class BotBrain {
     return (dx * per.vx + dz * per.vz) / d;
   }
 
+  /**
+   * UHC: they are low and getting away or eating: a crossbow bolt (or, nearly dead, quick bow
+   * taps) stops the heal before it lands. Whether it thinks of it is the tier's game sense,
+   * rolled once each time they drop low.
+   */
+  private finishing(per: Perceived, dist: number): boolean {
+    const b = this.bot;
+    const T = this.target;
+    if (!this.uhcKit || this.profile.passive) return false;
+    if (T.effectiveHealth() > 6) {
+      this.finishRoll = null;
+      return false;
+    }
+    if (dist < 3.2 || dist > 28 || !b.hasAmmo() || (b.slotOf('crossbow') < 0 && b.slotOf('bow') < 0)) return false;
+    const healing = per.using || T.usingItem;
+    const leaving = this.closingSpeed(per) < -0.04 || dist > 5;
+    if (!healing && !leaving) return false;
+    this.finishRoll ??= this.rng.chance(this.profile.sense.finish);
+    return this.finishRoll;
+  }
+
   private wantRanged(per: Perceived, dist: number): boolean {
     const b = this.bot;
     const A = this.profile.axe;
+    if (this.rangedCooldown <= 0 && b.shieldCooldown <= 0 && this.finishing(per, dist)) return true;
     if (A.ranged === 0 || this.profile.passive || this.rangedCooldown > 0 || b.shieldCooldown > 0) return false;
     // Arrows can't get through a raised shield that faces us: walk in and axe it instead.
     if (this.seenLate(A.shieldReact).shield && shieldFaces(this.target, b.pos.x, b.pos.z)) return false;
@@ -952,9 +1013,12 @@ export class BotBrain {
   private rangedStep(per: Perceived, dist: number, input: MoveInput): boolean {
     const b = this.bot;
     const A = this.profile.axe;
+    const finish = this.finishing(per, dist);
     if (this.ranged === 'none') {
       const xb = b.slotOf('crossbow');
-      if (xb >= 0 && b.inventory[xb]?.charged) this.ranged = 'fireCrossbow';
+      // Nearly dead: a bow tap is out faster than loading a crossbow ("quick drop").
+      if (finish && this.target.effectiveHealth() <= 3 && b.slotOf('bow') >= 0) this.ranged = 'tapBow';
+      else if (xb >= 0 && b.inventory[xb]?.charged) this.ranged = 'fireCrossbow';
       else if (xb >= 0 && b.hasAmmo()) this.ranged = 'loadCrossbow';
       else if (b.slotOf('bow') >= 0 && b.hasAmmo()) this.ranged = 'drawBow';
       else return false;
@@ -968,16 +1032,16 @@ export class BotBrain {
     // Holding a shield up must not freeze us: after a short look (longer at low tiers), drop the
     // plan and go break the shield with the axe. A loaded crossbow stays loaded for later.
     const shieldPatience = 3 + A.shieldReact * 2;
-    const abortAt = this.uhcKit && this.targetUp() ? 0 : this.ranged === 'fireCrossbow' ? 4 : 6.5;
+    const abortAt = (this.uhcKit && this.targetUp()) || finish ? 2.6 : this.ranged === 'fireCrossbow' ? 4 : 6.5;
     if (dist < abortAt || this.rangedTimer > 90 || this.rangedBlocked > shieldPatience) {
       if (b.usingItem) b.stopUsingItem();
       this.ranged = 'none';
       this.rangedCooldown = 40;
       return false;
     }
-    // Strafe slowly while busy, keeping the distance.
+    // Strafe slowly while busy, keeping the distance (finishing: hold the ground, it's a race).
     input.strafe = this.strafeDir || 1;
-    input.forward = dist < 12 ? -1 : 0;
+    input.forward = finish ? 0 : dist < 12 ? -1 : 0;
 
     switch (this.ranged) {
       case 'loadCrossbow':
@@ -997,6 +1061,21 @@ export class BotBrain {
           b.startUsingItem(true);
           this.ranged = 'none';
           this.rangedCooldown = 30;
+        }
+        return true;
+      }
+      case 'tapBow': {
+        // Half-drawn and loosed: less damage, but they have a heart or two and no time.
+        this.equip('bow');
+        if (!b.usingItem) {
+          b.startUsingItem(true);
+          return true;
+        }
+        const aimed = this.aimArrow(per, bowPower(TAP_TICKS) * C.BOW_MAX_SPEED);
+        if (b.useTicks() >= TAP_TICKS && aimed) {
+          b.releaseUsingItem();
+          this.ranged = 'none';
+          this.rangedCooldown = 4;
         }
         return true;
       }
@@ -1412,6 +1491,8 @@ export class BotBrain {
 
     // ---- A pearl in flight (in from far away, or out to eat).
     if (this.cplan && this.runCrystal(per, dist, input)) return;
+    // ---- Low or armor nearly gone with them on us: a way out (pearl, web) before running.
+    if (this.escapeStep(per, dist, trueDist, input)) return;
     if (this.pearlCooldown > 0) this.pearlCooldown--;
     if (this.state !== 'retreat') this.pearledThisRetreat = false;
     if (!P.passive && K.pearls > 0 && this.pearlCooldown === 0 && b.countItem('ender_pearl') > 0 && !b.cooldowns.has('ender_pearl') && !b.usingItem) {
@@ -1446,9 +1527,12 @@ export class BotBrain {
       }
     }
 
-    // ---- The shield game, with gapple retreats.
+    // ---- The shield game, with gapple retreats — and a run to mend when the armor is going.
     this.updateState(trueDist);
-    if (this.state === 'engage') this.engageShield(per, dist, justHurt, input);
+    if (this.state === 'engage' && this.mendRunTicks > 0 && trueDist < 5.5) {
+      this.potLabel = 'Mending';
+      this.retreat(per, trueDist, input);
+    } else if (this.state === 'engage') this.engageShield(per, dist, justHurt, input);
     else if (this.state === 'retreat') this.retreat(per, trueDist, input);
     else this.eat(per, trueDist, input);
   }
@@ -1553,6 +1637,7 @@ export class BotBrain {
     if (this.potCooldown > 0) this.potCooldown--;
     if (this.throwGap > 0) this.throwGap--;
     if (this.launchCooldown > 0) this.launchCooldown--;
+    if (this.slideCooldown > 0) this.slideCooldown--;
     if (this.pearlCooldown > 0) this.pearlCooldown--;
 
     if (this.retotemStep(per, dist, input)) return;
@@ -1564,6 +1649,8 @@ export class BotBrain {
       return;
     }
 
+    // ---- Up after a wind-charge escape: away from them, not back in.
+    if (this.escapeFlight && this.escapeAir(per, input)) return;
     // ---- In the air after a launch (or gliding): the smash. A big upward kick from a wind
     // charge or Wind Burst — ours or theirs — counts as a launch too.
     if (b.onGround && !b.fallFlying) this.maceFlight = false;
@@ -1616,6 +1703,9 @@ export class BotBrain {
       }
     }
 
+    // ---- Low with them on us: Lunge, wind charge or pearl out to heal.
+    if (this.escapeStep(per, dist, trueDist, input)) return;
+
     // ---- Buffs, restock (only with room to do it).
     if (!this.throwing && this.potCooldown === 0 && this.state !== 'eat' && !this.needsApple() && !b.usingItem && trueDist > 4) this.throwing = this.pickThrow(trueDist);
     if (this.throwing?.what === 'xp' && this.needsApple()) this.throwing = null;
@@ -1632,12 +1722,23 @@ export class BotBrain {
     this.updateState(trueDist);
     if (this.spearStep(per, trueDist, input)) return;
 
-    // ---- Launch: sprint in and wind-charge ourselves up.
-    if (this.state === 'engage' && this.launchCooldown === 0 && b.onGround && !b.cooldowns.has('wind_charge') && b.slotOf('wind_charge') >= 0) {
-      if (this.launching > 0 || (trueDist > 2.6 && trueDist < 6.5 && T.onGround)) {
-        if (this.launching === 0 && !this.rng.chance(M.launch)) {
-          this.launchCooldown = 30;
-        } else if (this.launchStep(per, input)) return;
+    // ---- Launch: sprint in and wind-charge ourselves up. From 5.5–10 blocks, running straight
+    // at them, it's the slide: the charge at our feet sends us up with all that speed, and we
+    // drift through the air onto them for the smash (what real players from LT2 up do).
+    if (this.state === 'engage' && b.onGround && !b.cooldowns.has('wind_charge') && b.slotOf('wind_charge') >= 0) {
+      const slide = this.slideCooldown === 0 && trueDist > 5 && trueDist < 11 && T.onGround && Math.hypot(b.vel.x, b.vel.z) > 0.1 && this.facing(per, 0.5);
+      const close = this.launchCooldown === 0 && trueDist > 2.6 && trueDist < 6.5 && T.onGround;
+      if (this.launching > 0 || slide || close) {
+        if (this.launching === 0 && !this.rng.chance(slide ? P.sense.slide : M.launch)) {
+          if (slide) this.slideCooldown = 40;
+          else this.launchCooldown = 30;
+        } else {
+          if (this.launching === 0) {
+            this.slideLaunch = slide;
+            if (slide) this.slideCooldown = 80;
+          }
+          if (this.launchStep(per, input)) return;
+        }
       }
     }
 
@@ -1728,7 +1829,7 @@ export class BotBrain {
   /** Look straight down with a wind charge and throw it while running at them. */
   private launchStep(per: Perceived, input: MoveInput): boolean {
     const b = this.bot;
-    this.potLabel = 'Launch';
+    this.potLabel = this.slideLaunch ? 'Slide' : 'Launch';
     if (b.usingItem) b.stopUsingItem();
     if (!this.equip('wind_charge')) return false;
     this.launching++;
@@ -1856,7 +1957,9 @@ export class BotBrain {
     if (hd > 0.6) {
       b.yaw = wrapAngle(b.yaw + clamp(wrapAngle(aimYaw - b.yaw), -0.7, 0.7));
       input.forward = 1;
-      input.sprint = b.vel.y > 0 && hd > 3;
+      // Sprinting in the air keeps the slide's speed (air control is stronger sprinting); only
+      // let it go right over them so we don't overshoot.
+      input.sprint = hd > (this.slideLaunch ? 1.6 : 3) && (this.slideLaunch || b.vel.y > 0);
     } else input.forward = 0;
     const fall = Math.max(b.fallDistance, 0) + Math.max(0, above - 1.5);
     const slot = this.bestMaceSlot(fall);
@@ -1948,6 +2051,9 @@ export class BotBrain {
         if (this.runCrystal(per, dist, input)) return;
       }
     }
+
+    // Low with them on us: pearl or web out of it (Cart has cobwebs).
+    if (!this.eating && this.escapeStep(per, dist, trueDist, input)) return;
 
     // Buffs at the start (and again when they run out), mending when there is a gap.
     if (!this.throwing && !this.eating && this.potCooldown === 0 && this.ranged === 'none') this.throwing = this.pickThrow(trueDist);
@@ -2859,6 +2965,10 @@ export class BotBrain {
       this.plan = { kind: 'head', timer: 0, count: b.countItem('golden_head') };
       return this.runPlan(per, trueDist, input) === 'own';
     }
+    // ---- Low with them on us: a web on them to get away and heal.
+    if (this.escapeStep(per, trueDist, trueDist, input)) return true;
+    // ---- Low and they're shooting (or about to): planks between us, heal behind them.
+    if (this.wallStep(per, trueDist, input)) return true;
     // ---- Low with apples to eat and them a few blocks off: pillar up out of reach and eat on
     // top. Not with them next to us: an Efficiency III axe takes a plank out in 4 ticks.
     if (
@@ -3045,13 +3155,22 @@ export class BotBrain {
         return 'own';
       }
       case 'web': {
-        this.uhcLabel = 'Web';
-        if (plan.timer > 12 || blocks.get(plan.x, plan.y, plan.z) !== B.AIR || !this.equip('cobweb')) return finish(50);
+        const item = plan.item ?? 'cobweb';
+        this.uhcLabel = item === 'cobweb' ? 'Web' : 'Wall';
+        if (plan.timer > 12 || blocks.get(plan.x, plan.y, plan.z) !== B.AIR || !this.equip(item)) return finish(50);
         if (b.usingItem) b.stopUsingItem();
         this.aimPoint(plan.ax, plan.ay + 0.001, plan.az);
         const hit = b.crosshairBlock(this.bot.blockReach(), true);
         const on = !!hit && hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z;
-        if (on && this.settle >= U.aimSettle && b.startUsingItem(true)) return finish(50);
+        if (on && this.settle >= U.aimSettle && b.startUsingItem(true)) {
+          const next = plan.then;
+          if (!next) return finish(item === 'cobweb' ? 50 : 30);
+          // The block on top: aimed at the top of the one just placed.
+          const aim = this.webAim(next.x, next.y, next.z);
+          if (!aim || blocks.get(next.x, next.y, next.z) !== B.AIR) return finish(30);
+          this.plan = { kind: 'web', ...next, ax: aim[0], ay: aim[1], az: aim[2], timer: 0, item };
+          this.settle = 0;
+        }
         return 'own';
       }
       case 'mine': {
@@ -3245,6 +3364,186 @@ export class BotBrain {
     input.strafe = 0;
     input.sprint = false;
     input.jump = false;
+  }
+
+  // ------------------------------------------------------------ game sense
+
+  /** Durability left on its most worn armor piece (1 = like new). */
+  private worstArmor(): number {
+    let worst = 1;
+    for (let i = 0; i < 4; i++) {
+      const f = durabilityFraction(this.bot.armorSlots[i]);
+      if (f !== null) worst = Math.min(worst, f);
+    }
+    return worst;
+  }
+
+  /** Something to heal with once it is clear: an apple, a head or a healing pot. */
+  private canHeal(): boolean {
+    const b = this.bot;
+    return b.countItem('golden_apple') + b.countItem('golden_head') + b.countItem('splash_potion', 'healing') > 0;
+  }
+
+  /**
+   * Low — or its armor about to break — with them right on it: instead of only running (and
+   * getting hit in the back), buy time the way a real player does. In the order one reaches for
+   * them: a Lunge jab away (spear), a wind charge at its feet facing away (mace), an ender pearl
+   * over their head, or a cobweb on the chaser. How often it thinks of it is the tier's game
+   * sense. True while it owns the tick.
+   */
+  private escapeStep(per: Perceived, dist: number, trueDist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    const T = this.target;
+    const S = this.profile.sense;
+    if (this.escapeCooldown > 0) this.escapeCooldown--;
+    if (this.mendRunTicks > 0) this.mendRunTicks--;
+    if (this.escaping) return this.runEscape(per, input);
+    if (this.escapeWeb) {
+      if (this.plan && this.runPlan(per, trueDist, input) === 'own') return true;
+      this.escapeWeb = false;
+    }
+    if (this.profile.passive || this.escapeCooldown > 0 || b.usingItem || this.inv || this.cplan) return false;
+    const low = b.effectiveHealth() <= S.escapeHP && this.canHeal() && !b.effects.has('regeneration');
+    const armorLow = S.mendRun > 0.05 && b.countItem('experience_bottle') > 0 && this.worstArmor() < S.mendRun;
+    if (!(low || armorLow) || trueDist > 4.5) return false;
+    // One roll per chance: a lower tier often just doesn't think of it.
+    this.escapeCooldown = 50;
+    if (!this.rng.chance(S.escape)) return false;
+    this.escapeCooldown = 160;
+    if (armorLow && !low) this.mendRunTicks = 80;
+    if (b.slotOf('netherite_spear') >= 0 && b.onGround && b.food.level >= LUNGE_MIN_FOOD && !b.inWater) {
+      this.escaping = { kind: 'lunge', timer: 0 };
+      return this.runEscape(per, input);
+    }
+    if (this.maceKit && b.onGround && b.slotOf('wind_charge') >= 0 && !b.cooldowns.has('wind_charge')) {
+      this.escaping = { kind: 'wind', timer: 0 };
+      return this.runEscape(per, input);
+    }
+    if (b.slotOf('ender_pearl') >= 0 && !b.cooldowns.has('ender_pearl')) {
+      // Over their head and away: 20-odd blocks of room to heal (or mend) in.
+      this.cplan = { kind: 'pearl', yaw: this.fleeDirection(per), pitch: 0.42, timer: 0 };
+      this.pearlCooldown = 200;
+      this.pearledThisRetreat = true;
+      this.settle = 0;
+      return this.runCrystal(per, dist, input);
+    }
+    if (b.slotOf('cobweb') >= 0 && !this.plan && !T.inWeb) {
+      const tx = Math.floor(T.pos.x);
+      const ty = Math.floor(T.pos.y + 0.01);
+      const tz = Math.floor(T.pos.z);
+      const aim = this.world.blocks.get(tx, ty, tz) === B.AIR ? this.webAim(tx, ty, tz) : null;
+      if (aim) {
+        this.plan = { kind: 'web', x: tx, y: ty, z: tz, ax: aim[0], ay: aim[1], az: aim[2], timer: 0 };
+        this.escapeWeb = true;
+        return this.runPlan(per, trueDist, input) === 'own';
+      }
+    }
+    return false;
+  }
+
+  /** Their bow or crossbow is on us: drawn, loaded, or an arrow of theirs already flying our way. */
+  private underFire(): boolean {
+    const b = this.bot;
+    const T = this.target;
+    const held = T.heldStack();
+    if (held?.id === 'bow' && T.usingItem) return true;
+    if (held?.id === 'crossbow' && held.charged) return true;
+    for (const a of this.world.arrows) {
+      if (a.owner !== T || a.inGround) continue;
+      const dx = b.pos.x - a.pos.x;
+      const dz = b.pos.z - a.pos.z;
+      const d = Math.hypot(dx, dz);
+      // Heading for us (within ~20°) and not past us yet.
+      if (d < 30 && (a.vel.x * dx + a.vel.z * dz) / (Math.hypot(a.vel.x, a.vel.z) * d || 1) > 0.94) return true;
+    }
+    return false;
+  }
+
+  /**
+   * UHC: low, and they are keeping their distance with a bow or crossbow — the time to heal is
+   * now, behind something. Two planks, one on the other, on the side they shoot from; then the
+   * usual apple. How often it thinks of it is the tier's game sense.
+   */
+  private wallStep(per: Perceived, trueDist: number, input: MoveInput): boolean {
+    const b = this.bot;
+    const T = this.target;
+    const S = this.profile.sense;
+    if (this.plan || this.profile.passive || S.wall < 0.05 || this.escapeCooldown > 0) return false;
+    if (trueDist < 5 || trueDist > 30 || !b.onGround || b.slotOf('oak_planks') < 0) return false;
+    if (b.effectiveHealth() > this.profile.returnHP - 2 || !this.canHeal() || !this.underFire()) return false;
+    this.escapeCooldown = 60;
+    if (!this.rng.chance(S.wall)) return false;
+    // The cell a step toward them (at our feet), and the one above it.
+    const len = Math.hypot(T.pos.x - b.pos.x, T.pos.z - b.pos.z) || 1;
+    const x = Math.floor(b.pos.x + ((T.pos.x - b.pos.x) / len) * 1.3);
+    const z = Math.floor(b.pos.z + ((T.pos.z - b.pos.z) / len) * 1.3);
+    const y = Math.floor(b.pos.y + 0.01);
+    const blocks = this.world.blocks;
+    if ((x === Math.floor(b.pos.x) && z === Math.floor(b.pos.z)) || blocks.get(x, y, z) !== B.AIR || blocks.get(x, y + 1, z) !== B.AIR) return false;
+    const aim = this.webAim(x, y, z);
+    if (!aim) return false;
+    this.plan = { kind: 'web', x, y, z, ax: aim[0], ay: aim[1], az: aim[2], timer: 0, item: 'oak_planks', then: { x, y: y + 1, z } };
+    this.settle = 0;
+    return this.runPlan(per, trueDist, input) === 'own';
+  }
+
+  /** Turning away for a Lunge, or away and looking down for a wind-charge launch. */
+  private runEscape(per: Perceived, input: MoveInput): boolean {
+    const b = this.bot;
+    const e = this.escaping!;
+    e.timer++;
+    if (e.timer > 24) {
+      this.escaping = null;
+      return false;
+    }
+    if (b.usingItem) b.stopUsingItem();
+    this.potLabel = 'Escaping';
+    const away = this.fleeDirection(per);
+    input.forward = 1;
+    input.sprint = true;
+    if (e.kind === 'lunge') {
+      if (!this.equip('netherite_spear')) {
+        this.escaping = null;
+        return false;
+      }
+      this.turnTo(away, 0, 3);
+      // A jab at nothing: Lunge throws it forward — away from them — all the same.
+      if (Math.abs(wrapAngle(b.yaw - away)) < 0.3 && b.attackStrengthScale(0.5) >= 1) {
+        this.doAttack();
+        this.escaping = null;
+      }
+      return true;
+    }
+    if (!this.equip('wind_charge')) {
+      this.escaping = null;
+      return false;
+    }
+    this.turnTo(away, -1.5, 3);
+    if (b.pitch < -1.35 && Math.abs(wrapAngle(b.yaw - away)) < 0.45 && b.startUsingItem(true)) {
+      this.escaping = null;
+      this.escapeFlight = true;
+      this.launchCooldown = 60;
+    }
+    return true;
+  }
+
+  /** Up in the air after a wind-charge escape: keep drifting away, and eat on the way if low. */
+  private escapeAir(per: Perceived, input: MoveInput): boolean {
+    const b = this.bot;
+    if (b.onGround && !b.fallFlying) {
+      this.escapeFlight = false;
+      return false;
+    }
+    this.potLabel = 'Escaping';
+    const away = this.fleeDirection(per);
+    this.turnTo(away, 0.1, 2);
+    input.forward = 1;
+    input.sprint = true;
+    if (b.effectiveHealth() <= this.profile.returnHP && b.slotOf('golden_apple') >= 0 && !b.effects.has('regeneration')) {
+      this.equip('golden_apple');
+      if (!b.usingItem) b.startUsingItem();
+    }
+    return true;
   }
 
   private retreat(per: Perceived, trueDist: number, input: MoveInput) {

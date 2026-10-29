@@ -987,7 +987,27 @@ Burst throws it back up for the next one. From up there, if you have moved away 
 the elytra on at the top, glides over, dives steeply so the fall distance builds, swaps the
 chestplate back and smashes. Against your smashes it sidesteps (LT2+) or raises its shield
 (LT1+). On the ground it fights with the sword and axe, buffs, eats and re-totems. Higher tiers
-launch more often, steer better and wait for a bigger fall before hitting.
+launch more often, steer better and wait for a bigger fall before hitting. From 5–11 blocks,
+running at you, it does the **slide**: the wind charge sends it up with all its speed and it keeps
+sprinting through the air onto you for the smash (rare at LT4, most of the time from LT2, nearly
+always at HT1).
+
+### Game sense
+
+What makes a real high-tier player hard isn't only aim — it's knowing when to leave an exchange
+and how to close one out. Every tier has a game-sense level (next to nothing at LT5, most of the
+time at HT1):
+
+- **Getting out to heal** (SMP, Diamond SMP, Mace, Spear Mace, UHC, Crystal, Cart): low with you
+  right on it, it buys time with a tool instead of only running — a **Lunge** jab away (spear), a
+  **wind charge** at its feet facing away (it drifts off and eats in the air), an **ender pearl**
+  over your head, or a **cobweb** on you — then heals.
+- **Saving its armor**: when a piece is about to break and it has XP bottles, it escapes the same
+  way and runs until there's room to mend.
+- **UHC finish**: when you're low and backing off or eating, it pulls the **crossbow**; when
+  you're nearly dead, quick half-drawn **bow taps** to stop the heal before it lands.
+- **UHC cover**: low while you draw a bow or crossbow on it (or your arrows are on the way), it
+  puts a two-high **plank wall** between you and heals behind it.
 
 ## Project layout
 
