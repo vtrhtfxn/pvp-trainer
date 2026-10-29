@@ -240,6 +240,17 @@ export function canvasFor(name: string, seed = 1): HTMLCanvasElement {
   return c;
 }
 
+let anisotropy = 8;
+
+/** The graphics card's best anisotropic filtering (set once the renderer exists). */
+export function setMaxAnisotropy(n: number) {
+  anisotropy = Math.max(1, Math.min(16, n || 1));
+  for (const t of cache.values()) {
+    t.anisotropy = anisotropy;
+    t.needsUpdate = true;
+  }
+}
+
 export function blockTexture(name: string): THREE.CanvasTexture {
   let t = cache.get(name);
   if (!t) {
@@ -248,7 +259,7 @@ export function blockTexture(name: string): THREE.CanvasTexture {
     t.minFilter = THREE.NearestMipmapLinearFilter;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
+    t.anisotropy = anisotropy;
     cache.set(name, t);
   }
   return t;

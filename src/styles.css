@@ -2291,7 +2291,7 @@ body {
 
 .spec-progress {
   position: absolute;
-  bottom: 44px;
+  bottom: 74px;
   left: 50%;
   transform: translateX(-50%);
   width: min(560px, 80vw);
@@ -4456,4 +4456,62 @@ body {
   .mm-group .btn-row.n5 {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* Spectator: camera buttons and the watched fighter's hotbar (POV). */
+.spec-cams {
+  position: absolute;
+  bottom: 42px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+.spec-cam {
+  font: inherit;
+  font-size: 12px;
+  color: #ddd;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid #000;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-shadow: 1px 1px 0 #3f3f3f;
+}
+.spec-cam:hover {
+  color: #fff;
+  border-color: #aaa;
+}
+.spec-cam.on {
+  color: #ffffa0;
+  border-color: #ffffa0;
+  background: rgba(60, 60, 0, 0.6);
+}
+
+@media (max-width: 720px) {
+  .spec-cams {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 94vw;
+    bottom: 64px;
+  }
+}
+/* POV: the real HUD shows health and the hotbar; keep the camera bar above the hotbar. */
+.spec-hud.pov .spec-side,
+.spec-hud.pov .spec-score {
+  display: none;
+}
+.spec-hud.pov .spec-cams {
+  bottom: auto;
+  top: 96px;
+}
+.spec-hud.pov .spec-help {
+  bottom: auto;
+  top: 126px;
+}
+
+.spec-hud.pov .spec-progress {
+  bottom: auto;
+  top: 158px;
 }

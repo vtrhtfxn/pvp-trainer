@@ -342,6 +342,12 @@ export class HUD {
     this.feedbackTimer = 16;
   }
 
+  /** Takes down the big centre text (VICTORY, a countdown number…) at once. */
+  clearCenter() {
+    this.centerTimer = 0;
+    this.center.classList.remove('show');
+  }
+
   showCenter(text: string, cls = '', ticks = 30) {
     this.center.textContent = text;
     // Restart the pop for every new text (each countdown number lands on its own).
