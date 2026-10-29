@@ -42,6 +42,8 @@ export interface MenuCallbacks {
   onConnect(url: string, room: string, name: string): void;
   /** Online over the internet: host a game in this window / join a friend's by its code. */
   onHostOnline(name: string): void;
+  /** Hosts an online tournament room: friends join with the code, bots fill the rest. */
+  onHostTournament(name: string, size: number, field: string): void;
   onJoinOnline(code: string, name: string): void;
   onLeaveOnline(): void;
   /** Opens the Marketplace (mods and resource packs). */
@@ -967,6 +969,28 @@ export class Menus {
     this.netStatusEl = h('div', { class: 'mp-status' });
     panel.append(this.netRoomEl, this.netStatusEl);
     panel.append(this.button('Host online game', () => this.cb.onHostOnline(name()), 'big online'));
+    // A tournament room: everyone who joins gets a place in one bracket, bots fill the rest.
+    const tSize = h('select', { class: 'mc-input mp-select', title: 'Places in the bracket' });
+    for (const n of [4, 8, 16, 32]) tSize.append(h('option', { value: String(n) }, `${n} players`));
+    tSize.value = '8';
+    const tField = h('select', { class: 'mc-input mp-select', title: 'How strong the bots are' });
+    for (const [id, label] of [
+      ['rising', 'Rising bots'],
+      ['contender', 'Contender bots'],
+      ['elite', 'Elite bots'],
+      ['open', 'Open (all tiers)'],
+    ])
+      tField.append(h('option', { value: id }, label));
+    tField.value = 'contender';
+    panel.append(
+      h(
+        'div',
+        { class: 'mp-tourney' },
+        tSize,
+        tField,
+        this.button('Host online tournament', () => this.cb.onHostTournament(name(), Number(tSize.value), tField.value), 'online tourney-btn'),
+      ),
+    );
     const code = h('input', { class: 'mc-input mp-code', type: 'text', placeholder: 'Friend\u2019s code', maxlength: '8', autocomplete: 'off', spellcheck: 'false' });
     const join = () => this.cb.onJoinOnline(code.value, name());
     code.addEventListener('keydown', (e) => {

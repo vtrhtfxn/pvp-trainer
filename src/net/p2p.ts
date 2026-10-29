@@ -2,6 +2,7 @@ import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
 import { Lobby, type Conn } from '../server/lobby';
 import type { SocketLike } from './Client';
 import { iceConfig, routeOf, type Route } from './relay';
+import { MAX_HUMANS } from './tourney';
 
 /**
  * Online play over the internet, with no server to run: whoever hosts runs the game's server
@@ -155,7 +156,8 @@ function loopback(onClosed: () => void): { client: SocketLike; server: Conn } {
 
 /** Hosting an online game: a Lobby in this page, reachable as PEER_PREFIX + code. */
 export class OnlineHost {
-  readonly lobby = new Lobby({ maxClients: 4, maxRooms: 1 });
+  // A tournament room takes up to MAX_HUMANS people (and a duel room two).
+  readonly lobby = new Lobby({ maxClients: MAX_HUMANS + 2, maxRooms: 1 });
   private destroyed = false;
   private readonly guests = new Set<Conn & { route(): Route | null }>();
 

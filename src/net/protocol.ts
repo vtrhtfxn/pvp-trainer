@@ -9,8 +9,9 @@
  */
 
 import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
+import type { TourView } from './tourney';
 
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 15;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -186,7 +187,21 @@ export const CHAT_MAX = 256;
 export type NetPhase = 'lobby' | 'countdown' | 'fight' | 'ended';
 
 export type ClientMsg =
-  | { t: 'join'; room: string; name: string; v: number; kit?: string }
+  | {
+      t: 'join';
+      room: string;
+      name: string;
+      v: number;
+      kit?: string;
+      /** Creating a tournament room: its size and field. */
+      tour?: { size: number; field: string };
+      /** Your best tier (0 = LT5 … 9 = HT1), for tournament seeding. */
+      rating?: number;
+    }
+  /** Tournament: the host starts it; your ban or pick; how your game against a bot went. */
+  | { t: 'tstart' }
+  | { t: 'tdraft'; kit: string }
+  | { t: 'tresult'; won: boolean }
   | {
       t: 'move';
       /** The sender's own tick number: the opponent plays moves back on this clock. */
@@ -266,7 +281,12 @@ export type ServerMsg =
   | { t: 'joined'; you: number; room: string }
   | { t: 'error'; message: string }
   | { t: 'lobby'; room: string; players: { i: number; name: string }[]; kit: string }
-  | { t: 'start'; countdown: number; kit: string }
+  /** A duel starts. `you`: your seat in it (tournaments seat whoever plays this match). */
+  | { t: 'start'; countdown: number; kit: string; you?: number }
+  /** Tournament: the room, the bracket and what is happening now. */
+  | { t: 'tour'; view: TourView }
+  /** Tournament: your game against a bot — your own game plays it, then send tresult. */
+  | { t: 'tplay'; kit: string; bot: { name: string; tier: string } }
   | {
       t: 'state';
       tick: number;

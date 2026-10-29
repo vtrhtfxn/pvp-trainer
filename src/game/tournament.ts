@@ -39,6 +39,8 @@ export interface Entrant {
   seed: number;
   /** A bot's favourite kits: what it picks first, and never bans. */
   favs: KitId[];
+  /** Online: the player (room member id) behind a human entrant. */
+  pid?: number;
 }
 
 export type Side = 'upper' | 'lower' | 'final';
@@ -118,8 +120,8 @@ function shuffle<T>(t: Tournament, list: T[]): T[] {
 const NAME_A = ['Frost', 'Ember', 'Nova', 'Pixel', 'Vortex', 'Shade', 'Blaze', 'Echo', 'Onyx', 'Raven', 'Storm', 'Jade', 'Cobalt', 'Zephyr', 'Talon', 'Lunar', 'Quartz', 'Viper', 'Drift', 'Rogue', 'Sable', 'Atlas', 'Kairo', 'Nyx', 'Hex', 'Volt', 'Rune', 'Glint', 'Brisk', 'Comet'];
 const NAME_B = ['', 'x', 'z', 'ify', 'ed', 'MC', '_pvp', 'Hero', 'King', 'Edge', 'Fang', 'Byte', 'Wolf', 'Tap', 'Crit', 'Strafe', '07', '_', 'ix', 'ly'];
 
-function botNames(t: Tournament, n: number, avoid: string): string[] {
-  const out = new Set<string>([avoid.toLowerCase()]);
+function botNames(t: Tournament, n: number, avoid: string[]): string[] {
+  const out = new Set<string>(avoid.map((a) => a.toLowerCase()));
   const names: string[] = [];
   while (names.length < n) {
     const name = pick(t, NAME_A) + pick(t, NAME_B);
@@ -200,34 +202,67 @@ function buildMatches(size: TourneySize): TMatch[] {
   return order;
 }
 
+/** A person in the bracket: their name, rating (0 = LT5 … 9 = HT1, for seeding) and, online, member id. */
+export interface Human {
+  name: string;
+  rating: number;
+  pid?: number;
+}
+
 /**
- * A new tournament. `youRating` (0 = LT5 … 9 = HT1, from your My Tiers) only decides your seed.
+ * A new tournament for one or more people; bots fill the other places. Ratings only decide
+ * seeds. `you` is the first human (offline: the only one).
  */
-export function createTournament(size: TourneySize, field: FieldId, yourName: string, youRating: number, seed = (Math.random() * 2 ** 32) >>> 0): Tournament {
+export function createBracket(size: TourneySize, field: FieldId, humans: Human[], seed = (Math.random() * 2 ** 32) >>> 0): Tournament {
   const t: Tournament = { v: 1, size, field, rng: seed >>> 0, entrants: [], matches: buildMatches(size), you: 0, champion: null };
   const tiers = FIELDS[field].tiers;
-  const names = botNames(t, size - 1, yourName);
-  const people: { name: string; tier: TierId | null; rating: number }[] = [{ name: yourName, tier: null, rating: youRating + rand(t) * 0.5 }];
-  for (let i = 0; i < size - 1; i++) {
+  const people = humans.slice(0, size);
+  const bots = size - people.length;
+  const names = botNames(t, bots, people.map((p) => p.name));
+  const all: { name: string; tier: TierId | null; rating: number; pid?: number }[] = people.map((p) => ({ name: p.name, tier: null, rating: p.rating + rand(t) * 0.5, pid: p.pid }));
+  for (let i = 0; i < bots; i++) {
     // Spread the bots over the field's tiers, strongest first.
-    const tier = tiers[Math.min(tiers.length - 1, Math.floor(((size - 2 - i) / Math.max(1, size - 1)) * tiers.length))];
-    people.push({ name: names[i], tier, rating: TIER_ORDER.indexOf(tier) + rand(t) * 0.5 });
+    const tier = tiers[Math.min(tiers.length - 1, Math.floor(((bots - 1 - i) / Math.max(1, bots)) * tiers.length))];
+    all.push({ name: names[i], tier, rating: TIER_ORDER.indexOf(tier) + rand(t) * 0.5 });
   }
-  people.sort((a, b) => b.rating - a.rating);
-  t.entrants = people.map((p, i) => ({
+  all.sort((a, b) => b.rating - a.rating);
+  t.entrants = all.map((p, i) => ({
     id: i,
     name: p.name,
     tier: p.tier,
     seed: i + 1,
     favs: p.tier ? shuffle(t, [...TOURNEY_KITS]).slice(0, 3) : [],
+    ...(p.pid !== undefined ? { pid: p.pid } : {}),
   }));
-  t.you = t.entrants.find((e) => e.tier === null)!.id;
+  const firstHuman = t.entrants.find((e) => e.tier === null && (humans[0]?.pid === undefined || e.pid === humans[0].pid));
+  t.you = firstHuman?.id ?? -1;
   const order = seedOrder(size);
   const first = t.matches.filter((m) => m.side === 'upper' && m.round === 1);
   first.forEach((m, i) => {
     m.players = [order[2 * i] - 1, order[2 * i + 1] - 1];
   });
   return t;
+}
+
+/**
+ * A new tournament for you against bots. `youRating` (0 = LT5 … 9 = HT1, from your My Tiers)
+ * only decides your seed.
+ */
+export function createTournament(size: TourneySize, field: FieldId, yourName: string, youRating: number, seed = (Math.random() * 2 ** 32) >>> 0): Tournament {
+  return createBracket(size, field, [{ name: yourName, rating: youRating }], seed);
+}
+
+/** A person left an online tournament: a bot plays their remaining matches under their name. */
+export function botTakesOver(t: Tournament, id: number, tier: TierId = 'lt3') {
+  const e = t.entrants[id];
+  if (!e || e.tier) return;
+  e.tier = tier;
+  e.favs = shuffle(t, [...TOURNEY_KITS]).slice(0, 3);
+  delete e.pid;
+}
+
+export function isHuman(e: Entrant): boolean {
+  return e.tier === null;
 }
 
 // ------------------------------------------------------------------ queries

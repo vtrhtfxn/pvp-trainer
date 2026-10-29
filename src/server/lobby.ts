@@ -8,6 +8,8 @@ import { Duel } from '../net/Duel';
 import { PREP_TICKS } from '../game/Match';
 import { KITS, type KitId } from '../game/kits';
 import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, cleanChat, cleanName, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
+import { OnlineTourney, isTourneySetup } from '../net/tourney';
+import { TOURNEY_KITS } from '../game/tournament';
 
 /** One player's connection: text messages both ways. */
 export interface Conn {
@@ -35,8 +37,13 @@ const MSG_RATE = 150;
 const MAX_MSG_CHARS = 64 * 1024;
 const MSG_BURST = 300;
 
+let nextClientId = 1;
+
 export class LobbyClient {
+  /** Stable id (a tournament knows its players by it). */
+  readonly id = nextClientId++;
   room: Room | null = null;
+  /** Seat in the room's duel (0/1), or -1 (a tournament member not fighting right now). */
   seat = -1;
   name = 'Player';
   ping = 0;
@@ -96,7 +103,7 @@ export class LobbyClient {
     const rtt = Date.now() - this.pingSentAt;
     // Smooth it: one unlucky sample should not swing how far hits get rewound.
     this.ping = this.ping ? Math.round(this.ping * 0.7 + rtt * 0.3) : rtt;
-    this.room?.duel?.setPing(this.seat, this.ping);
+    if (this.seat >= 0) this.room?.duel?.setPing(this.seat, this.ping);
   }
 }
 
@@ -114,6 +121,95 @@ class Room {
 
   /** The kit everyone in the room fights with — chosen by whoever created the room. */
   kit: KitId = 'sword';
+
+  /**
+   * A tournament room: everyone in it is a member; the two in the current match sit in the
+   * duel's seats (the others watch the bracket).
+   */
+  tour: OnlineTourney | null = null;
+  readonly members: LobbyClient[] = [];
+  private tourTimer: ReturnType<typeof setInterval> | null = null;
+
+  makeTour(size: number, field: string) {
+    if (!isTourneySetup({ size, field })) return;
+    this.tour = new OnlineTourney(size as never, field as never, {
+      changed: () => this.sendTour(),
+      startDuel: (a, b, kit) => this.startTourDuel(a, b, kit),
+      stopDuel: () => this.stopTourDuel(),
+      playLocal: (pid, kit, bot) => this.member(pid)?.send({ t: 'tplay', kit, bot: { name: bot.name, tier: bot.tier ?? 'lt3' } }),
+    });
+    this.tourTimer = setInterval(() => {
+      try {
+        this.tour?.tick();
+      } catch (err) {
+        this.lobby.log(`room ${this.code}: tournament tick failed — ${(err as Error)?.stack ?? err}`);
+      }
+    }, 250);
+  }
+
+  private member(pid: number): LobbyClient | undefined {
+    return this.members.find((c) => c.id === pid);
+  }
+
+  /** Everyone in the room (a tournament's members, or the two seats). */
+  get everyone(): LobbyClient[] {
+    return this.tour ? this.members : this.players;
+  }
+
+  announce(msg: ServerMsg) {
+    const text = JSON.stringify(msg);
+    for (const c of this.everyone) c.sendRaw(text);
+  }
+
+  sendTour() {
+    const tour = this.tour;
+    if (!tour) return;
+    for (const c of this.members) c.send({ t: 'tour', view: tour.view(c.id) });
+  }
+
+  private startTourDuel(pidA: number, pidB: number, kit: KitId) {
+    const a = this.member(pidA);
+    const b = this.member(pidB);
+    if (!a || !b) return;
+    this.stopTourDuel();
+    this.seats[0] = a;
+    this.seats[1] = b;
+    a.seat = 0;
+    b.seat = 1;
+    this.kit = kit;
+    this.duel = new Duel([a.name, b.name], kit);
+    this.duel.countdownTicks = PREP_TICKS;
+    a.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 0 });
+    b.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 1 });
+    this.startClock();
+    this.lobby.log(`room ${this.code}: tournament game — ${a.name} vs ${b.name} on ${kit}`);
+  }
+
+  private stopTourDuel() {
+    this.stopClock();
+    this.duel = null;
+    for (const c of this.seats) if (c) c.seat = -1;
+    this.seats[0] = this.seats[1] = null;
+  }
+
+  /** Joins a tournament room (before it starts). */
+  joinTour(client: LobbyClient, rating: number): boolean {
+    const tour = this.tour!;
+    const taken = new Set(this.members.map((c) => c.name.toLowerCase()));
+    for (let n = 2; taken.has(client.name.toLowerCase()); n++) client.name = `${client.name.replace(/ \(\d+\)$/, '')} (${n})`;
+    this.members.push(client);
+    if (!tour.join({ pid: client.id, name: client.name, rating: Math.max(0, Math.min(9, Number(rating) || 0)) })) {
+      this.members.pop();
+      return false;
+    }
+    return true;
+  }
+
+  private closeTour() {
+    if (this.tourTimer) clearInterval(this.tourTimer);
+    this.tourTimer = null;
+    this.tour = null;
+  }
 
 
   get players(): LobbyClient[] {
@@ -139,7 +235,7 @@ class Room {
   }
 
   startIfReady() {
-    if (this.players.length !== 2 || this.duel) return;
+    if (this.tour || this.players.length !== 2 || this.duel) return;
     const names: [string, string] = [this.seats[0]!.name, this.seats[1]!.name];
     this.duel = new Duel(names, this.kit);
     // 10 s to sort inventories before the 3-2-1, like an offline duel.
@@ -216,6 +312,8 @@ class Room {
     if (duel.phase === 'ended' && duel.phaseTicks === 1) {
       this.broadcast({ t: 'end', winner: duel.winner });
       this.lobby.log(`room ${this.code}: duel over — winner ${duel.winner ?? 'draw'}`);
+      // A tournament game: the result goes into the bracket (and the duel is closed).
+      if (this.tour) this.tour.duelEnded(duel.winner === null ? null : this.seats[duel.winner]?.id ?? null);
     }
   }
 
@@ -233,7 +331,7 @@ class Room {
   }
 
   voteRematch(seat: number) {
-    if (!this.duel || this.duel.phase !== 'ended') return;
+    if (this.tour || !this.duel || this.duel.phase !== 'ended') return;
     this.rematchVotes.add(seat);
     if (this.rematchVotes.size >= 2 && this.players.length === 2) {
       this.rematchVotes.clear();
@@ -243,6 +341,19 @@ class Room {
   }
 
   leave(client: LobbyClient) {
+    if (this.tour) {
+      const i = this.members.indexOf(client);
+      if (i >= 0) this.members.splice(i, 1);
+      // The tournament replaces them with a bot (and stops their duel if they were in one).
+      this.tour.leave(client.id);
+      if (this.members.length === 0) {
+        this.stopTourDuel();
+        this.closeTour();
+        this.lobby.rooms.delete(this.code);
+        this.lobby.log(`room ${this.code}: closed`);
+      }
+      return;
+    }
     if (this.seats[client.seat] === client) this.seats[client.seat] = null;
     this.rematchVotes.delete(client.seat);
     this.stopClock();
@@ -353,6 +464,20 @@ export class Lobby {
           room = new Room(code, this);
           this.rooms.set(code, room);
         }
+        // A tournament room: made by whoever asks for one with a new room; everyone joins as a member.
+        if (!existing && isTourneySetup(msg.tour)) room.makeTour(msg.tour.size, msg.tour.field);
+        if (room.tour) {
+          if (!room.joinTour(client, msg.rating ?? 0)) {
+            client.send({ t: 'error', message: room.tour.started ? 'That tournament has already started.' : 'That tournament is full.' });
+            return;
+          }
+          client.room = room;
+          client.seat = -1;
+          client.send({ t: 'joined', you: -1, room: room.code });
+          room.sendTour();
+          this.log(`${client.name} joined tournament room ${room.code}`);
+          return;
+        }
         // A new room takes the creator's kit; joining an existing room keeps its kit.
         if (room.players.length === 0) {
           const kit = String(msg.kit ?? 'sword');
@@ -386,6 +511,8 @@ export class Lobby {
       case 'buy':
       case 'chest': {
         const room = client.room;
+        // A tournament member watching the bracket has no seat in the duel.
+        if (client.seat < 0) return;
         const relay = room?.duel?.receive(client.seat, msg);
         // Moves go straight on to the opponent: waiting for the next tick would re-time them to
         // the server's clock, which is what made fighters stutter and jump on each other's screens.
@@ -397,6 +524,19 @@ export class Lobby {
       }
       case 'rematch':
         client.room?.voteRematch(client.seat);
+        return;
+      case 'tstart': {
+        const err = client.room?.tour?.start(client.id);
+        if (err) client.send({ t: 'chat', kind: 'chat', from: '', text: err });
+        return;
+      }
+      case 'tdraft': {
+        const kit = String(msg.kit);
+        if ((TOURNEY_KITS as string[]).includes(kit)) client.room?.tour?.draft(client.id, kit as KitId);
+        return;
+      }
+      case 'tresult':
+        client.room?.tour?.result(client.id, msg.won === true);
         return;
       case 'pong':
         client.gotPong(msg.id);
@@ -412,7 +552,7 @@ export class Lobby {
           client.send({ t: 'chat', kind: 'chat', from: '', text: 'You are sending messages too quickly — wait a moment.' });
           return;
         }
-        room.broadcast({ t: 'chat', kind, from: client.name, text });
+        room.announce({ t: 'chat', kind, from: client.name, text });
         return;
       }
       default:

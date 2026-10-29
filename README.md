@@ -601,6 +601,16 @@ bans, Team B bans, Team A picks, Team B picks, and the **Decider** is drawn at r
 left. Game 1 is played on Team A's pick, game 2 on Team B's, game 3 on the decider. Bots pick their
 favourite kits and ban your best one. Your games are real duels; bot-vs-bot matches are simulated
 from their tiers. The bracket is saved after every game, so **Save & Quit** and come back later.
+**Online tournaments** (Multiplayer → pick the size and the bots → **Host online tournament**):
+friends join with the code like any online game, up to 16 people, and bots fill the rest of the
+bracket. The host presses **Start**. It runs one match at a time while everyone watches the live
+Kit Selection or the bracket: the two players in a match draft live (30 s per ban or pick, or a
+bot picks for you). Two people fight a real online duel; a person against a bot plays it in their
+own game and the result goes back to the host; bot against bot is decided straight away. Every
+duel opens with the 10 s inventory time. Someone who leaves is replaced by a bot under their name,
+so the bracket always finishes. The host runs it (`src/net/tourney.ts`, tests:
+`tests/onlineTourney.test.ts` and `tests/tourneyRoom.test.ts`).
+
 Winning one earns the *Main Event* advancement (a 32-player one, *Last One Standing*). The logic is
 in `src/game/tournament.ts` (tests: `tests/tournament.test.ts`), the screens in
 `src/ui/Tournament.ts`.

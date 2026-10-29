@@ -51,6 +51,8 @@ import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
 import { KITS, isCustomKit, kitById, type KitId } from './kits';
 import { isYours, recordGame, roundName, saveTournament } from './tournament';
 import { TournamentUI } from '../ui/Tournament';
+import { netheriteSpearLogo, uhcLogo } from '../ui/kitLogos';
+import type { TourView } from '../net/tourney';
 import { loadCustomKits } from './customKits';
 import { B } from './Blocks';
 import type { World } from './World';
@@ -120,6 +122,12 @@ export class Game {
   /** Tournament screens, and the game of your tournament match being played (null otherwise). */
   private readonly tourney: TournamentUI;
   private tourneyGame: { kit: KitId; tier: TierId; name: string } | null = null;
+  /** Online tournament: the latest view from the host (null outside a tournament room). */
+  private tourView: TourView | null = null;
+  /** Your game against a bot in an online tournament is running locally right now. */
+  private onlineTourGame = false;
+  /** The online tournament's result was already counted for advancements. */
+  private tourAwarded = false;
   /** Advancements earned (kept across sessions). */
   private readonly advancements = loadAdvancements();
   private killEffect: KillEffectId = loadKillEffect(this.advancements);
@@ -219,7 +227,8 @@ export class Game {
     kitIcons.sword18 = itemIcon({ id: 'diamond_sword', count: 1, ench: { sharpness: 5 } }) ?? makeKitIcon('sword');
     kitIcons.custom = makeKitIcon('custom');
     kitIcons.cart = itemIcon({ id: 'tnt_minecart', count: 1 }) ?? makeKitIcon('custom');
-    kitIcons.spear_mace = itemIcon({ id: 'netherite_spear', count: 1 }) ?? makeKitIcon('mace');
+    kitIcons.spear_mace = netheriteSpearLogo(itemIcon({ id: 'netherite_spear', count: 1 })) ?? makeKitIcon('mace');
+    kitIcons.uhc = uhcLogo();
     kitIcons.bedwars = itemIcon({ id: 'red_wool', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.skywars = itemIcon({ id: 'ender_pearl', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.dia_smp = itemIcon({ id: 'diamond_chestplate', count: 1 }) ?? makeKitIcon('axe');
@@ -293,6 +302,7 @@ export class Game {
       },
       onConnect: (url, room, name) => this.startOnline(url, room, name),
       onHostOnline: (name) => this.hostOnline(name),
+      onHostTournament: (name, size, field) => this.hostOnline(name, { size, field }),
       onJoinOnline: (code, name) => this.joinOnline(code, name),
       onLeaveOnline: () => this.leaveOnline(),
       onMarketplace: () => this.openMarket(),
@@ -323,7 +333,7 @@ export class Game {
           .sort((a, b) => TIER_POINTS[b[1]] - TIER_POINTS[a[1]])
           .map(([k]) => k),
       // Your best tier (0 = LT5 … 9 = HT1); with none yet you're seeded like an LT4.
-      youRating: () => Math.max(2, ...Object.values(this.myTiers).map((t) => DIFFICULTY_ORDER.indexOf(t as TierId) - 1)),
+      youRating: () => this.myRating(),
       playerName: () => loadPlayerName(),
     });
     this.market = new Marketplace(uiRoot, this.mods, {
@@ -1027,10 +1037,11 @@ export class Game {
   }
 
   /** `nextRound`: the next round of the running "first to" series (otherwise a new series). */
-  private startDuel(nextRound = false, drillId: string | null = null) {
+  private startDuel(nextRound = false, drillId: string | null = null, keepOnline = false) {
     this.sound.unlock();
     this.inventory.hide();
-    this.leaveOnline(false);
+    // An online tournament's game against a bot runs here while the room stays connected.
+    if (!keepOnline) this.leaveOnline(false);
     const drillDef = drillId ? drillById(drillId) ?? null : null;
     this.lastDrill = drillDef ? drillDef.id : null;
     // A new duel from anywhere but the Gauntlet's own rounds ends the run.
@@ -1087,6 +1098,8 @@ export class Game {
 
   /** R, Restart and Try again: the same drill again, or a new duel. */
   private restartCurrent() {
+    // A game of an online tournament can't be restarted (the bracket is waiting on it).
+    if (this.onlineTourGame) return;
     if (this.lastDrill) this.startDrill(this.lastDrill);
     else this.startDuel();
   }
@@ -1291,11 +1304,18 @@ export class Game {
     // Hosting a room uses the kit selected in the main menu; joining uses the room's.
     // Custom kits only live in this browser: an online room uses Sword instead.
     const offline = isCustomKit(this.settings.kit);
+    this.net.joinExtra = {};
     this.net.connect(url, room, name, offline ? 'sword' : this.settings.kit);
   }
 
-  /** Online over the internet: this game hosts, a friend joins with the code it shows. */
-  private hostOnline(name: string) {
+  /** Your best tier as 0 (LT5) … 9 (HT1); with none yet you're seeded like an LT4. */
+  private myRating(): number {
+    return Math.max(2, ...Object.values(this.myTiers).map((t) => DIFFICULTY_ORDER.indexOf(t as TierId) - 1));
+  }
+
+  /** Online over the internet: this game hosts, a friend joins with the code it shows. A
+   * `tour` makes it a tournament room instead of a duel. */
+  private hostOnline(name: string, tour?: { size: number; field: string }) {
     this.sound.unlock();
     this.leaveOnline(false);
     const attempt = ++this.onlineAttempt;
@@ -1309,6 +1329,7 @@ export class Game {
           return;
         }
         this.onlineHost = host;
+        this.net.joinExtra = { tour, rating: this.myRating() };
         this.net.connectVia(host.localSocket(), host.code, name, kit, 'Starting…', 8000, 'Could not start the game you are hosting.');
       },
       (err: Error) => {
@@ -1325,6 +1346,7 @@ export class Game {
       this.menus.setNetStatus('error', 'Type the code your friend sees on their screen.', '');
       return;
     }
+    this.net.joinExtra = { rating: this.myRating() };
     this.net.connectVia(joinOnline(c), c, name, 'sword', `Connecting to game ${c}…`, JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT);
   }
 
@@ -1362,6 +1384,7 @@ export class Game {
     this.net.close();
     this.netMatch = null;
     this.lobbyNames = [];
+    this.endTour();
     if (toMenu) this.toMenu();
   }
 
@@ -1372,8 +1395,9 @@ export class Game {
 
   /** Back to the multiplayer screen from an online match (the connection may stay open). */
   private leaveOnlineMatch() {
-    const wasPlaying = this.netMatch !== null;
+    const wasPlaying = this.netMatch !== null || this.onlineTourGame;
     this.netMatch = null;
+    this.endTour();
     if (wasPlaying) {
       this.inventory.hide();
       this.state = 'menu';
@@ -1390,6 +1414,15 @@ export class Game {
   }
 
   private onNetMessage(msg: ServerMsg) {
+    if (msg.t === 'tour') {
+      this.tourView = msg.view;
+      this.onTourView();
+      return;
+    }
+    if (msg.t === 'tplay') {
+      this.playTourLocal(msg.kit as KitId, msg.bot);
+      return;
+    }
     if (msg.t === 'chat') {
       this.chat.print(this.chatLine(msg.kind, msg.from, msg.text), !msg.from);
       return;
@@ -1404,10 +1437,10 @@ export class Game {
       this.lobbyNames = names;
     }
     if (msg.t === 'start') {
-      if (!this.netMatch || this.netMatch.kit.id !== msg.kit) {
+      if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView) {
         this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId);
         this.series = null;
-        this.hud.setSeries(null);
+        this.hud.setSeries(this.tourView ? this.tourLine() : null);
         this.hud.setPips(null);
         this.match = this.netMatch;
       }
@@ -1443,6 +1476,7 @@ export class Game {
 
   private beginOnlineRound() {
     this.announceRoute(this.onlineAttempt);
+    this.tourney.hide();
     this.view.firstPerson.reset();
     this.view.particles.clear();
     this.hud.resetRound(this.match.player);
@@ -1462,6 +1496,13 @@ export class Game {
   private finishOnlineDuel() {
     const m = this.netMatch;
     if (!m) return;
+    if (this.tourView) {
+      // A tournament game: no rematch, back to the bracket's live screen.
+      this.sound.jingle(m.winner === m.player);
+      this.netMatch = null;
+      this.showTourScreen();
+      return;
+    }
     const won = m.winner === m.player;
     this.state = 'results';
     this.input.enabled = false;
@@ -1529,6 +1570,7 @@ export class Game {
 
   /** The HUD line in a tournament game: round, game number and the match score. */
   private tourneyLine(): string {
+    if (this.tourView) return this.tourLine();
     const t = this.tourney.t;
     const m = t && t.matches.filter((x) => isYours(t, x) && x.draft && x.winner === null).pop();
     if (!t || !m) return 'Tournament';
@@ -1539,6 +1581,14 @@ export class Game {
   /** A tournament game is over: into the match, then back to the kit-selection screen. */
   private finishTourneyGame(won: boolean) {
     this.tourneyGame = null;
+    if (this.onlineTourGame) {
+      // Online: the host records it and moves the bracket on.
+      this.onlineTourGame = false;
+      this.net.send({ t: 'tresult', won });
+      this.sound.jingle(won);
+      this.showTourScreen();
+      return;
+    }
     const t = this.tourney.t;
     const m = t && t.matches.filter((x) => isYours(t, x) && x.draft && x.winner === null).pop();
     if (t && m) {
@@ -1554,6 +1604,83 @@ export class Game {
     this.sound.jingle(won);
     this.menus.hideAll();
     this.tourney.showMatch();
+  }
+
+  // ------------------------------------------------------------------ online tournament
+
+  /** The HUD line in an online tournament game. */
+  private tourLine(): string {
+    const v = this.tourView;
+    const t = v?.tour;
+    const m = t && v.live ? t.matches.find((x) => x.id === v.live!.match) : null;
+    if (!t || !m) return 'Tournament';
+    const me = m.players.findIndex((id) => id !== null && t.entrants[id].pid === v.you);
+    return `${roundName(t, m)} · Game ${m.games.length + 1} · ${m.wins[Math.max(0, me)]}–${m.wins[me === 1 ? 0 : 1]}`;
+  }
+
+  /** A new view from the host: redraw the tournament screen unless you're in one of its games. */
+  private onTourView() {
+    const v = this.tourView!;
+    const t = v.tour;
+    if (t && t.champion !== null && !this.tourAwarded) {
+      this.tourAwarded = true;
+      const me = t.entrants.find((e) => e.pid === v.you);
+      if (me) this.earn({ kind: 'tournament', won: t.champion === me.id, size: t.size });
+    }
+    if (this.onlineTourGame) return;
+    const nm = this.netMatch;
+    if (nm) {
+      const live = v.live;
+      const mine = !!t && !!live && !live.pve && live.stage === 'game' && t.matches.find((x) => x.id === live.match)?.players.some((id) => id !== null && t.entrants[id].pid === v.you);
+      // The duel finishes on its own (VICTORY, then back here); one that was called off — the
+      // opponent left — ends now.
+      if (mine || nm.phase === 'ended') return;
+      this.netMatch = null;
+    }
+    this.showTourScreen();
+  }
+
+  /** The online tournament's screen, over the world. */
+  private showTourScreen() {
+    const v = this.tourView;
+    if (!v) return;
+    if (this.state === 'playing' || this.state === 'paused') {
+      this.inventory.hide();
+      this.chat.hide();
+      this.hud.setVisible(false);
+      this.input.enabled = false;
+      this.input.unlock();
+      this.state = 'results';
+    }
+    this.menus.hideAll();
+    this.tourney.showOnline(v, this.net.room, {
+      start: () => this.net.send({ t: 'tstart' }),
+      draft: (kit) => this.net.send({ t: 'tdraft', kit }),
+      leave: () => {
+        this.leaveOnline(true);
+        this.menus.show('multiplayer');
+      },
+    });
+  }
+
+  /** Your game against a bot: played here, the result goes back to the host. */
+  private playTourLocal(kit: KitId, bot: { name: string; tier: string }) {
+    const tier = (DIFFICULTY_ORDER as string[]).includes(bot.tier) && bot.tier !== 'practice' ? (bot.tier as TierId) : 'lt3';
+    this.tourneyGame = { kit, tier, name: bot.name };
+    this.onlineTourGame = true;
+    this.tourney.hide();
+    this.startDuel(true, null, true);
+  }
+
+  /** Out of the tournament room (left, or the connection closed). */
+  private endTour() {
+    if (!this.tourView && !this.onlineTourGame) return;
+    this.tourView = null;
+    this.onlineTourGame = false;
+    this.tourAwarded = false;
+    if (this.tourneyGame) this.tourneyGame = null;
+    this.tourney.clearOnline();
+    this.tourney.hide();
   }
 
   private finishGauntletRound(won: boolean) {
