@@ -68,7 +68,7 @@ export interface KitDef extends Loadout {
   legacyCombat?: boolean;
   /** Made in the kit editor. */
   custom?: boolean;
-  /** A subtier (1.8 Sword, Spear Mace, Cart, Diamond SMP): listed on the Subtiers page instead of the title screen. */
+  /** A subtier (1.8 Sword, Spear Mace, Cart, Diamond SMP, Bed Wars, SkyWars): listed on the Subtiers page instead of the title screen. */
   subtier?: boolean;
   /** A minigame (Bed Wars, SkyWars): its own map and rules; the loadout comes from the game. */
   mode?: 'bedwars' | 'skywars';
@@ -648,6 +648,7 @@ export const KITS: KitDef[] = [
     name: 'Bed Wars',
     icon: 'bedwars',
     available: true,
+    subtier: true,
     mode: 'bedwars',
     summary: 'Protect your bed, break theirs. Iron and gold from your forge buy blocks and gear; once your bed is gone, dying is final.',
     contents: [
@@ -669,6 +670,7 @@ export const KITS: KitDef[] = [
     name: 'SkyWars',
     icon: 'skywars',
     available: true,
+    subtier: true,
     mode: 'skywars',
     summary: 'Start in a cage on your own island, loot the chests, bridge over and knock them into the void. No respawns.',
     contents: [
