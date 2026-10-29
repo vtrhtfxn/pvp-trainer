@@ -635,11 +635,13 @@ Effects play in duels against bots and online, not in the Trainer or Bot vs Bot.
 
 **Bot vs Bot** lets any tier fight any tier in any kit while you watch — round after round, with both
 health bars, the score and each bot's current plan on screen. You start in a **free camera**: fly
-anywhere with `W` `A` `S` `D` (`W` goes where you look), `Space` up, `Shift` down, `Ctrl` faster. It
-has no body, so you can't touch, hit, place or break anything. Click to grab the mouse for looking
-around (`Esc` lets go of it). `V` or `1`–`6` switch the camera (orbit, follow either bot, through
-either bot's eyes, or free); the bot-eye views are smoothed, so they glide instead of snapping at
-the bots' 20 turns a second. `[` `]` change the speed (¼× to 4×), `P` pauses (`Space` too, outside
+anywhere with `W` `A` `S` `D` (`W` goes where you look), `Space` up, `Shift` down — 6 blocks a
+second, 14 while you hold `Ctrl` (Toggle Sprint/Sneak don't apply to it), and it stops where you let
+go. It has no body, so you can't touch, hit, place or break anything. Click to grab the mouse for
+looking around (`Esc` lets go of it). The camera bar at the bottom (click, or `V` / `1`–`6`)
+switches between orbit, following either fighter, **either fighter's POV** — their hand, held item
+and hotbar as they see them — and the free camera; the POV views are smoothed, so they glide instead
+of snapping at the bots' 20 turns a second. `[` `]` change the speed (¼× to 4×), `P` pauses (`Space` too, outside
 the free camera), `R` starts a new round and `Esc` leaves. A round with no kill after 3 minutes goes
 to whoever has more health (and totems) left.
 

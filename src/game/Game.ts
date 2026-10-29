@@ -233,7 +233,18 @@ export class Game {
     kitIcons.skywars = itemIcon({ id: 'ender_pearl', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.dia_smp = itemIcon({ id: 'diamond_chestplate', count: 1 }) ?? makeKitIcon('axe');
     this.hud = new HUD(uiRoot, this.mods);
-    this.specHud = new SpectatorHud(uiRoot);
+    this.specHud = new SpectatorHud(
+      uiRoot,
+      (cam) => {
+        const spec = this.spec;
+        if (!spec || spec.cam === cam) return;
+        const was = spec.cam;
+        spec.cam = cam;
+        this.enterSpectateCam(was);
+        this.sound.ui();
+      },
+      (st) => itemIcon(st),
+    );
     this.scoreboard = new ScoreboardHud(uiRoot);
     const overlayCb = {
       onClose: () => this.closeModeScreens(),
@@ -1173,6 +1184,9 @@ export class Game {
       return;
     }
     const m = spec.match;
+    // Through a fighter's eyes: their hand and held item move like they would for them.
+    const pov = spec.cam === 'povA' ? m.player : spec.cam === 'povB' ? m.bot : null;
+    if (pov) this.view.firstPerson.tick(pov);
     this.tickModeUi(m, m.player, true);
     this.handleEvents(m.player, false);
     this.handleEvents(m.bot, false);
@@ -1229,6 +1243,8 @@ export class Game {
   private enterSpectateCam(was: SpecCam | null) {
     const spec = this.spec;
     if (!spec) return;
+    // A new pair of eyes: their hand comes up fresh (not the last fighter's item).
+    if (spec.cam !== was) this.view.firstPerson.reset();
     if (spec.cam === 'free' && was !== 'free') {
       const f = this.free;
       const cam = this.view.camera;
@@ -1267,7 +1283,10 @@ export class Game {
     f.yaw += dyaw;
     f.pitch = clamp(f.pitch + dpitch, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
     const inp = this.input.moveInput();
-    const speed = inp.sprint ? 26 : 9;
+    // Sprint only while the key is held: with Toggle Sprint on, the toggle stayed on from the
+    // last duel and the camera always flew at full speed.
+    const fast = this.input.held('sprint');
+    const speed = fast ? 14 : 6;
     // Forward follows where you look (up and down included); strafe stays level.
     const cp = Math.cos(f.pitch);
     const fx = -Math.sin(f.yaw) * cp;
@@ -1276,10 +1295,13 @@ export class Game {
     const rx = Math.cos(f.yaw);
     const rz = -Math.sin(f.yaw);
     const tx = (fx * inp.forward + rx * inp.strafe) * speed;
-    const ty = (fy * inp.forward + (inp.jump ? 1 : 0) - (inp.sneak ? 1 : 0)) * speed;
+    // Up and down from the keys themselves too (a Toggle Sneak left on would sink it forever).
+    const up = this.input.held('jump') ? 1 : 0;
+    const down = this.input.held('sneak') ? 1 : 0;
+    const ty = (fy * inp.forward + up - down) * speed;
     const tz = (fz * inp.forward + rz * inp.strafe) * speed;
-    // Ease in and out, like a camera on a rail.
-    const k = 1 - Math.exp(-dt * 12);
+    // A short ease in and out (a smooth start, and it stops where you let go, not a slide later).
+    const k = 1 - Math.exp(-dt * (inp.forward || inp.strafe || up || down ? 14 : 22));
     f.vx += (tx - f.vx) * k;
     f.vy += (ty - f.vy) * k;
     f.vz += (tz - f.vz) * k;
