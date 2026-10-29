@@ -4515,3 +4515,144 @@ body {
   bottom: auto;
   top: 158px;
 }
+
+/* ---------------------------------------------------------------- Progress */
+.mc-btn.progress-btn {
+  color: #55ffff;
+}
+.progress-panel {
+  width: min(760px, 100%);
+}
+.pg-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.pg-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.pg-stat b {
+  font-family: var(--display-font);
+  font-size: 28px;
+  letter-spacing: 1px;
+  color: var(--champ-gold);
+  line-height: 1;
+}
+.pg-stat span {
+  font-size: 11px;
+  color: #bbb;
+}
+.pg-charts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.pg-chart {
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.pg-chart-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #ddd;
+}
+.pg-chart-head b.up {
+  color: #7dff7d;
+}
+.pg-chart-head b.down {
+  color: #ff8080;
+}
+.pg-spark {
+  display: block;
+  width: 100%;
+  height: 44px;
+}
+.pg-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: rgba(255, 163, 26, 0.12);
+  border: 1px solid var(--champ-orange);
+  color: #eee;
+  font-size: 13px;
+}
+.pg-focus-title {
+  font-family: var(--display-font);
+  font-size: 22px;
+  letter-spacing: 1px;
+  color: var(--champ-gold);
+}
+.pg-kits,
+.pg-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+.pg-kit {
+  display: grid;
+  grid-template-columns: 18px 1.4fr 1fr 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+}
+.pg-kit canvas {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+.pg-duel {
+  display: grid;
+  grid-template-columns: 20px 1.3fr 1.6fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  color: #ccc;
+}
+.pg-duel b {
+  text-align: center;
+}
+.pg-duel.won b {
+  color: #7dff7d;
+}
+.pg-duel.lost b {
+  color: #ff8080;
+}
+.pg-when {
+  color: #888;
+}
+@media (max-width: 720px) {
+  .pg-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .pg-charts {
+    grid-template-columns: 1fr;
+  }
+  .pg-kit {
+    grid-template-columns: 18px 1fr 1fr;
+  }
+  .pg-kit span:nth-child(n + 5) {
+    display: none;
+  }
+  .pg-duel {
+    grid-template-columns: 20px 1fr;
+  }
+  .pg-duel span:nth-child(n + 3) {
+    display: none;
+  }
+}

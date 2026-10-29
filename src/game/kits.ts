@@ -68,7 +68,7 @@ export interface KitDef extends Loadout {
   legacyCombat?: boolean;
   /** Made in the kit editor. */
   custom?: boolean;
-  /** A subtier (Spear Mace, Cart, Diamond SMP): listed on the Subtiers page instead of the title screen. */
+  /** A subtier (1.8 Sword, Spear Mace, Cart, Diamond SMP): listed on the Subtiers page instead of the title screen. */
   subtier?: boolean;
   /** A minigame (Bed Wars, SkyWars): its own map and rules; the loadout comes from the game. */
   mode?: 'bedwars' | 'skywars';
@@ -488,6 +488,7 @@ export const KITS: KitDef[] = [
     name: '1.8 Sword',
     icon: 'sword18',
     available: true,
+    subtier: true,
     summary: 'Old combat: no cooldown, click fast, block-hit, W-tap and S-tap to keep your combo.',
     contents: [
       'Diamond Sword — Sharpness V (right click to block)',
