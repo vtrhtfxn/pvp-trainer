@@ -60,6 +60,9 @@ export class NetClient {
   /** The kit of the room we are in (from the lobby / start messages). */
   kit = 'sword';
 
+  /** Sent with the next join: a tournament room to create, and your rating for its seeding. */
+  joinExtra: { tour?: { size: number; field: string }; rating?: number } = {};
+
   connect(address: string, room: string, name: string, kit = 'sword') {
     this.close();
     const url = normalizeServerUrl(address);
@@ -100,7 +103,7 @@ export class NetClient {
     const clearTimer = () => clearTimeout(timeout);
     ws.onopen = () => {
       clearTimer();
-      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION, kit });
+      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION, kit, ...this.joinExtra });
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;
@@ -126,7 +129,11 @@ export class NetClient {
         this.setStatus('lobby', `${kitName} kit · ${msg.players.length < 2 ? 'Waiting for an opponent…' : 'Starting…'}`);
       } else if (msg.t === 'start') {
         this.kit = msg.kit;
+        // A tournament seats whoever plays this match: your seat comes with the start.
+        if (typeof msg.you === 'number') this.you = msg.you;
         this.setStatus('playing', '');
+      } else if (msg.t === 'tour' && this.status !== 'lobby') {
+        this.setStatus('lobby', 'Tournament room');
       }
       this.handlers.onMessage(msg);
     };

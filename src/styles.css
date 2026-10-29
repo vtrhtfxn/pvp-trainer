@@ -4384,3 +4384,76 @@ body {
     font-size: 20px;
   }
 }
+
+/* Online tournament */
+.mp-tourney {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 6px;
+  margin: 6px 0;
+}
+@media (max-width: 720px) {
+  .mp-tourney {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mp-tourney .mc-btn {
+    grid-column: 1 / -1;
+  }
+}
+.mp-select {
+  padding: 4px 6px;
+}
+.tourney-code {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 4px 0 8px;
+  color: #e6c79a;
+}
+.tourney-code b {
+  font-family: var(--display-font);
+  font-size: 34px;
+  letter-spacing: 4px;
+  color: var(--champ-gold);
+  user-select: all;
+}
+.tourney-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.tm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: linear-gradient(90deg, #c46d12, #e08a1e);
+  font-family: var(--display-font);
+  letter-spacing: 1px;
+  color: #fff;
+}
+.tm-row.you {
+  outline: 1px solid #fff;
+}
+.tm-host {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 0 4px;
+  background: #000;
+  color: var(--champ-gold);
+}
+.tc-timer {
+  color: var(--champ-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The title screen's Play group has five buttons: two rows of three, full labels. */
+.mm-group .btn-row.n5 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 720px) {
+  .mm-group .btn-row.n5 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
