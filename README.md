@@ -1045,6 +1045,22 @@ time at HT1):
 - **UHC cover**: low while you draw a bow or crossbow on it (or your arrows are on the way), it
   puts a two-high **plank wall** between you and heals behind it.
 
+Decisions every tier now makes, without any change to aim, reactions or clicking:
+
+- **Reads your cooldown** (25% of exchanges at LT5 → 92% at HT1): right after you swing, while
+  your sword can't hit back yet, it steps in to punish instead of holding its spacing.
+- **Punishes your eating** from LT5 up: it sprint-jumps in and goes for a crit while you eat.
+- **Doesn't eat in your reach**: it gets at least 5 blocks clear first (5.5 from LT2), and if it
+  can't shake you it fights on and tries again in a moment rather than eating into your hits —
+  unless it's about to die.
+- **UHC**: every tier picks its lava back up and puts itself out with its water bucket.
+- **2v2**: it peels an enemy off a low teammate and finishes a nearly dead enemy first.
+
+These cut the bots' own mistakes (in UHC at LT5/LT3, burn damage fell from ~100 to ~15–40 per four
+games, and hits taken while eating by about half at LT5). Measured against the old bots with the
+same mechanics they win about as often as before (133 of 288 games across six kits and four tiers),
+so the tiers keep their strength — they just play less carelessly.
+
 ## Project layout
 
 ```

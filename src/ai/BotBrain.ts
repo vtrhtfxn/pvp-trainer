@@ -156,6 +156,9 @@ export class BotBrain {
   private ticks = 0;
   /** Tick the target's last swing started, to estimate when their weapon is charged again. */
   private targetSwingTick = -100;
+  /** This exchange's read of your cooldown (re-rolled every half second). */
+  private readOn = false;
+  private readTimer = 0;
   private targetHeldPrev: ItemId | null = null;
   /** We disabled their shield: it cannot come back up before this tick. */
   private targetShieldDownUntil = 0;
@@ -302,7 +305,14 @@ export class BotBrain {
     const b = this.bot;
     const alive = enemies.filter((f) => !f.dead && f.gameMode !== 'spectator');
     if (!alive.length) return;
-    const score = (f: Fighter) => Math.hypot(f.pos.x - b.pos.x, f.pos.y - b.pos.y, f.pos.z - b.pos.z) - (f.effectiveHealth() <= 6 ? 4 : 0);
+    // Teammates in trouble: an enemy right on a low ally gets peeled off them.
+    const allies = this.world.fighters.filter((f) => f !== b && f.team === b.team && !f.dead);
+    const score = (f: Fighter) => {
+      let s = Math.hypot(f.pos.x - b.pos.x, f.pos.y - b.pos.y, f.pos.z - b.pos.z);
+      if (f.effectiveHealth() <= 6) s -= 4; // nearly dead: finish them
+      for (const a of allies) if (a.effectiveHealth() <= 10 && Math.hypot(f.pos.x - a.pos.x, f.pos.z - a.pos.z) < 3.5) s -= 2;
+      return s;
+    };
     let best = alive[0];
     for (const f of alive) if (score(f) < score(best)) best = f;
     const cur = this.target;
@@ -356,6 +366,8 @@ export class BotBrain {
     this.targetSwingTick = -100;
     this.targetHeldPrev = null;
     this.targetShieldDownUntil = 0;
+    this.readOn = false;
+    this.readTimer = 0;
     this.shieldPlan = false;
     this.shieldPlanTimer = 0;
     this.axeWait = -1;
@@ -608,7 +620,12 @@ export class BotBrain {
           this.stateTimer > this.partingTicks &&
           (trueDist >= P.eatDistance || this.stateTimer >= P.maxRetreatTicks || this.cornered(trueDist))
         ) {
-          this.enter('eat');
+          // Couldn't get clear and you're right on it: an apple eaten in your reach just eats your
+          // hits too, so unless it's about to die it fights on and tries again in a moment.
+          if (P.sense.safeEat && trueDist < 3.5 && eff > 4 && trueDist < P.eatDistance) {
+            this.enter('engage');
+            this.retreatCooldown = 30;
+          } else this.enter('eat');
         }
         break;
       case 'eat': {
@@ -654,6 +671,15 @@ export class BotBrain {
     this.aimAt(per.x, per.y + (per.onGround ? 1.3 : 0.9), per.z);
     const p = b.attackStrengthScale(0.5);
     const targetEating = per.using;
+    // Game sense, not mechanics: what it decides to do with the same aim and reactions.
+    const S = P.sense;
+    if (--this.readTimer <= 0) {
+      this.readTimer = 10;
+      this.readOn = rng.chance(S.read);
+    }
+    // Your sword's cooldown, as seen from your last swing (or switch).
+    const theirDelay = 20 / (per.held ? ITEMS[per.held].attackSpeed : C.FIST_ATTACK_SPEED);
+    const theirReadyIn = this.targetSwingTick + theirDelay * 0.9 - this.ticks;
 
     if (--this.strafeTimer <= 0) {
       this.strafeDir = rng.chance(P.strafeChance) ? (rng.chance(0.5) ? 1 : -1) : 0;
@@ -669,6 +695,12 @@ export class BotBrain {
     // Spacing: while the sword recharges, stay just outside the opponent's reach.
     if (p < 0.7 && dist < P.spacing + this.reachBonus - 0.5 && !targetEating && rng.chance(P.spacingDiscipline)) {
       input.forward = dist < P.spacing + this.reachBonus - 1.2 ? -1 : 0;
+    }
+    // Reading your cooldown: you just swung and can't hit back yet, so it steps in to punish
+    // instead of holding its spacing.
+    if (this.readOn && theirReadyIn > 4 && dist < 4.5 && input.forward < 1) {
+      input.forward = 1;
+      input.sprint = true;
     }
 
     // W-tap / S-tap after a sprint hit so the next hit gets sprint knockback again.

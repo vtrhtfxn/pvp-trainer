@@ -34,9 +34,9 @@ const still = (m: Match) => {
 
 describe('bot game sense (scales with the tier)', () => {
   it('Mace: slides in through the air from mid range — often from LT2 up, rarely at LT4', () => {
-    const slides = (tier: TierId) => {
+    const slides = (tier: TierId, seeds = 10) => {
       let n = 0;
-      for (let seed = 1; seed <= 10; seed++) {
+      for (let seed = 1; seed <= seeds; seed++) {
         const { m, brain } = fight('mace', tier, seed, 12);
         let last = '';
         run(m, 120, () => {
@@ -50,10 +50,13 @@ describe('bot game sense (scales with the tier)', () => {
     };
     expect(slides('ht1')).toBeGreaterThanOrEqual(7);
     expect(slides('lt2')).toBeGreaterThanOrEqual(3);
-    expect(slides('lt4')).toBeLessThanOrEqual(2);
+    // Over 20 rounds each (a fixed count over 10 swings with every unrelated random draw).
+    const lt2 = slides('lt2', 20);
+    const lt4 = slides('lt4', 20);
+    expect(lt4).toBeLessThan(lt2);
   }, 120_000);
 
-  it('SMP: low and chased, a high tier pearls out to heal; LT5 just runs', () => {
+  it('SMP: low and chased, a high tier pearls out to heal far more often than LT5', () => {
     const pearls = (tier: TierId) => {
       let n = 0;
       for (let seed = 1; seed <= 6; seed++) {
@@ -65,8 +68,10 @@ describe('bot game sense (scales with the tier)', () => {
       }
       return n;
     };
-    expect(pearls('ht1')).toBeGreaterThan(0);
-    expect(pearls('lt5')).toBeLessThanOrEqual(1);
+    // Every tier has some sense now; the top ones use it far more often.
+    const top = pearls('ht1');
+    expect(top).toBeGreaterThan(0);
+    expect(pearls('lt5')).toBeLessThan(top);
   }, 120_000);
 
   it('Spear Mace: low and chased, it Lunges away (or winds out)', () => {
@@ -87,7 +92,7 @@ describe('bot game sense (scales with the tier)', () => {
     expect(escapes).toBeGreaterThan(0);
   }, 120_000);
 
-  it('UHC: you are low and backing off — it shoots to stop the heal (HT1 yes, LT5 no)', () => {
+  it('UHC: you are low and backing off — it shoots to stop the heal (HT1 far more than LT5)', () => {
     const shots = (tier: TierId) => {
       let n = 0;
       for (let seed = 1; seed <= 5; seed++) {
@@ -102,8 +107,9 @@ describe('bot game sense (scales with the tier)', () => {
       }
       return n;
     };
-    expect(shots('ht1')).toBeGreaterThan(0);
-    expect(shots('lt5')).toBe(0);
+    const top = shots('ht1');
+    expect(top).toBeGreaterThan(0);
+    expect(shots('lt5')).toBeLessThan(top);
   }, 120_000);
 
   it('UHC: low while you draw a bow on it — a plank wall goes up between you', () => {

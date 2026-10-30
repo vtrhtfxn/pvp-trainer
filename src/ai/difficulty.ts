@@ -90,6 +90,13 @@ export interface SenseSkill {
   finish: number;
   /** UHC: chance it walls itself off from your bow or crossbow with planks to heal behind them. */
   wall: number;
+  /**
+   * Reads your weapon's cooldown from your last swing: while yours recharges it steps in to
+   * punish instead of holding its spacing (chance per exchange). Every tier has some.
+   */
+  read: number;
+  /** Won't stand and eat in your reach unless it's about to die: fights on and retries. */
+  safeEat: boolean;
 }
 
 export interface LegacySkill {
@@ -249,25 +256,28 @@ const BASIC: Skills = {
   chaseSprintJump: false,
   retreatHP: 6,
   returnHP: 12,
-  eatDistance: 3,
+  // Gets clear before it eats (an apple eaten in your reach is an apple wasted).
+  eatDistance: 5,
   maxRetreatTicks: 40,
   fleeStyle: 'backpedal',
   eatMove: 'stand',
   abortEatDistance: 0,
   partingShot: false,
-  punishEating: false,
+  // Every tier goes for you while you eat (it's a decision, not a mechanic).
+  punishEating: true,
   maxGapsPerRetreat: 1,
   comboEscape: 'none',
   axe: { shieldChance: 0.25, shieldLead: 1, shieldReact: 7, swap: false, axeDelay: [12, 20], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
   neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 30, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7, buffChance: 0 },
-  uhc: { lava: 0.15, lavaPickup: false, web: 0, water: false, pillar: false, mine: false, headHP: 6, aimSettle: 8 },
+  // Picks its lava back up and puts itself out with water: decisions every tier makes.
+  uhc: { lava: 0.15, lavaPickup: true, web: 0, water: true, pillar: false, mine: false, headHP: 6, aimSettle: 8 },
   crystal: {
     clickGap: 8, aimSettle: 6, comboGap: 30, thinkTicks: 8, selfWeight: 0.3, minDamage: 1,
     anchors: false, iframeTiming: false, breakTheirs: false, pearls: 0, surround: false, crossbow: false, mine: false,
   },
   mace: { launch: 0.25, steer: 0.4, elytra: false, pickMace: false, defend: 0, smashDepth: 0 },
   legacy: { cps: 5, blockHit: 0, blockTicks: [3, 5], blockOnHurt: 0 },
-  sense: { escape: 0.01, escapeHP: 5, mendRun: 0.01, slide: 0.03, finish: 0.05, wall: 0.02 },
+  sense: { escape: 0.01, escapeHP: 5, mendRun: 0.01, slide: 0.03, finish: 0.05, wall: 0.02, read: 0.25, safeEat: true },
 };
 
 /** Skill 2 (from LT2 up): starts to space and W-tap; anchors, pearls, water and a crossbow come in. */
@@ -295,7 +305,7 @@ const DECENT: Skills = {
   chaseSprintJump: true,
   retreatHP: 6.5,
   returnHP: 13,
-  eatDistance: 4.5,
+  eatDistance: 5.5,
   maxRetreatTicks: 55,
   fleeStyle: 'run',
   eatMove: 'walk',
@@ -304,14 +314,14 @@ const DECENT: Skills = {
   comboEscape: 'jumpreset',
   axe: { shieldChance: 0.5, shieldLead: 3, shieldReact: 7, swap: false, axeDelay: [7, 12], readAxe: 0.15, ranged: 1, rangedNoiseDeg: 3.2 },
   neth: { potHP: 8, potNoiseDeg: 12, potGap: 5, invTicks: 20, totemReact: 18, hotbarTotem: false, rebuff: true, mendAt: 0.4, pcrit: 0.1, gapDist: 7, buffChance: 0.6 },
-  uhc: { lava: 0.3, lavaPickup: false, web: 0.15, water: true, pillar: false, mine: true, headHP: 8, aimSettle: 6 },
+  uhc: { lava: 0.3, lavaPickup: true, web: 0.15, water: true, pillar: false, mine: true, headHP: 8, aimSettle: 6 },
   crystal: {
     clickGap: 6, aimSettle: 4, comboGap: 20, thinkTicks: 6, selfWeight: 0.5, minDamage: 1.2,
     anchors: true, iframeTiming: false, breakTheirs: false, pearls: 1, surround: false, crossbow: false, mine: false,
   },
   mace: { launch: 0.55, steer: 0.6, elytra: false, pickMace: true, defend: 1, smashDepth: 0.3 },
   legacy: { cps: 7, blockHit: 0.15, blockTicks: [3, 5], blockOnHurt: 0 },
-  sense: { escape: 0.35, escapeHP: 7, mendRun: 0.15, slide: 0.5, finish: 0.35, wall: 0.25 },
+  sense: { escape: 0.35, escapeHP: 7, mendRun: 0.15, slide: 0.5, finish: 0.35, wall: 0.25, read: 0.45, safeEat: true },
 };
 
 /** Skill 4 = HT2: times its hits, sometimes W-taps and crits; uses the crossbow and hotbar totems. */
@@ -357,7 +367,7 @@ const GOOD: Skills = {
   },
   mace: { launch: 0.8, steer: 0.75, elytra: true, pickMace: true, defend: 1, smashDepth: 0.6 },
   legacy: { cps: 8.5, blockHit: 0.3, blockTicks: [2, 4], blockOnHurt: 0.1 },
-  sense: { escape: 0.6, escapeHP: 8, mendRun: 0.22, slide: 0.65, finish: 0.6, wall: 0.5 },
+  sense: { escape: 0.6, escapeHP: 8, mendRun: 0.22, slide: 0.65, finish: 0.6, wall: 0.5, read: 0.6, safeEat: true },
 };
 
 /** Skill 6 = LT1: W-taps, jump-resets, crits, attribute swaps, surrounds and digs — every item. */
@@ -403,7 +413,7 @@ const STRONG: Skills = {
   },
   mace: { launch: 0.9, steer: 0.88, elytra: true, pickMace: true, defend: 2, smashDepth: 1 },
   legacy: { cps: 10, blockHit: 0.45, blockTicks: [2, 3], blockOnHurt: 0.2 },
-  sense: { escape: 0.8, escapeHP: 9, mendRun: 0.28, slide: 0.8, finish: 0.8, wall: 0.7 },
+  sense: { escape: 0.8, escapeHP: 9, mendRun: 0.28, slide: 0.8, finish: 0.8, wall: 0.7, read: 0.75, safeEat: true },
 };
 
 /** Skill 8 (between LT1 and HT1): tier-tester level — near-perfect timing and spacing. */
@@ -438,7 +448,7 @@ const ELITE: Skills = {
   crystal: { ...STRONG.crystal, clickGap: 2, aimSettle: 2, comboGap: 5, thinkTicks: 3, selfWeight: 1 },
   mace: { launch: 0.92, steer: 0.9, elytra: true, pickMace: true, defend: 2, smashDepth: 1.1 },
   legacy: { cps: 11, blockHit: 0.5, blockTicks: [2, 3], blockOnHurt: 0.25 },
-  sense: { escape: 0.88, escapeHP: 9.5, mendRun: 0.32, slide: 0.86, finish: 0.88, wall: 0.8 },
+  sense: { escape: 0.88, escapeHP: 9.5, mendRun: 0.32, slide: 0.86, finish: 0.88, wall: 0.8, read: 0.85, safeEat: true },
 };
 
 /**
@@ -474,7 +484,7 @@ const BEST: Skills = {
   crystal: { ...ELITE.crystal, clickGap: 1, aimSettle: 2, comboGap: 4, thinkTicks: 2, selfWeight: 1.1 },
   mace: { launch: 0.95, steer: 0.93, elytra: true, pickMace: true, defend: 2, smashDepth: 1.2 },
   legacy: { cps: 12, blockHit: 0.55, blockTicks: [1, 3], blockOnHurt: 0.3 },
-  sense: { escape: 0.95, escapeHP: 10, mendRun: 0.35, slide: 0.92, finish: 0.95, wall: 0.9 },
+  sense: { escape: 0.95, escapeHP: 10, mendRun: 0.35, slide: 0.92, finish: 0.95, wall: 0.9, read: 0.92, safeEat: true },
 };
 
 /**

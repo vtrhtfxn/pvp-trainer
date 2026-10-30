@@ -67,7 +67,7 @@ describe('tier ladder', () => {
   it('unlocks every item by LT1, only the basics up to HT4', () => {
     for (const id of ['lt5', 'ht5', 'lt4', 'ht4'] as const) {
       const p = DIFFICULTIES[id];
-      expect(p.crystal.anchors || p.crystal.crossbow || p.crystal.surround || p.crystal.mine || p.uhc.water || p.axe.swap, id).toBe(false);
+      expect(p.crystal.anchors || p.crystal.crossbow || p.crystal.surround || p.crystal.mine || p.axe.swap, id).toBe(false);
     }
     for (const id of ['lt1', 'ht1'] as const) {
       const p = DIFFICULTIES[id];
