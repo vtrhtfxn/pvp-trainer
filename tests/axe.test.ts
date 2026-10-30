@@ -154,6 +154,32 @@ describe('attribute swapping', () => {
     expect(r.swap && r.disabled).toBe(true);
   });
 
+  it('a sword swung with the axe attributes on a raised shield launches the blocker 1–1.5 blocks up', () => {
+    const height = (swap: boolean) => {
+      const { a, b, world } = setup();
+      a.selectSlot(swap ? 0 : 1);
+      b.selectSlot(1);
+      b.startUsingItem(true);
+      for (let t = 0; t < 20; t++) step(world, a, b);
+      a.selectSlot(1); // the sword in hand; with `swap`, the axe's attributes still apply
+      const y0 = b.pos.y;
+      const r = performAttack(a, b);
+      expect(r.blocked).toBe(true);
+      expect(r.swap).toBe(swap);
+      let peak = 0;
+      for (let t = 0; t < 30; t++) {
+        step(world, a, b);
+        peak = Math.max(peak, b.pos.y - y0);
+      }
+      return peak;
+    };
+    const launched = height(true);
+    expect(launched).toBeGreaterThanOrEqual(1);
+    expect(launched).toBeLessThanOrEqual(1.5);
+    // A plain sword hit on the shield doesn't move them.
+    expect(height(false)).toBeLessThan(0.05);
+  });
+
   it('a normal switch resets the cooldown on the next tick', () => {
     const { a, b, world } = setup();
     a.selectSlot(1);

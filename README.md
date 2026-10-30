@@ -796,7 +796,9 @@ nametag reads *Passive*.
   on the same tick (within 50 ms — hotbar keys are always processed before clicks) and you hit with the
   old item's damage and charged cooldown plus the new item's effect: e.g. a full-charge sword hit that
   still disables a shield because the axe is already in your hand. The HUD marks these hits **· SWAP**
-  and the coach line shows which item's attributes are live.
+  and the coach line shows which item's attributes are live. The other way round — the sword in
+  hand swung with the axe's attributes — doesn't disable a raised shield, but it launches the
+  blocker about 1–1.25 blocks up and back through it.
 - **Bow**: full draw in 20 ticks, arrow speed 3 × power, crit (random bonus damage) at full draw.
   **Crossbow**: loads in 25 ticks (hold, then release), fires at 3.15 on the next click, always crit.
   Arrows fly with vanilla drag (×0.99) and gravity (0.05), deal ⌈speed × 2⌉, stick in the floor and

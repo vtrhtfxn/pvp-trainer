@@ -41,6 +41,11 @@ export const HURT_DURATION = 10;
 export const BASE_KNOCKBACK = 0.4;
 export const KNOCKBACK_PER_LEVEL = 0.5; // sprint counts as +1 level
 export const MAX_KNOCKBACK_Y = 0.4;
+/**
+ * A sword hit with another item's attributes (attribute swap) on a raised shield pops the
+ * blocker up about a jump's height (~1.25 blocks) and back.
+ */
+export const SHIELD_SWAP_LAUNCH_Y = 0.42;
 export const CRIT_MULTIPLIER = 1.5;
 export const STRONG_ATTACK_SCALE = 0.9; // cooldown needed for crits / sprint-knockback
 export const SPRINT_HIT_SLOWDOWN = 0.6;
