@@ -107,7 +107,7 @@ export class Thrown {
     if (speed > 1e-6) {
       tmpDir.set(v.x / speed, v.y / speed, v.z / speed);
       for (const f of world.fighters) {
-        if (f.dead || (f === this.owner && !this.leftOwner)) continue;
+        if (f.dead || (f === this.owner && !this.leftOwner) || (f !== this.owner && f.team === this.owner.team)) continue;
         f.aabbInto(tmpBox, 0.3);
         const t = rayAABB(this.pos, tmpDir, tmpBox);
         if (t >= 0 && t / speed <= travel) {

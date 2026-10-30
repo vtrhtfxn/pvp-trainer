@@ -171,6 +171,8 @@ export function hurt(
   breach = 0,
 ): HurtResult {
   if (target.dead || amount <= 0) return NO_DAMAGE;
+  // No friendly fire between teammates (2v2): their hits, arrows and explosions don't hurt you.
+  if (attacker && attacker !== target && attacker.team === target.team && kind !== 'kill') return NO_DAMAGE;
   const rules = target.world.rules;
   // Creative and spectator players can't be hurt (only /kill gets through).
   if (target.invulnerable() && kind !== 'kill') return NO_DAMAGE;
@@ -261,6 +263,7 @@ export interface AttackOutcome {
 export function performAttack(attacker: Fighter, target: Fighter, picked?: number): AttackOutcome {
   const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0, blocked: false, disabled: false, swap: false };
   if (attacker.dead || attacker.usingItem || attacker.gameMode === 'spectator') return miss;
+  if (target !== attacker && target.team === attacker.team) return miss;
   if (attacker.world.legacyCombat) return performLegacyAttack(attacker, target, picked, miss);
   const spear = defOf(attacker.heldStack()).spear;
   if (spear) return performJab(attacker, target, spear, miss);
@@ -713,7 +716,7 @@ export function spearChargeTick(f: Fighter) {
     return;
   }
   for (const target of f.world.fighters) {
-    if (target === f || target.dead || target.gameMode === 'spectator' || target.invulnerableTime > C.IFRAME_WINDOW) continue;
+    if (!f.isEnemy(target) || target.dead || target.gameMode === 'spectator' || target.invulnerableTime > C.IFRAME_WINDOW) continue;
     const t = rayDistanceToTarget(f, target, spear.reachMax, SPEAR_MARGIN);
     if (t < spear.reachMin) continue;
     const dx = target.pos.x - f.pos.x;

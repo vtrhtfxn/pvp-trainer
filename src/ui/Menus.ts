@@ -1,6 +1,7 @@
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../ai/difficulty';
 import type { FighterStats } from '../game/Fighter';
 import { KITS, customKitList, isCustomKit, kitById, type KitDef, type KitId } from '../game/kits';
+import { teamKit } from '../game/Match';
 import type { CustomKitData } from '../game/customKits';
 import { KitEditor } from './KitEditor';
 import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Action } from '../input/keybinds';
@@ -48,6 +49,11 @@ export interface MenuCallbacks {
   onHostOnline(name: string): void;
   /** Hosts an online tournament room: friends join with the code, bots fill the rest. */
   onHostTournament(name: string, size: number, field: string): void;
+  /** Host a 2v2 room: bots at `tier` fill the places nobody takes. */
+  onHostSquad(name: string, tier: DifficultyId): void;
+  /** 2v2 room: move to a team (0 red, 1 blue), or (host) start the game. */
+  onSquadSide(team: number): void;
+  onSquadGo(): void;
   onJoinOnline(code: string, name: string): void;
   onLeaveOnline(): void;
   /** Opens the Marketplace (mods and resource packs). */
@@ -160,6 +166,10 @@ export class Menus {
   private readonly settingsRepaint: (() => void)[] = [];
   private netStatusEl!: HTMLDivElement;
   private netRoomEl!: HTMLDivElement;
+  /** The 2v2 room panel: teams, who's in them, and the buttons. */
+  private squadEl!: HTMLDivElement;
+  /** Multiplayer: the kit you host with (main kits and subtiers). */
+  private mpKitSel!: HTMLSelectElement;
   private nameInput!: HTMLInputElement;
   private roomInput!: HTMLInputElement;
   private serverInput!: HTMLInputElement;
@@ -240,6 +250,7 @@ export class Menus {
     if (name === 'replays') this.renderReplays();
     if (name === 'locker') this.renderLocker();
     if (name === 'progress') this.renderProgress();
+    if (name === 'multiplayer') this.mpKitSel.value = isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit;
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
@@ -369,6 +380,8 @@ export class Menus {
       ),
     );
 
+    setup.append(this.teamRow());
+
     actions.append(this.button('Start Duel', () => this.cb.onStart(), 'big start-btn'));
     // The rest in two labelled groups — getting better, and other ways to play — then the extras.
     const group = (label: string, ...btns: HTMLElement[]) =>
@@ -464,6 +477,7 @@ export class Menus {
     const d = DIFFICULTIES[this.settings.difficulty];
     const cardId = kit.custom ? CUSTOM_CARD : kit.id;
     this.screens.main.querySelector('.subtier-btn')?.classList.toggle('selected', !!kit.subtier);
+    this.refreshTeamRows();
     this.screens.main.querySelectorAll<HTMLElement>('.kit-card').forEach((c) => {
       c.classList.toggle('selected', c.dataset.kit === cardId);
     });
@@ -484,6 +498,40 @@ export class Menus {
       ? `Record vs ${d.name}: ${r.wins}W – ${r.losses}L · best combo ${r.bestCombo}`
       : `No duels vs ${d.name} yet`;
     this.renderPath();
+  }
+
+  /**
+   * 1v1 or 2v2 (you and a bot ally against two bots of the tier picked). Only the kits that
+   * have 2v2 offer it; the row says so in the others.
+   */
+  private teamRow(): HTMLElement {
+    const row = h('div', { class: 'team-row' });
+    const pick = (teams: boolean) => {
+      this.cb.onUiSound();
+      this.settings.teams = teams;
+      saveSettings(this.settings);
+      this.refreshTeamRows();
+    };
+    const one = this.button('1v1', () => pick(false), 'team-btn');
+    const two = Object.assign(this.button('2v2', () => pick(true), 'team-btn'), { title: 'You and a bot ally against two bots of the tier picked above.' });
+    two.dataset.teams = '1';
+    row.append(h('span', { class: 'section-title' }, 'Team'), one, two, h('span', { class: 'team-note' }));
+    queueMicrotask(() => this.refreshTeamRows());
+    return row;
+  }
+
+  /** Shows the 1v1 / 2v2 choice in every team row (main menu and Subtiers). */
+  private refreshTeamRows() {
+    const kit = kitById(this.settings.kit);
+    const ok = teamKit(kit.id);
+    for (const row of document.querySelectorAll<HTMLElement>('.team-row')) {
+      row.querySelectorAll<HTMLButtonElement>('.team-btn').forEach((b) => {
+        const two = b.dataset.teams === '1';
+        b.classList.toggle('selected', two === (this.settings.teams && ok));
+        b.disabled = two && !ok;
+      });
+      row.querySelector('.team-note')!.textContent = ok ? (this.settings.teams ? 'You + bot ally vs 2 bots' : '') : `No 2v2 in ${kit.name}`;
+    }
   }
 
   /** Runs a beginner step: its drill, or a sword duel against its tier. */
@@ -1004,6 +1052,23 @@ export class Menus {
       ),
     );
     this.nameInput = field(panel, 'Your name', loadNetName(), 'Steve', 16);
+    // The kit you host with: every main kit and every subtier (Bed Wars, SkyWars, Cart, …).
+    this.mpKitSel = h('select', { class: 'mc-input mp-select mp-kit' });
+    for (const [label, sub] of [
+      ['Game modes', false],
+      ['Subtiers', true],
+    ] as const) {
+      const group = h('optgroup', { label });
+      for (const k of KITS.filter((x) => x.available && !!x.subtier === sub)) group.append(h('option', { value: k.id }, k.name));
+      this.mpKitSel.append(group);
+    }
+    this.mpKitSel.addEventListener('change', () => {
+      this.cb.onUiSound();
+      this.settings.kit = this.mpKitSel.value as KitId;
+      saveSettings(this.settings);
+      this.refreshMain();
+    });
+    panel.append(h('label', { class: 'mp-field' }, h('span', {}, 'Kit'), this.mpKitSel));
     this.netRoomEl = h('div', { class: 'mp-room' });
     this.netStatusEl = h('div', { class: 'mp-status' });
     panel.append(this.netRoomEl, this.netStatusEl);
@@ -1030,13 +1095,30 @@ export class Menus {
         this.button('Host online tournament', () => this.cb.onHostTournament(name(), Number(tSize.value), tField.value), 'online tourney-btn'),
       ),
     );
+    // A 2v2 room: friends join with the code and pick a team; bots fill the empty places.
+    const sqTier = h('select', { class: 'mc-input mp-select', title: 'How strong the bots in empty places are' });
+    for (const id of DIFFICULTY_ORDER) sqTier.append(h('option', { value: id }, `${DIFFICULTIES[id].name} bots`));
+    sqTier.value = this.settings.difficulty;
+    panel.append(
+      h(
+        'div',
+        { class: 'mp-squad-host' },
+        sqTier,
+        Object.assign(this.button('Host online 2v2', () => this.cb.onHostSquad(name(), sqTier.value as DifficultyId), 'online squad-btn'), {
+          title: 'You and a friend against two bots, or two against two. Friends join with the code and pick a team.',
+        }),
+      ),
+    );
+    this.squadEl = h('div', { class: 'mp-squad' });
+    this.squadEl.style.display = 'none';
+    panel.append(this.squadEl);
     const code = h('input', { class: 'mc-input mp-code', type: 'text', placeholder: 'Friend\u2019s code', maxlength: '8', autocomplete: 'off', spellcheck: 'false' });
     const join = () => this.cb.onJoinOnline(code.value, name());
     code.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') join();
     });
     panel.append(h('div', { class: 'mp-join' }, code, this.button('Join', join, 'big')));
-    panel.append(h('div', { class: 'mp-hint' }, 'The host\u2019s kit (picked on the main menu) is the one you both play.'));
+    panel.append(h('div', { class: 'mp-hint' }, 'The host\u2019s kit — any game mode or subtier, picked above — is the one you both play.'));
     panel.append(this.buildRelay(field));
 
     // ---- same network: the Node server (rooms, many players, browsers without the app)
@@ -1124,6 +1206,36 @@ export class Menus {
     box.append(h('div', { class: 'btn-row' }, this.button('Save relay', save), this.button('Remove', clear)), note);
     show(own ? 'Using your relay and the free public one.' : 'Using the free public relay.', 'lobby');
     return box;
+  }
+
+  /**
+   * A 2v2 room before its game: each team's two places (people, or the bot that will take an
+   * empty one), a button to move to each team, and Start for the host. `null` hides it.
+   */
+  showSquad(v: { kit: string; tier: string; started: boolean; members: { name: string; team: number; host: boolean; you: boolean }[] } | null) {
+    const el = this.squadEl;
+    if (!el) return;
+    el.style.display = v ? '' : 'none';
+    if (!v) return;
+    const me = v.members.find((m) => m.you);
+    const tier = DIFFICULTIES[v.tier as DifficultyId]?.name ?? v.tier;
+    const team = (t: number) => {
+      const people = v.members.filter((m) => m.team === t);
+      const rows = [0, 1].map((k) => {
+        const m = people[k];
+        return h('div', { class: `sq-place${m ? '' : ' bot'}${m?.you ? ' you' : ''}` }, m ? `${m.name}${m.host ? ' ★' : ''}` : `${tier} bot`);
+      });
+      const col = h('div', { class: `sq-team t${t}` }, h('div', { class: 'sq-team-name' }, t === 0 ? 'Red' : 'Blue'), ...rows);
+      if (!v.started && me && me.team !== t && people.length < 2) col.append(this.button('Join', () => this.cb.onSquadSide(t), 'sq-join'));
+      return col;
+    };
+    el.replaceChildren(
+      h('div', { class: 'sq-title' }, `2v2 · ${kitById(v.kit as KitId).name}`),
+      h('div', { class: 'sq-teams' }, team(0), team(1)),
+    );
+    if (v.started) el.append(h('div', { class: 'mp-hint' }, 'The game is on.'));
+    else if (me?.host) el.append(this.button('Start 2v2', () => this.cb.onSquadGo(), 'big sq-go'));
+    else el.append(h('div', { class: 'mp-hint' }, 'Waiting for the host to start…'));
   }
 
   setNetStatus(status: string, detail: string, room: string) {
@@ -1561,6 +1673,7 @@ export class Menus {
     panel.append(desc);
     const held = this.cb.myTiers()[kit.id];
     panel.append(h('div', { class: 'tiers-sub' }, `Your ${kit.name} tier: ${held ? DIFFICULTIES[held].name : 'Unranked'} · First to ${s.firstTo} (change it on the title screen)`));
+    panel.append(this.teamRow());
     panel.append(this.button('Start Duel', () => this.cb.onStart(), 'big'));
     panel.append(h('div', { class: 'btn-row' }, this.button('Watch Bot vs Bot', () => this.show('versus')), this.button('Back', () => this.show('main'))));
     root.append(panel);

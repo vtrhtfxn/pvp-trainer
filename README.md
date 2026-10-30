@@ -220,7 +220,31 @@ be slow or full; it was tested here only with a local TURN server (a game forced
 and reports "relay"), not against Open Relay itself. Online play also depends on the PeerJS cloud
 server being up. Both players need a build with online play (it fails with "Version
 mismatch" otherwise), and the host's game must stay open: closing it or pressing Disconnect ends
-the duel. Whoever hosts plays the kit picked on their main menu.
+the duel. Whoever hosts picks the kit in the **Kit** list on the Multiplayer screen — any game mode or subtier (1.8 Sword, Spear Mace, Bed Wars, SkyWars, Cart, Diamond SMP).
+
+### 2v2
+
+Ten kits play 2v2: **Sword, Diamond Pot, NethPot, UHC, Axe, Mace, Crystal, Spear Mace, Bed Wars
+and SkyWars**. Teammates can't hurt each other — hits, arrows and thrown items pass through them,
+and their explosions don't damage you — and the game ends when a whole team is down (in Bed Wars,
+when both of a team are out for good; in SkyWars, the last team standing). Bed Wars teams share a
+bed, forge, shop and upgrades and spawn side by side; SkyWars teammates share an island and a cage
+two wide. Bots go for the nearest enemy, switch when another is clearly closer or low enough to
+finish, and play the mode's objectives as usual.
+
+- **Against bots, offline:** pick **2v2** in the Team row (title screen or Subtiers) and Start
+  Duel: you and a bot ally against two bots of the tier picked. Your clicks go to whichever enemy
+  is under your crosshair; your ally has a green nametag. Down while your ally still fights, you
+  watch through their eyes. A 2v2 is one game and earns no tier (it's kept in Progress as 2v2).
+- **Online:** on the Multiplayer screen pick a bot tier and **Host online 2v2**, then read out the
+  code. Up to three friends join with it; each can move to the other team with **Join** (two a
+  team). The host presses **Start 2v2** and server-run bots of that tier take every empty place —
+  so you and a friend against two bots, or two against two. Someone who leaves mid-game is
+  replaced by a bot. Rematch needs everyone still in the room.
+
+`tests/teams.test.ts` plays every 2v2 kit to a finish and checks friendly fire and click
+targeting; `tests/onlineTeams.test.ts` runs a server 2v2 with two clients and two bots, and the room
+(teams, start, a leaver replaced, a full room).
 
 ### Same network (LAN server)
 
@@ -350,7 +374,7 @@ anti-aliasing stays off on PCs under 8 GB or 4 cores.
 | **SMP** — Netherite armor (Protection IV, Unbreaking III, Mending; Swift Sneak III leggings, Feather Falling IV boots), 2 Netherite Swords (Sharpness V, Fire Aspect II, Sweeping Edge III; one with Knockback I), Netherite Axe (Sharpness V), Shield (Unbreaking III, Mending; off hand), 12× Strength II, 12× Speed II, 3× Fire Resistance (8:00) splash, 1 totem, 128 golden apples, 32 ender pearls, 64 XP bottles | ✅ Playable (vs bot) |
 | **Mace** — Netherite armor (Protection IV, Unbreaking III), Elytra, Mace (Density V, Wind Burst III), Mace (Breach IV), Netherite Sword and Axe (Sharpness V), Shield, 2 totems (one in the off hand), 128 wind charges, 64 ender pearls, 128 golden apples, 13× Strength II and 8× Speed II splash (as laid out in the reference inventory) | ✅ Playable (vs bot) |
 
-The arena is 80 × 80 blocks (walls 16 high); Bed Wars and SkyWars use their own void maps. Every built-in kit, Bed Wars and SkyWars included, also works online (see Multiplayer).
+The arena is 80 × 80 blocks (walls 16 high); Bed Wars and SkyWars use their own void maps. Every built-in kit, the subtiers included, also works online (see Multiplayer).
 
 Every duel (offline and online, not Trainer drills) opens with **10 seconds to sort your
 inventory**: open it with E, move things around, pick your starting hotbar slot or swap your off
@@ -524,7 +548,7 @@ first duel against the Practice bot (win or lose), the Spacing (S-tap) drill, an
 LT5 bot. The dots fill in as you pass each one (from your drill results and duel records), and the
 Trainer opens on the next drill, marked **Start here**. **Hide** puts it away; **Trainer → Show
 Getting started** brings it back. The rest of the title screen is grouped: **Start Duel**, then
-**Improve** (Trainer, Replays & Coach, Progress), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
+**Team** (1v1 or 2v2), **Improve** (Trainer, Replays & Coach, Progress), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
 (Settings, Controls, My Tiers, Marketplace).
 
 ### Trainer

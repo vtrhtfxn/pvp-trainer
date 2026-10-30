@@ -5,7 +5,8 @@
  */
 
 import { Duel } from '../net/Duel';
-import { PREP_TICKS } from '../game/Match';
+import { PREP_TICKS, teamKit } from '../game/Match';
+import { DIFFICULTIES, type DifficultyId } from '../ai/difficulty';
 import { KITS, type KitId } from '../game/kits';
 import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, cleanChat, cleanName, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
 import { OnlineTourney, isTourneySetup } from '../net/tourney';
@@ -130,6 +131,95 @@ class Room {
   readonly members: LobbyClient[] = [];
   private tourTimer: ReturnType<typeof setInterval> | null = null;
 
+  /**
+   * A 2v2 room: up to four people pick a team each; when the host starts, server-run bots at
+   * `tier` take the places nobody has. Even seats are red, odd seats blue.
+   */
+  squad: { tier: DifficultyId; team: Map<LobbyClient, number> } | null = null;
+
+  makeSquad(tier: DifficultyId) {
+    this.squad = { tier, team: new Map() };
+  }
+
+  /** Joins a 2v2 room before its game: onto the host's team while it has room, else the other. */
+  joinSquad(client: LobbyClient): string | null {
+    const sq = this.squad!;
+    if (this.duel) return 'That 2v2 game has already started.';
+    if (this.members.length >= 4) return 'That 2v2 room is full.';
+    const taken = new Set(this.members.map((c) => c.name.toLowerCase()));
+    for (let n = 2; taken.has(client.name.toLowerCase()); n++) client.name = `${client.name.replace(/ \(\d+\)$/, '')} (${n})`;
+    const host = this.members[0];
+    const hostTeam = host ? sq.team.get(host)! : 0;
+    const count = (t: number) => this.members.filter((c) => sq.team.get(c) === t).length;
+    sq.team.set(client, count(hostTeam) < 2 ? hostTeam : 1 - hostTeam);
+    this.members.push(client);
+    return null;
+  }
+
+  sendSquad() {
+    const sq = this.squad;
+    if (!sq) return;
+    for (const c of this.members) {
+      c.send({
+        t: 'squad',
+        room: this.code,
+        kit: this.kit,
+        tier: sq.tier,
+        started: !!this.duel,
+        members: this.members.map((m, k) => ({ name: m.name, team: sq.team.get(m) ?? 0, host: k === 0, you: m === c })),
+      });
+    }
+  }
+
+  /** 2v2: `client` moves to `team` (if it has a free place and the game hasn't started). */
+  pickSide(client: LobbyClient, team: number) {
+    const sq = this.squad;
+    if (!sq || this.duel || (team !== 0 && team !== 1)) return;
+    if (this.members.filter((c) => c !== client && sq.team.get(c) === team).length >= 2) return;
+    sq.team.set(client, team);
+    this.sendSquad();
+  }
+
+  /** 2v2: the host starts — people to their team's seats, bots in the rest. */
+  startSquad(client: LobbyClient) {
+    const sq = this.squad;
+    if (!sq || this.duel || this.members[0] !== client) return;
+    const seats: (LobbyClient | null)[] = [null, null, null, null];
+    for (const team of [0, 1]) {
+      const people = this.members.filter((c) => sq.team.get(c) === team);
+      people.forEach((c, k) => (seats[team + k * 2] = c));
+    }
+    const prof = DIFFICULTIES[sq.tier];
+    const names = seats.map((c, i) => c?.name ?? `${prof.name} Bot ${i % 2 === 0 ? 'R' : 'B'}${i < 2 ? 1 : 2}`);
+    const duel = new Duel(names, this.kit);
+    seats.forEach((c, i) => {
+      if (!c) duel.makeBot(i, prof);
+    });
+    duel.countdownTicks = PREP_TICKS;
+    this.seats.length = 0;
+    this.seats.push(...seats);
+    seats.forEach((c, i) => {
+      if (c) c.seat = i;
+    });
+    this.duel = duel;
+    this.rematchVotes.clear();
+    for (const c of this.players) c.send({ t: 'start', countdown: duel.countdownSeconds, kit: this.kit, you: c.seat, seats: 4 });
+    this.sendSquad();
+    this.startClock();
+    this.lobby.log(`room ${this.code}: 2v2 started — ${names.join(', ')}`);
+  }
+
+  /** Every seated person's ping, by seat. */
+  private pings(): number[] {
+    return this.seats.map((c) => c?.shownPing ?? 0);
+  }
+
+  /** Sends a relayed move to every seated person but its sender. */
+  relay(from: LobbyClient, msg: ServerMsg) {
+    const text = JSON.stringify(msg);
+    for (const c of this.players) if (c !== from) c.sendRaw(text);
+  }
+
   makeTour(size: number, field: string) {
     if (!isTourneySetup({ size, field })) return;
     this.tour = new OnlineTourney(size as never, field as never, {
@@ -151,9 +241,9 @@ class Room {
     return this.members.find((c) => c.id === pid);
   }
 
-  /** Everyone in the room (a tournament's members, or the two seats). */
+  /** Everyone in the room (a tournament's or 2v2's members, or the two seats). */
   get everyone(): LobbyClient[] {
-    return this.tour ? this.members : this.players;
+    return this.tour || this.squad ? this.members : this.players;
   }
 
   announce(msg: ServerMsg) {
@@ -235,7 +325,7 @@ class Room {
   }
 
   startIfReady() {
-    if (this.tour || this.players.length !== 2 || this.duel) return;
+    if (this.tour || this.squad || this.players.length !== 2 || this.duel) return;
     const names: [string, string] = [this.seats[0]!.name, this.seats[1]!.name];
     this.duel = new Duel(names, this.kit);
     // 10 s to sort inventories before the 3-2-1, like an offline duel.
@@ -301,8 +391,9 @@ class Room {
     for (const e of duel.tick()) {
       if (e.motion) this.seats[e.motion.to]?.send({ t: 'motion', vx: e.motion.vx, vy: e.motion.vy, vz: e.motion.vz });
       if (e.teleport) this.seats[e.teleport.to]?.send({ t: 'teleport', id: e.teleport.id, x: e.teleport.x, y: e.teleport.y, z: e.teleport.z, yaw: e.teleport.yaw });
+      if (e.mv) this.broadcast(e.mv);
     }
-    this.broadcast(duel.stateMessage(this.tick, [this.seats[0]?.shownPing ?? 0, this.seats[1]?.shownPing ?? 0]));
+    this.broadcast(duel.stateMessage(this.tick, this.pings()));
     // Bed Wars / SkyWars: scoreboards, announcements, chest contents, shop answers.
     for (const { to, msg } of duel.takeOutbox()) {
       if (to < 0) this.broadcast(msg);
@@ -324,7 +415,7 @@ class Room {
       const { hit, events } = duel.resolveClicksNow(seat);
       if (!hit) return;
       for (const e of events) if (e.motion) this.seats[e.motion.to]?.send({ t: 'motion', vx: e.motion.vx, vy: e.motion.vy, vz: e.motion.vz });
-      this.broadcast(duel.stateMessage(this.tick, [this.seats[0]?.shownPing ?? 0, this.seats[1]?.shownPing ?? 0]));
+      this.broadcast(duel.stateMessage(this.tick, this.pings()));
     } catch (err) {
       this.lobby.log(`room ${this.code}: swing failed — ${(err as Error)?.stack ?? err}`);
     }
@@ -333,14 +424,35 @@ class Room {
   voteRematch(seat: number) {
     if (this.tour || !this.duel || this.duel.phase !== 'ended') return;
     this.rematchVotes.add(seat);
-    if (this.rematchVotes.size >= 2 && this.players.length === 2) {
+    const need = this.squad ? this.players.length : 2;
+    if (this.rematchVotes.size >= need && this.players.length === need) {
       this.rematchVotes.clear();
       this.duel.reset();
-      this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
+      if (this.squad) for (const c of this.players) c.send({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit, you: c.seat, seats: 4 });
+      else this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
     }
   }
 
   leave(client: LobbyClient) {
+    if (this.squad) {
+      const i = this.members.indexOf(client);
+      if (i >= 0) this.members.splice(i, 1);
+      this.squad.team.delete(client);
+      this.rematchVotes.delete(client.seat);
+      // Mid-game, a bot takes over their place so the others play on.
+      if (this.duel && client.seat >= 0 && this.seats[client.seat] === client) {
+        this.seats[client.seat] = null;
+        this.duel.makeBot(client.seat, DIFFICULTIES[this.squad.tier]);
+      }
+      client.seat = -1;
+      if (this.members.length === 0) {
+        this.stopClock();
+        this.duel = null;
+        this.lobby.rooms.delete(this.code);
+        this.lobby.log(`room ${this.code}: closed`);
+      } else this.sendSquad();
+      return;
+    }
     if (this.tour) {
       const i = this.members.indexOf(client);
       if (i >= 0) this.members.splice(i, 1);
@@ -466,6 +578,27 @@ export class Lobby {
         }
         // A tournament room: made by whoever asks for one with a new room; everyone joins as a member.
         if (!existing && isTourneySetup(msg.tour)) room.makeTour(msg.tour.size, msg.tour.field);
+        // A 2v2 room likewise, in a kit that has 2v2.
+        const sqTier = msg.squad && typeof msg.squad === 'object' ? String(msg.squad.tier) : '';
+        if (!existing && !room.tour && Object.hasOwn(DIFFICULTIES, sqTier)) {
+          room.makeSquad(sqTier as DifficultyId);
+          const kit = String(msg.kit ?? 'sword');
+          room.kit = teamKit(kit) ? (kit as KitId) : 'sword';
+        }
+        if (room.squad) {
+          const err = room.joinSquad(client);
+          if (err) {
+            client.send({ t: 'error', message: err });
+            if (room.members.length === 0) this.rooms.delete(room.code);
+            return;
+          }
+          client.room = room;
+          client.seat = -1;
+          client.send({ t: 'joined', you: -1, room: room.code });
+          room.sendSquad();
+          this.log(`${client.name} joined 2v2 room ${room.code}`);
+          return;
+        }
         if (room.tour) {
           if (!room.joinTour(client, msg.rating ?? 0)) {
             client.send({ t: 'error', message: room.tour.started ? 'That tournament has already started.' : 'That tournament is full.' });
@@ -516,7 +649,7 @@ export class Lobby {
         const relay = room?.duel?.receive(client.seat, msg);
         // Moves go straight on to the opponent: waiting for the next tick would re-time them to
         // the server's clock, which is what made fighters stutter and jump on each other's screens.
-        if (relay && room) room.seats[1 - client.seat]?.send(relay);
+        if (relay && room) room.relay(client, relay);
         // A swing is resolved as it arrives and both players get the result at once, rather
         // than up to a tick (50 ms) later.
         if (msg.t === 'attack' && room) room.resolveNow(client.seat);
@@ -524,6 +657,12 @@ export class Lobby {
       }
       case 'rematch':
         client.room?.voteRematch(client.seat);
+        return;
+      case 'side':
+        client.room?.pickSide(client, Number(msg.team));
+        return;
+      case 'go':
+        client.room?.startSquad(client);
         return;
       case 'tstart': {
         const err = client.room?.tour?.start(client.id);

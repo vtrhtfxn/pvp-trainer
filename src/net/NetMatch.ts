@@ -11,7 +11,8 @@ import { kitById, type KitId } from '../game/kits';
 import { Thrown } from '../game/Thrown';
 import { World, type WorldEvent } from '../game/World';
 import { XpOrb } from '../game/XpOrb';
-import { COUNTDOWN_TICKS, SPAWN_DISTANCE } from '../game/Match';
+import { COUNTDOWN_TICKS } from '../game/Match';
+import { seatSpawn } from './Duel';
 import { createMode } from '../game/modes';
 import type { GameMode, ModeHost, ScoreLine } from '../game/modes/GameMode';
 import type { TeamGear } from '../game/modes/shop';
@@ -48,6 +49,198 @@ interface RemoteSample {
 }
 
 /**
+ * One remote fighter drawn on their own clock (see step): the opponent in a duel, or each of the
+ * other three in a 2v2 (people and the server's bots alike).
+ */
+class Playback {
+  /** Their moves, oldest first, keyed by their tick number. */
+  readonly samples: RemoteSample[] = [];
+  /** When each recent move arrived minus when it was made (ms), for the jitter estimate. */
+  readonly offsets: number[] = [];
+  /** Their tick being drawn (fractional). */
+  playQ = 0;
+  /** How far behind the fastest-arriving moves playback runs, ms (adapts to the network). */
+  delayMs = PLAYBACK_MIN_MS * 2;
+  /** A move of theirs has arrived. */
+  has = false;
+  /** Their drawn position: the playback position, with corrections eased in. */
+  readonly shown = { x: 0, y: 0, z: 0 };
+  /** Their last swing count seen. */
+  lastSwing = 0;
+
+  constructor(
+    readonly f: Fighter,
+    private readonly now: () => number,
+  ) {}
+
+  private clock(): number {
+    return this.now();
+  }
+
+  reset() {
+    this.has = false;
+    this.samples.length = 0;
+    this.offsets.length = 0;
+    this.delayMs = PLAYBACK_MIN_MS * 2;
+    this.lastSwing = 0;
+  }
+
+  /** A relayed move of the opponent: keep it, and learn how unevenly they arrive. */
+  add(m: Extract<ServerMsg, { t: 'mv' }>) {
+    const s = this.samples;
+    if (s.length && m.q <= s[s.length - 1].q) {
+      // A new round (their counter restarted) or a duplicate.
+      if (m.q > s[s.length - 1].q - 100) return;
+      s.length = 0;
+      this.offsets.length = 0;
+    }
+    s.push({
+      q: m.q,
+      x: m.x,
+      y: m.y,
+      z: m.z,
+      yaw: m.yaw,
+      pitch: m.pitch,
+      onGround: (m.f & 1) !== 0,
+      sprinting: (m.f & 2) !== 0,
+      sneaking: (m.f & 4) !== 0,
+      gliding: (m.f & 8) !== 0,
+    });
+    while (s.length > 120) s.shift();
+    // Arrival time minus the time the move was made, on their clock. The smallest of these is
+    // the fastest the network ever delivers; how far the rest spread above it is the jitter.
+    const off = this.clock() - m.q * TICK_MS;
+    // A second or more later than anything before: their game paused (a hidden tab, a long
+    // hitch) and their clock jumped. Start the estimate over rather than calling it jitter.
+    let min = Infinity;
+    for (const v of this.offsets) if (v < min) min = v;
+    if (off - min > 1000) {
+      this.offsets.length = 0;
+      this.delayMs = PLAYBACK_MIN_MS * 2;
+      this.playQ = m.q - this.delayMs / TICK_MS;
+    }
+    this.offsets.push(off);
+    if (this.offsets.length > JITTER_WINDOW) this.offsets.shift();
+    if (!this.has) {
+      this.has = true;
+      this.playQ = m.q - this.delayMs / TICK_MS;
+      this.shown.x = m.x;
+      this.shown.y = m.y;
+      this.shown.z = m.z;
+    }
+  }
+
+  /**
+   * The playback delay the network needs right now: enough to cover the late tail of recent
+   * arrivals (their 95th percentile above the fastest), so moves are almost always here before
+   * they are drawn. It rises at once when moves start coming late and eases back down slowly.
+   */
+  private updateDelay(starved: number) {
+    const o = this.offsets;
+    if (o.length < 4) return;
+    // Lateness of each arrival above the fastest one in the second before it.
+    const late: number[] = [];
+    for (let k = 0; k < o.length; k++) {
+      let min = o[k];
+      for (let j = Math.max(0, k - BASELINE_WINDOW + 1); j < k; j++) if (o[j] < min) min = o[j];
+      late.push(o[k] - min);
+    }
+    late.sort((a, b) => a - b);
+    const p95 = late[Math.min(late.length - 1, Math.floor(late.length * 0.95))];
+    const want = Math.min(PLAYBACK_MAX_MS, Math.max(PLAYBACK_MIN_MS, p95 + 25));
+    if (want > this.delayMs) this.delayMs = want;
+    else this.delayMs = Math.max(want, this.delayMs - 1.5);
+    // Ran out of moves anyway (a stall longer than anything seen): wait that much longer.
+    if (starved > 0) this.delayMs = Math.min(PLAYBACK_MAX_MS, this.delayMs + starved * TICK_MS + 20);
+  }
+
+  /** The opponent's tick number playback should be at now, given the delay. */
+  private targetQ(): number {
+    const o = this.offsets;
+    let min = Infinity;
+    for (let k = Math.max(0, o.length - BASELINE_WINDOW); k < o.length; k++) if (o[k] < min) min = o[k];
+    return (this.clock() - min - this.delayMs) / TICK_MS;
+  }
+
+  /**
+   * Draws the opponent on their own clock, a small, network-sized delay behind the newest move.
+   *
+   * Every move carries the sender's tick number and the server relays it the moment it
+   * arrives, so bursts and gaps on the way (Wi-Fi retries, a busy host, frames that ran two
+   * ticks at once) no longer turn into stops and double steps: each move is drawn at the moment
+   * it was made. Playback advances one tick per tick, nudged gently toward the target so it
+   * never jumps, and whatever it does have to correct (after a stall) is blended in over a few
+   * ticks rather than snapped.
+   */
+  step() {
+    const b = this.f;
+    const s = this.samples;
+    if (this.has && s.length) {
+      const prevQ = this.playQ;
+      this.playQ += 1;
+      const target = this.targetQ();
+      const err = target - this.playQ;
+      if (Math.abs(err) > 12) this.playQ = target;
+      else this.playQ += clamp(err * 0.1, -0.12, 0.12);
+
+      const newest = s[s.length - 1];
+      const oldest = s[0];
+      const starved = this.playQ - newest.q;
+      this.updateDelay(starved > 0.5 ? starved : 0);
+      if (this.playQ < oldest.q) this.playQ = oldest.q;
+
+      let a: RemoteSample;
+      let c: RemoteSample;
+      let f: number;
+      if (this.playQ >= newest.q) {
+        // Out of moves (a late packet): carry on along their last step for a moment.
+        a = s.length > 1 ? s[s.length - 2] : newest;
+        c = newest;
+        const ahead = Math.min(this.playQ - newest.q, 3);
+        const span = c.q - a.q || 1;
+        f = 1 + ahead / span;
+      } else {
+        let i = s.length - 1;
+        while (i > 0 && s[i].q > this.playQ) i--;
+        a = s[i];
+        c = s[i + 1];
+        f = clamp((this.playQ - a.q) / (c.q - a.q), 0, 1);
+      }
+      const rx = a.x + (c.x - a.x) * f;
+      const ry = a.y + (c.y - a.y) * f;
+      const rz = a.z + (c.z - a.z) * f;
+      // Move at their velocity (from the moves either side), and fold whatever the playback
+      // position jumped by — the fix-up after a late packet — in over a few ticks instead of
+      // snapping to it. Real jumps (a pearl, a respawn) are drawn as jumps.
+      const span = c.q - a.q || 1;
+      const dq = this.playQ - prevQ;
+      const sh = this.shown;
+      const px = sh.x + ((c.x - a.x) / span) * dq;
+      const py = sh.y + ((c.y - a.y) / span) * dq;
+      const pz = sh.z + ((c.z - a.z) / span) * dq;
+      if (Math.hypot(rx - px, ry - py, rz - pz) > 4) {
+        sh.x = rx;
+        sh.y = ry;
+        sh.z = rz;
+      } else {
+        sh.x = px + (rx - px) * 0.25;
+        sh.y = py + (ry - py) * 0.25;
+        sh.z = pz + (rz - pz) * 0.25;
+      }
+      b.pos.set(sh.x, sh.y, sh.z);
+      b.yaw = lerpAngle(a.yaw, c.yaw, Math.min(f, 1));
+      b.pitch = lerp(a.pitch, c.pitch, Math.min(f, 1));
+      const cur = f < 0.5 ? a : c;
+      b.onGround = cur.onGround;
+      b.sprinting = cur.sprinting;
+      b.input = { ...b.input, sneak: cur.sneaking };
+    }
+    b.tick();
+  }
+
+}
+
+/**
  * The online counterpart of Match, duck-typed so Game can drive either one.
  *
  * `player` is simulated locally from your own input exactly as in single-player — that is what
@@ -59,6 +252,7 @@ export class NetMatch {
   readonly world: World;
   readonly kit;
   readonly player: Fighter;
+  /** The main opponent (in a 2v2, the first enemy seat). */
   readonly bot: Fighter;
   readonly profile = { id: 'online' as const, name: 'Opponent', color: '#ff55ff', tagline: '' };
   readonly brain = { label: '' };
@@ -86,21 +280,15 @@ export class NetMatch {
 
   private lastUseHeld = false;
   private lastSlot = -1;
-  private lastSwing = 0;
-  /** The opponent's moves, oldest first, keyed by their tick number. */
-  private readonly samples: RemoteSample[] = [];
-  /** When each recent move arrived minus when it was made (ms), for the jitter estimate. */
-  private readonly offsets: number[] = [];
-  /** The opponent's tick being drawn (fractional). */
-  private playQ = 0;
-  /** How far behind the fastest-arriving moves playback runs, ms (adapts to the network). */
-  delayMs = PLAYBACK_MIN_MS * 2;
-  private hasRemote = false;
   private countdown = 3;
   /** Our own tick number, stamped on every move we send. */
   private q = 0;
-  /** The opponent's drawn position: the playback position, with corrections eased in. */
-  private readonly shown = { x: 0, y: 0, z: 0 };
+  /** Everyone by seat (yours is `player`): two in a duel, four in a 2v2. */
+  readonly fighters: Fighter[];
+  /** The playback of every other seat. */
+  private readonly remotes = new Map<number, Playback>();
+  /** The main opponent's playback (`bot`). */
+  private readonly primary: Playback;
   /** Wall clock (ms); tests drive it with simulated time. */
   clock: () => number = () => performance.now();
   /**
@@ -121,6 +309,8 @@ export class NetMatch {
     private readonly net: NetClient,
     private readonly you: number,
     kitId: KitId = 'sword',
+    /** 4 for a 2v2. */
+    seats = 2,
   ) {
     this.kit = kitById(kitId);
     this.mode = createMode(this.kit);
@@ -130,37 +320,53 @@ export class NetMatch {
       this.world.blocks.clear();
     }
     this.world.legacyCombat = !!this.kit.legacyCombat;
-    this.player = new Fighter('player', 'You', this.world);
-    this.bot = new Fighter('bot', 'Opponent', this.world);
-    this.world.fighters.push(this.player, this.bot);
-    this.player.replica = this.bot.replica = true;
-    this.bot.networked = true;
-    const half = SPAWN_DISTANCE / 2;
-    const mine = you === 0 ? half : -half;
-    this.player.reset(0, mine, you === 0 ? 0 : Math.PI, this.kit);
-    this.bot.reset(0, -mine, you === 0 ? Math.PI : 0, this.kit);
-    this.bot.networked = true;
+    const n = seats > 2 ? 4 : 2;
+    // Even seats are red (team 0), odd seats blue.
+    this.fighters = Array.from({ length: n }, (_, i) => {
+      const f = new Fighter(i === you ? 'player' : 'bot', i === you ? 'You' : n > 2 ? `Player ${i + 1}` : 'Opponent', this.world);
+      f.team = i % 2;
+      f.replica = true;
+      f.networked = i !== you;
+      return f;
+    });
+    this.player = this.fighters[you];
+    this.bot = this.fighters.find((f) => f.team !== this.player.team)!;
+    this.world.fighters.push(...this.fighters);
+    this.fighters.forEach((f, i) => {
+      if (i !== you) this.remotes.set(i, new Playback(f, () => this.clock()));
+    });
+    this.primary = this.remotes.get(this.fighters.indexOf(this.bot))!;
+    this.placeAll();
     this.setupMode();
+  }
+
+  /** Everyone back on their seat's spawn. */
+  private placeAll() {
+    this.fighters.forEach((f, i) => {
+      const s = seatSpawn(i, this.fighters.length);
+      f.reset(s.x, s.z, s.yaw, this.kit);
+      f.networked = i !== this.you;
+    });
+  }
+
+  /** A 2v2 game. */
+  get teams(): boolean {
+    return this.fighters.length > 2;
   }
 
   /** The mode's view of this game: seat 0 is red (`player`), seat 1 blue. */
   get host(): ModeHost {
-    const me = this.player;
-    const them = this.bot;
-    const you = this.you;
-    const w = this.world;
-    const phase = this.phase;
-    const fightTicks = this.fightTicks;
-    return { world: w, player: you === 0 ? me : them, bot: you === 0 ? them : me, phase, fightTicks };
+    return { world: this.world, player: this.fighters[0], bot: this.fighters[1], fighters: this.fighters, phase: this.phase, fightTicks: this.fightTicks };
   }
 
   /** Builds the mode's map and puts both fighters on their spawns, as the server does. */
   private setupMode() {
     if (!this.mode) return;
     this.mode.setup(this.host);
-    this.player.events.length = 0;
-    this.bot.events.length = 0;
-    this.bot.networked = true;
+    for (const f of this.fighters) {
+      f.events.length = 0;
+      f.networked = f !== this.player;
+    }
     this.modeUi = { sb: [], title: null, gear: null };
     this.announcements = [];
     this.chestMsg = null;
@@ -185,26 +391,30 @@ export class NetMatch {
    * `picked`: what the click hit on screen (renderedPick), drawn `alpha` of the way from the last
    * tick to this one.
    */
-  queueClick(picked?: number, alpha = 1) {
+  queueClick(picked?: number, alpha = 1, target?: Fighter) {
     if (this.phase !== 'fight' || this.player.dead) return;
     // Swing locally straight away so the animation is not waiting on the round trip; the server
     // still decides whether anything was hit.
     this.player.swing();
     this.player.resetAttackStrength();
     const r2 = (v: number) => Math.round(v * 100) / 100;
-    if (!this.hasRemote) {
-      this.net.send({ t: 'attack' });
+    // 2v2: which seat the click was aimed at (the server judges it against them).
+    const seat = target ? this.fighters.indexOf(target) : -1;
+    const ti = this.teams && seat >= 0 && target!.team !== this.player.team ? seat : undefined;
+    const pb = (ti !== undefined && this.remotes.get(ti)) || this.primary;
+    if (!pb.has) {
+      this.net.send({ t: 'attack', ti });
       return;
     }
     // Tell the server exactly which of the opponent's moments was drawn (playQ is where they are
     // at this tick; the frame showed them `1 - alpha` of a tick before that), what the click hit
     // there and with what aim, so the swing is judged on the screen we saw.
-    const v = r2(this.playQ - (1 - Math.min(1, Math.max(0, alpha))));
+    const v = r2(pb.playQ - (1 - Math.min(1, Math.max(0, alpha))));
     if (picked === undefined || !Number.isFinite(picked)) {
-      this.net.send({ t: 'attack', v });
+      this.net.send({ t: 'attack', v, ti });
       return;
     }
-    this.net.send({ t: 'attack', v, p: picked < 0 ? -1 : r2(picked), yaw: Math.round(this.player.yaw * 1e4) / 1e4, pitch: Math.round(this.player.pitch * 1e4) / 1e4 });
+    this.net.send({ t: 'attack', v, p: picked < 0 ? -1 : r2(picked), yaw: Math.round(this.player.yaw * 1e4) / 1e4, pitch: Math.round(this.player.pitch * 1e4) / 1e4, ti });
   }
 
   /** A hotbar switch the server has not confirmed yet (and how many states we waited). */
@@ -253,9 +463,15 @@ export class NetMatch {
         if (msg.we) for (const e of msg.we) this.world.events.push(e as unknown as WorldEvent);
         this.pendingEnts = msg.ents;
         break;
-      case 'mv':
-        this.addRemoteMove(msg);
+      case 'mv': {
+        // A duel's moves are all the opponent's; a 2v2's say whose they are.
+        const pb = this.remotes.get(typeof msg.i === 'number' ? msg.i : 1 - this.you);
+        if (pb) {
+          pb.add(msg);
+          this.ready = true;
+        }
         break;
+      }
       case 'motion':
         // ClientboundSetEntityMotionPacket: knockback replaces our velocity outright.
         this.player.vel.set(msg.vx, msg.vy, msg.vz);
@@ -300,17 +516,9 @@ export class NetMatch {
     this.replicas.clear();
     this.pendingEnts = null;
     this.teleportAck = 0;
-    const half = SPAWN_DISTANCE / 2;
-    const mine = this.you === 0 ? half : -half;
-    this.player.reset(0, mine, this.you === 0 ? 0 : Math.PI, this.kit);
-    this.bot.reset(0, -mine, this.you === 0 ? Math.PI : 0, this.kit);
-    this.bot.networked = true;
+    this.placeAll();
     this.setupMode();
-    this.lastSwing = 0;
-    this.hasRemote = false;
-    this.samples.length = 0;
-    this.offsets.length = 0;
-    this.delayMs = PLAYBACK_MIN_MS * 2;
+    for (const pb of this.remotes.values()) pb.reset();
   }
 
   private applyState(
@@ -324,37 +532,41 @@ export class NetMatch {
     this.phase = phase;
     this.countdown = countdown;
     this.fightTicks = fightTicks;
-    const mine = players.find((p) => p.i === this.you);
-    const theirs = players.find((p) => p.i !== this.you);
-    if (mine) {
-      this.applyAuthoritative(this.player, mine);
-      this.myPing = mine.ping;
-    }
-    if (theirs) {
-      this.applyAuthoritative(this.bot, theirs);
-      this.bot.name = theirs.name;
-      this.profile.name = theirs.name;
-      // Their position comes from the relayed moves (see addRemoteMove); this is only where
+    for (const st of players) {
+      const f = this.fighters[st.i];
+      if (!f) continue;
+      if (f === this.player) {
+        this.applyAuthoritative(f, st);
+        this.myPing = st.ping;
+        continue;
+      }
+      const pb = this.remotes.get(st.i)!;
+      this.applyAuthoritative(f, st);
+      f.name = st.name;
+      // Their position comes from the relayed moves (see Playback.add); this is only where
       // they stand before the first one arrives.
-      if (!this.hasRemote) {
-        this.bot.pos.set(theirs.x, theirs.y, theirs.z);
-        this.bot.prevPos.copy(this.bot.pos);
-        this.bot.yaw = theirs.yaw;
-        this.bot.pitch = theirs.pitch;
+      if (!pb.has) {
+        f.pos.set(st.x, st.y, st.z);
+        f.prevPos.copy(f.pos);
+        f.yaw = st.yaw;
+        f.pitch = st.pitch;
       }
-      if (theirs.sw !== this.lastSwing) {
-        if (this.lastSwing !== 0 || theirs.sw > 0) this.bot.swing();
-        this.lastSwing = theirs.sw;
+      if (st.sw !== pb.lastSwing) {
+        if (pb.lastSwing !== 0 || st.sw > 0) f.swing();
+        pb.lastSwing = st.sw;
       }
-      this.brain.label = theirs.ping ? `${theirs.ping} ms` : '';
+      if (f === this.bot) {
+        this.profile.name = st.name;
+        this.brain.label = st.ping ? `${st.ping} ms` : '';
+      }
     }
     void tick;
-    this.winner = winner === null ? null : winner === this.you ? this.player : this.bot;
+    this.winner = winner === null ? null : (this.fighters[winner] ?? null);
   }
 
   /** Server fighter events, handed to the same handlers the offline game uses. */
   private applyEvents(list: NetEvent[]) {
-    const who = (i: number) => (i === this.you ? this.player : this.bot);
+    const who = (i: number) => this.fighters[i] ?? this.bot;
     for (const { on, e } of list) {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(e)) {
@@ -463,7 +675,7 @@ export class NetMatch {
     f.fireTicks = s.fire ?? 0;
     f.mining = s.mn ? { x: s.mn[0], y: s.mn[1], z: s.mn[2], block: this.world.blocks.get(s.mn[0], s.mn[1], s.mn[2]) } : null;
     f.mineProgress = s.mn ? s.mn[3] : 0;
-    if (f === this.bot) {
+    if (f !== this.player) {
       f.fallFlying = !!s.ff;
       f.fallFlyTicks = s.fft ?? 0;
     }
@@ -498,9 +710,7 @@ export class NetMatch {
   tick() {
     this.tickCount++;
     const p = this.player;
-    const b = this.bot;
-    p.snapshot();
-    b.snapshot();
+    for (const f of this.fighters) f.snapshot();
 
     if (this.phase !== 'fight') {
       p.input = { forward: 0, strafe: 0, jump: false, sneak: p.input.sneak, sprint: false };
@@ -525,15 +735,18 @@ export class NetMatch {
     }
 
     p.tick();
-    this.stepRemote();
+    for (const pb of this.remotes.values()) pb.step();
     // Vanilla pushes players apart client-side; without it you can stand inside your opponent.
-    // Only our own half of the push is kept — the opponent is server-driven.
-    if (!p.dead && !b.dead && this.phase === 'fight') {
-      const bx = b.vel.x;
-      const bz = b.vel.z;
-      pushApart(p, b);
-      b.vel.x = bx;
-      b.vel.z = bz;
+    // Only our own half of the push is kept — everyone else is server-driven.
+    if (!p.dead && this.phase === 'fight') {
+      for (const b of this.fighters) {
+        if (b === p || b.dead) continue;
+        const bx = b.vel.x;
+        const bz = b.vel.z;
+        pushApart(p, b);
+        b.vel.x = bx;
+        b.vel.z = bz;
+      }
     }
 
     if (this.phase === 'countdown') this.phaseTicks++;
@@ -559,163 +772,14 @@ export class NetMatch {
     }
   }
 
-  /** A relayed move of the opponent: keep it, and learn how unevenly they arrive. */
-  private addRemoteMove(m: Extract<ServerMsg, { t: 'mv' }>) {
-    const s = this.samples;
-    if (s.length && m.q <= s[s.length - 1].q) {
-      // A new round (their counter restarted) or a duplicate.
-      if (m.q > s[s.length - 1].q - 100) return;
-      s.length = 0;
-      this.offsets.length = 0;
-    }
-    s.push({
-      q: m.q,
-      x: m.x,
-      y: m.y,
-      z: m.z,
-      yaw: m.yaw,
-      pitch: m.pitch,
-      onGround: (m.f & 1) !== 0,
-      sprinting: (m.f & 2) !== 0,
-      sneaking: (m.f & 4) !== 0,
-      gliding: (m.f & 8) !== 0,
-    });
-    while (s.length > 120) s.shift();
-    // Arrival time minus the time the move was made, on their clock. The smallest of these is
-    // the fastest the network ever delivers; how far the rest spread above it is the jitter.
-    const off = this.clock() - m.q * TICK_MS;
-    // A second or more later than anything before: their game paused (a hidden tab, a long
-    // hitch) and their clock jumped. Start the estimate over rather than calling it jitter.
-    let min = Infinity;
-    for (const v of this.offsets) if (v < min) min = v;
-    if (off - min > 1000) {
-      this.offsets.length = 0;
-      this.delayMs = PLAYBACK_MIN_MS * 2;
-      this.playQ = m.q - this.delayMs / TICK_MS;
-    }
-    this.offsets.push(off);
-    if (this.offsets.length > JITTER_WINDOW) this.offsets.shift();
-    if (!this.hasRemote) {
-      this.hasRemote = true;
-      this.ready = true;
-      this.playQ = m.q - this.delayMs / TICK_MS;
-      this.shown.x = m.x;
-      this.shown.y = m.y;
-      this.shown.z = m.z;
-    }
-  }
-
-  /**
-   * The playback delay the network needs right now: enough to cover the late tail of recent
-   * arrivals (their 95th percentile above the fastest), so moves are almost always here before
-   * they are drawn. It rises at once when moves start coming late and eases back down slowly.
-   */
-  private updateDelay(starved: number) {
-    const o = this.offsets;
-    if (o.length < 4) return;
-    // Lateness of each arrival above the fastest one in the second before it.
-    const late: number[] = [];
-    for (let k = 0; k < o.length; k++) {
-      let min = o[k];
-      for (let j = Math.max(0, k - BASELINE_WINDOW + 1); j < k; j++) if (o[j] < min) min = o[j];
-      late.push(o[k] - min);
-    }
-    late.sort((a, b) => a - b);
-    const p95 = late[Math.min(late.length - 1, Math.floor(late.length * 0.95))];
-    const want = Math.min(PLAYBACK_MAX_MS, Math.max(PLAYBACK_MIN_MS, p95 + 25));
-    if (want > this.delayMs) this.delayMs = want;
-    else this.delayMs = Math.max(want, this.delayMs - 1.5);
-    // Ran out of moves anyway (a stall longer than anything seen): wait that much longer.
-    if (starved > 0) this.delayMs = Math.min(PLAYBACK_MAX_MS, this.delayMs + starved * TICK_MS + 20);
-  }
-
-  /** The opponent's tick number playback should be at now, given the delay. */
-  private targetQ(): number {
-    const o = this.offsets;
-    let min = Infinity;
-    for (let k = Math.max(0, o.length - BASELINE_WINDOW); k < o.length; k++) if (o[k] < min) min = o[k];
-    return (this.clock() - min - this.delayMs) / TICK_MS;
-  }
-
-  /**
-   * Draws the opponent on their own clock, a small, network-sized delay behind the newest move.
-   *
-   * Every move carries the sender's tick number and the server relays it the moment it
-   * arrives, so bursts and gaps on the way (Wi-Fi retries, a busy host, frames that ran two
-   * ticks at once) no longer turn into stops and double steps: each move is drawn at the moment
-   * it was made. Playback advances one tick per tick, nudged gently toward the target so it
-   * never jumps, and whatever it does have to correct (after a stall) is blended in over a few
-   * ticks rather than snapped.
-   */
-  private stepRemote() {
-    const b = this.bot;
-    const s = this.samples;
-    if (this.hasRemote && s.length) {
-      const prevQ = this.playQ;
-      this.playQ += 1;
-      const target = this.targetQ();
-      const err = target - this.playQ;
-      if (Math.abs(err) > 12) this.playQ = target;
-      else this.playQ += clamp(err * 0.1, -0.12, 0.12);
-
-      const newest = s[s.length - 1];
-      const oldest = s[0];
-      const starved = this.playQ - newest.q;
-      this.updateDelay(starved > 0.5 ? starved : 0);
-      if (this.playQ < oldest.q) this.playQ = oldest.q;
-
-      let a: RemoteSample;
-      let c: RemoteSample;
-      let f: number;
-      if (this.playQ >= newest.q) {
-        // Out of moves (a late packet): carry on along their last step for a moment.
-        a = s.length > 1 ? s[s.length - 2] : newest;
-        c = newest;
-        const ahead = Math.min(this.playQ - newest.q, 3);
-        const span = c.q - a.q || 1;
-        f = 1 + ahead / span;
-      } else {
-        let i = s.length - 1;
-        while (i > 0 && s[i].q > this.playQ) i--;
-        a = s[i];
-        c = s[i + 1];
-        f = clamp((this.playQ - a.q) / (c.q - a.q), 0, 1);
-      }
-      const rx = a.x + (c.x - a.x) * f;
-      const ry = a.y + (c.y - a.y) * f;
-      const rz = a.z + (c.z - a.z) * f;
-      // Move at their velocity (from the moves either side), and fold whatever the playback
-      // position jumped by — the fix-up after a late packet — in over a few ticks instead of
-      // snapping to it. Real jumps (a pearl, a respawn) are drawn as jumps.
-      const span = c.q - a.q || 1;
-      const dq = this.playQ - prevQ;
-      const sh = this.shown;
-      const px = sh.x + ((c.x - a.x) / span) * dq;
-      const py = sh.y + ((c.y - a.y) / span) * dq;
-      const pz = sh.z + ((c.z - a.z) / span) * dq;
-      if (Math.hypot(rx - px, ry - py, rz - pz) > 4) {
-        sh.x = rx;
-        sh.y = ry;
-        sh.z = rz;
-      } else {
-        sh.x = px + (rx - px) * 0.25;
-        sh.y = py + (ry - py) * 0.25;
-        sh.z = pz + (rz - pz) * 0.25;
-      }
-      b.pos.set(sh.x, sh.y, sh.z);
-      b.yaw = lerpAngle(a.yaw, c.yaw, Math.min(f, 1));
-      b.pitch = lerp(a.pitch, c.pitch, Math.min(f, 1));
-      const cur = f < 0.5 ? a : c;
-      b.onGround = cur.onGround;
-      b.sprinting = cur.sprinting;
-      b.input = { ...b.input, sneak: cur.sneaking };
-    }
-    b.tick();
-  }
-
-  /** The opponent's tick currently on screen (what a swing is aimed at). */
+  /** The main opponent's tick currently on screen (what a swing is aimed at). */
   get viewQ(): number {
-    return this.playQ;
+    return this.primary.playQ;
+  }
+
+  /** How far behind the main opponent's newest moves playback runs, ms. */
+  get delayMs(): number {
+    return this.primary.delayMs;
   }
 }
 

@@ -3,10 +3,10 @@ import type { Rng } from '../core/rng';
 import { B, isSolid } from '../game/Blocks';
 import type { Fighter, MoveInput } from '../game/Fighter';
 import { ITEMS, type ItemId, type ItemStack } from '../game/items';
-import type { Match } from '../game/Match';
 import { Bedwars } from '../game/modes/Bedwars';
 import { Skywars, lootValue } from '../game/modes/Skywars';
 import type { Spot } from '../game/modes/maps';
+import type { SkyHost } from '../game/modes/GameMode';
 import { SHOP, type ShopItem } from '../game/modes/shop';
 import type { World } from '../game/World';
 import type { BotProfile } from './difficulty';
@@ -68,12 +68,16 @@ export class SkyPlanner {
 
   constructor(
     private readonly bot: Fighter,
-    private readonly target: Fighter,
+    private target: Fighter,
     private readonly world: World,
-    private readonly match: Match,
+    private readonly match: SkyHost,
     private readonly rng: Rng,
     private readonly h: BrainHooks,
   ) {}
+
+  setTarget(f: Fighter) {
+    this.target = f;
+  }
 
   private get skill(): number {
     return skillOf(this.h.profile);
@@ -117,7 +121,7 @@ export class SkyPlanner {
   private bedwars(mode: Bedwars, per: Perceived, dist: number, input: MoveInput, closeFight: boolean, fight: () => void) {
     const b = this.bot;
     const m = this.match;
-    const me = m.bot === b ? 1 : 0;
+    const me = b.team === 0 ? 0 : 1;
     const them = me === 1 ? 0 : 1;
     const L = mode.layout;
     const s = this.skill;
@@ -364,7 +368,7 @@ export class SkyPlanner {
   private skywars(mode: Skywars, per: Perceived, dist: number, input: MoveInput, closeFight: boolean, fight: () => void) {
     const b = this.bot;
     const m = this.match;
-    const me = m.bot === b ? 1 : 0;
+    const me = b.team === 0 ? 0 : 1;
     const L = mode.layout;
     const s = this.skill;
     if (m.phase !== 'fight') {

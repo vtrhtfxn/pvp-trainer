@@ -3,7 +3,7 @@ import { DroppedItem } from '../DroppedItem';
 import type { Fighter } from '../Fighter';
 import { ITEMS, type Enchants, type ItemId, type ItemStack } from '../items';
 import type { Rng } from '../../core/rng';
-import { TEAM_COLORS, TEAM_NAMES, teamOf, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
+import { TEAM_COLORS, TEAM_NAMES, isTeams, members, teamOf, teamSlot, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
 import { buildSkywarsMap, type SkywarsLayout, type Spot } from './maps';
 
 /** Chests refill this far into the game (Hypixel refills around then). */
@@ -94,7 +94,7 @@ function deal(rng: Rng, items: ItemStack[], chests: number): (ItemStack | null)[
 const key = (s: Spot) => `${s.x},${s.y},${s.z}`;
 
 /**
- * SkyWars, 1v1 (Hypixel Solo Normal rules): both players start in glass cages over their own
+ * SkyWars, 1v1 or 2v2 (Hypixel Solo Normal rules; teammates share an island): both players start in glass cages over their own
  * islands; when the countdown ends the cages open. Loot your three chests, bridge over (or to the
  * better middle chests), and knock or beat the other player off the map. No respawns; the last
  * one standing wins. Chests refill after four minutes.
@@ -113,7 +113,7 @@ export class Skywars implements GameMode {
 
   setup(m: Match) {
     const w = m.world;
-    this.layout = buildSkywarsMap(w.blocks);
+    this.layout = buildSkywarsMap(w.blocks, isTeams(m));
     this.chests.clear();
     this.opened[0].clear();
     this.opened[1].clear();
@@ -127,9 +127,9 @@ export class Skywars implements GameMode {
     w.placeRule = null;
     this.fill(m);
     const empty = { hotbar: [] as (ItemStack | null)[], armor: [null, null, null, null], offhand: null };
-    for (const f of [m.player, m.bot]) {
+    for (const f of m.fighters) {
       const s = this.layout.spawns[teamOf(m, f)];
-      f.respawn(s.x, s.y, s.z, s.yaw, empty);
+      f.respawn(s.x + teamSlot(m, f), s.y, s.z, s.yaw, empty);
       f.naturalRegen = true;
       f.food.locked = true;
     }
@@ -220,8 +220,9 @@ export class Skywars implements GameMode {
   }
 
   winner(m: Match): Fighter | null {
-    if (m.player.dead) return m.bot;
-    if (m.bot.dead) return m.player;
+    // The last team with anyone standing.
+    if (members(m, 0).every((f) => f.dead)) return members(m, 1)[0] ?? m.bot;
+    if (members(m, 1).every((f) => f.dead)) return members(m, 0)[0] ?? m.player;
     return null;
   }
 
@@ -231,9 +232,11 @@ export class Skywars implements GameMode {
       const left = Math.max(0, Math.ceil((REFILL_TICKS - m.fightTicks) / 20));
       lines.push({ text: `Refill in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` });
     } else if (this.refilled) lines.push({ text: 'Chests refilled' });
-    for (const f of [m.player, m.bot]) {
-      const team = teamOf(m, f);
-      lines.push({ text: `${TEAM_NAMES[team]}: ${f.dead ? '✘' : '✔'}${f === viewer ? ' YOU' : ''}`, color: TEAM_COLORS[team] });
+    for (const team of [0, 1] as const) {
+      const all = members(m, team);
+      const alive = all.filter((f) => !f.dead).length;
+      const mark = alive === 0 ? '✘' : all.length > 1 ? `${alive}/${all.length}` : '✔';
+      lines.push({ text: `${TEAM_NAMES[team]}: ${mark}${team === teamOf(m, viewer) ? ' YOU' : ''}`, color: TEAM_COLORS[team] });
     }
     const opened = this.opened[teamOf(m, viewer)].size;
     lines.push({ text: `Chests opened: ${opened}` });

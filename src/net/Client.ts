@@ -61,7 +61,7 @@ export class NetClient {
   kit = 'sword';
 
   /** Sent with the next join: a tournament room to create, and your rating for its seeding. */
-  joinExtra: { tour?: { size: number; field: string }; rating?: number } = {};
+  joinExtra: { tour?: { size: number; field: string }; rating?: number; squad?: { tier: string } } = {};
 
   connect(address: string, room: string, name: string, kit = 'sword') {
     this.close();
@@ -134,6 +134,8 @@ export class NetClient {
         this.setStatus('playing', '');
       } else if (msg.t === 'tour' && this.status !== 'lobby') {
         this.setStatus('lobby', 'Tournament room');
+      } else if (msg.t === 'squad' && !msg.started && this.status !== 'lobby') {
+        this.setStatus('lobby', '2v2 room');
       }
       this.handlers.onMessage(msg);
     };
