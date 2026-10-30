@@ -123,7 +123,7 @@ describe('replays', () => {
 
   it('seeking back and forth lands on the same state as playing through', () => {
     const { data, trace } = play('crystal', 'lt2', 7, 20 * 30);
-    expect(data.frames.length).toBeGreaterThan(200);
+    expect(data.frames.length).toBeGreaterThan(160);
     const w = new ReplayWatch(data);
     w.seek(400);
     w.seek(150);

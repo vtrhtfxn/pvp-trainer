@@ -540,6 +540,14 @@ function hitShield(attacker: Fighter, target: Fighter, reach: number, scale: num
     target.invulnerableTime = C.INVULNERABLE_TICKS;
     // The server still knocks its own copy back; it is simply never sent to the client.
     applyKnockback(target.serverVel, C.BASE_KNOCKBACK, attacker.pos.x - target.pos.x, attacker.pos.z - target.pos.z, target.onGround, target.world.rng);
+    // Except a sword swung with another item's attributes (attribute swap): that launches the
+    // blocker up about 1.0–1.5 blocks, and back, through the shield.
+    if (swap && weapon.tool === 'sword' && attacker.attrId !== null) {
+      const v = target.serverVel;
+      const vy = target.onGround ? C.SHIELD_SWAP_LAUNCH_Y : Math.max(target.vel.y, C.SHIELD_SWAP_LAUNCH_Y);
+      target.vel.set(v.x, vy, v.z);
+      v.y = vy;
+    }
   }
   const disabled = !!weapon.disablesShield;
   if (disabled) {
