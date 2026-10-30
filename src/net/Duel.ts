@@ -1,10 +1,12 @@
-import { performAttack, pushApart, rayDistanceToTarget } from '../game/combat';
+import { BotBrain } from '../ai/BotBrain';
+import type { BotProfile } from '../ai/difficulty';
+import { performAttack, pushApart, rayDistanceToTarget, type AttackOutcome } from '../game/combat';
 import { hitNearerEntity } from '../game/crystals';
 import { Fighter, SLOT_COUNT, type FighterEvent } from '../game/Fighter';
 import { ITEMS } from '../game/items';
 import { kitById, type KitDef, type KitId } from '../game/kits';
 import { World } from '../game/World';
-import { COUNTDOWN_TICKS, SPAWN_DISTANCE } from '../game/Match';
+import { COUNTDOWN_TICKS, SPAWN_DISTANCE, TEAM_SPREAD } from '../game/Match';
 import { Rng } from '../core/rng';
 import { B } from '../game/Blocks';
 import { createMode } from '../game/modes';
@@ -35,6 +37,16 @@ export interface DuelEvent {
   motion?: { to: number; vx: number; vy: number; vz: number };
   /** A pearl (or a respawn) moved this player. */
   teleport?: { to: number; id: number; x: number; y: number; z: number; yaw?: number };
+  /** A server-run bot moved: relayed to the players like a person's move. */
+  mv?: Extract<ServerMsg, { t: 'mv' }>;
+}
+
+/** Where seat `i` starts: red (even seats) at +z, blue at -z; 2v2 teammates side by side. */
+export function seatSpawn(i: number, seats: number): { x: number; z: number; yaw: number } {
+  const half = SPAWN_DISTANCE / 2;
+  const red = i % 2 === 0;
+  const x = seats > 2 ? (i < 2 ? -TEAM_SPREAD / 2 : TEAM_SPREAD / 2) : 0;
+  return { x, z: red ? half : -half, yaw: red ? 0 : Math.PI };
 }
 
 /** Movement events every client makes for itself; the rest of a fighter's events are forwarded. */
@@ -67,7 +79,8 @@ const CLAIM_SLACK = 0.35;
 export class Duel {
   readonly kit: KitDef;
   readonly world: World;
-  readonly fighters: [Fighter, Fighter];
+  /** One per seat: two in a duel, four in a 2v2 (even seats red, odd seats blue). */
+  readonly fighters: Fighter[];
   phase: NetPhase = 'lobby';
   phaseTicks = 0;
   /** Ticks from round start to FIGHT! (the lobby gives real duels PREP_TICKS). */
@@ -75,42 +88,46 @@ export class Duel {
   fightTicks = 0;
   tickCount = 0;
   winner: number | null = null;
-  private readonly useHeld: [boolean, boolean] = [false, false];
-  private readonly mineHeld: [boolean, boolean] = [false, false];
-  private readonly pendingAttacks: [number, number] = [0, 0];
+  private readonly useHeld: boolean[];
+  private readonly mineHeld: boolean[];
+  private readonly pendingAttacks: number[];
   /** The opponent tick each queued click was aimed at (from the attacker's screen), if sent. */
-  private readonly attackViews: [(number | null)[], (number | null)[]] = [[], []];
+  private readonly attackViews: (number | null)[][];
   /** What each click hit on the attacker's screen, and the aim then (null: not sent). */
-  private readonly attackClaims: [(AttackClaim | null)[], (AttackClaim | null)[]] = [[], []];
+  private readonly attackClaims: (AttackClaim | null)[][];
+  /** The seat each queued click was aimed at (2v2; null: whoever is under the crosshair). */
+  private readonly attackTargets: (number | null)[][];
   /** Every accepted move per fighter, newest last (about two seconds). */
-  private readonly moveLog: [LoggedMove[], LoggedMove[]] = [[], []];
+  private readonly moveLog: LoggedMove[][];
   /** Server clock, ms (tests drive it). */
   clock: () => number = () => performance.now();
-  private readonly pendingSlot: [number | null, number | null] = [null, null];
-  private readonly pendingSwap: [number, number] = [0, 0];
-  private readonly pendingUse: [number, number] = [0, 0];
+  private readonly pendingSlot: (number | null)[];
+  private readonly pendingSwap: number[];
+  private readonly pendingUse: number[];
   /** Position history per fighter, newest last — see rewindTicks(). */
-  private readonly history: [Rewind[], Rewind[]] = [[], []];
+  private readonly history: Rewind[][];
   /** Each player's measured round-trip time in ms, fed in by the server. */
-  private readonly pings: [number, number] = [0, 0];
+  private readonly pings: number[];
   /** Pearl teleports sent to each client; their moves count again once they acknowledge it. */
-  private readonly teleportId: [number, number] = [0, 0];
-  private readonly teleportAcked: [number, number] = [0, 0];
+  private readonly teleportId: number[];
+  private readonly teleportAcked: number[];
   /** Stable ids for entities on the wire. */
   private readonly ids = new WeakMap<object, number>();
   private nextId = 1;
   /** Last inventory sent per fighter (JSON), so unchanged inventories are not re-sent. */
-  private readonly lastInv: [string, string] = ['', ''];
+  private readonly lastInv: string[];
   /** Bed Wars / SkyWars rules, or null for a plain duel. */
   readonly mode: GameMode | null;
-  /** Mode messages waiting to go out: to a seat, or to both (-1). */
+  /** Mode messages waiting to go out: to a seat, or to everyone (-1). */
   private outbox: { to: number; msg: ServerMsg }[] = [];
   /** The last mode panel (scoreboard, title, gear) sent to each seat, as JSON. */
-  private readonly lastModeUi: [string, string] = ['', ''];
+  private readonly lastModeUi: string[];
   /** The chest each player has open, and what they were last sent of it (JSON). */
-  private readonly openChest: [{ x: number; y: number; z: number; sent: string } | null, { x: number; y: number; z: number; sent: string } | null] = [null, null];
+  private readonly openChest: ({ x: number; y: number; z: number; sent: string } | null)[];
+  /** 2v2: the seats the server plays itself (empty places, or someone who left). */
+  private readonly brains: (BotBrain | null)[];
 
-  constructor(names: [string, string], kitId: KitId = 'sword') {
+  constructor(names: string[], kitId: KitId = 'sword') {
     this.kit = kitById(kitId);
     this.mode = createMode(this.kit);
     this.world = new World(undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
@@ -124,9 +141,74 @@ export class Duel {
     this.world.legacyCombat = !!this.kit.legacyCombat;
     this.world.rng = new Rng((Math.random() * 2 ** 30) | 0);
     this.world.blocks.changeLog = new Set();
-    this.fighters = [new Fighter('player', names[0], this.world), new Fighter('bot', names[1], this.world)];
+    const n = names.length > 2 ? 4 : 2;
+    this.fighters = Array.from({ length: n }, (_, i) => new Fighter(i === 0 ? 'player' : 'bot', names[i] ?? `Player ${i + 1}`, this.world));
+    this.fighters.forEach((f, i) => (f.team = i % 2));
     this.world.fighters.push(...this.fighters);
+    const per = <T>(make: () => T): T[] => Array.from({ length: n }, make);
+    this.useHeld = per(() => false);
+    this.mineHeld = per(() => false);
+    this.pendingAttacks = per(() => 0);
+    this.attackViews = per(() => []);
+    this.attackClaims = per(() => []);
+    this.attackTargets = per(() => []);
+    this.moveLog = per(() => []);
+    this.pendingSlot = per(() => null);
+    this.pendingSwap = per(() => 0);
+    this.pendingUse = per(() => 0);
+    this.history = per(() => []);
+    this.pings = per(() => 0);
+    this.teleportId = per(() => 0);
+    this.teleportAcked = per(() => 0);
+    this.lastInv = per(() => '');
+    this.lastModeUi = per(() => '');
+    this.openChest = per(() => null);
+    this.brains = per(() => null);
     this.reset();
+  }
+
+  /** Seats in this game (2 or 4). */
+  get seats(): number {
+    return this.fighters.length;
+  }
+
+  /** Whether seat `i` is played by the server. */
+  isBot(i: number): boolean {
+    return !!this.brains[i];
+  }
+
+  /**
+   * Hands seat `i` to a server-run bot at `profile` (a 2v2's empty place, or a player who left).
+   * It fights like the offline bots: nearest enemy first, the whole kit, the mode's objectives.
+   */
+  makeBot(i: number, profile: BotProfile, name?: string) {
+    const f = this.fighters[i];
+    if (!f) return;
+    f.networked = false;
+    if (name) f.name = name;
+    const rng = new Rng((Math.random() * 2 ** 30) | 0);
+    const brain: BotBrain = new BotBrain(f, this.enemiesOf(i)[0], this.world, profile, rng, () => this.botAttack(f, brain.opponent));
+    if (this.mode) brain.attachSky(this);
+    brain.resetRound();
+    this.brains[i] = brain;
+  }
+
+  /** Everyone on the other team from seat `i`. */
+  enemiesOf(i: number): Fighter[] {
+    const t = this.fighters[i].team;
+    return this.fighters.filter((f) => f.team !== t);
+  }
+
+  private botAttack(f: Fighter, target: Fighter): AttackOutcome {
+    if (hitNearerEntity(f, rayDistanceToTarget(f, target))) {
+      return { hit: false, reach: -1, crit: false, sprint: false, scale: 1, damage: 0, blocked: false, disabled: false, swap: false };
+    }
+    return performAttack(f, target);
+  }
+
+  /** A mode respawned someone: a bot starts its plan over. */
+  onRespawn(f: Fighter) {
+    this.brains[this.fighters.indexOf(f)]?.resetRound();
   }
 
   /** Seat 0 is the red team, seat 1 blue (the mode host interface). */
@@ -138,12 +220,14 @@ export class Duel {
   }
 
   reset() {
-    const half = SPAWN_DISTANCE / 2;
-    this.fighters[0].reset(0, half, 0, this.kit);
-    this.fighters[1].reset(0, -half, Math.PI, this.kit);
+    this.fighters.forEach((f, i) => {
+      const s = seatSpawn(i, this.seats);
+      f.reset(s.x, s.z, s.yaw, this.kit);
+    });
     this.world.clearEntities();
-    for (const f of this.fighters) {
-      f.networked = true;
+    for (const [i, f] of this.fighters.entries()) {
+      // (brains is still unset while the constructor runs its first reset.)
+      f.networked = !this.brains?.[i];
       f.naturalRegen = this.kit.naturalRegen ?? true;
       f.food.locked = !!this.kit.noHunger;
     }
@@ -153,18 +237,22 @@ export class Duel {
     for (const f of this.fighters) f.events.length = 0;
     this.world.blocks.changeLog?.clear();
     this.outbox = [];
-    this.lastModeUi[0] = this.lastModeUi[1] = '';
-    this.openChest[0] = this.openChest[1] = null;
     this.phase = 'countdown';
     this.phaseTicks = 0;
     this.fightTicks = 0;
     this.winner = null;
-    for (let i = 0; i < 2; i++) {
+    // (Unset while the constructor runs its first reset: the arrays come after.)
+    if (!this.useHeld) return;
+    for (let i = 0; i < this.seats; i++) {
+      this.lastModeUi[i] = '';
+      this.openChest[i] = null;
       this.useHeld[i] = this.mineHeld[i] = false;
       this.pendingAttacks[i] = this.pendingSwap[i] = this.pendingUse[i] = 0;
       this.attackViews[i].length = 0;
       this.attackClaims[i].length = 0;
+      this.attackTargets[i].length = 0;
       this.moveLog[i].length = 0;
+      this.brains[i]?.resetRound();
       this.pendingSlot[i] = null;
       this.lastInv[i] = '';
       this.history[i].length = 0;
@@ -185,13 +273,39 @@ export class Duel {
    * A click; `view` is the opponent tick the attacker had on screen (see rewindToView), `claim`
    * what the click hit there and the aim it was made with.
    */
-  queueAttack(i: number, view?: number, claim?: AttackClaim) {
+  queueAttack(i: number, view?: number, claim?: AttackClaim, target?: number) {
     // One click per tick is all a 20 Hz simulation can resolve; more would just be swallowed.
     if (this.pendingAttacks[i] >= 4) return;
     this.pendingAttacks[i]++;
     this.attackViews[i].push(typeof view === 'number' && Number.isFinite(view) ? view : null);
     const ok = claim && [claim.p, claim.yaw, claim.pitch].every((n) => typeof n === 'number' && Number.isFinite(n));
     this.attackClaims[i].push(ok ? claim : null);
+    // Only an enemy's seat counts (a teammate or a made-up seat is ignored).
+    const t = typeof target === 'number' && Number.isInteger(target) && this.fighters[target]?.isEnemy(this.fighters[i]) ? target : null;
+    this.attackTargets[i].push(t);
+  }
+
+  /**
+   * Whom seat `i`'s click is judged against: the seat it said (2v2), else the enemy nearest
+   * along their crosshair, else the first enemy standing.
+   */
+  private targetSeat(i: number, said: number | null): number {
+    if (this.seats === 2) return 1 - i;
+    if (said !== null) return said;
+    const f = this.fighters[i];
+    let best = -1;
+    let bestD = Infinity;
+    for (let k = 0; k < this.seats; k++) {
+      if (!this.fighters[k].isEnemy(f)) continue;
+      const d = rayDistanceToTarget(f, this.fighters[k]);
+      if (d >= 0 && d < bestD) {
+        bestD = d;
+        best = k;
+      }
+    }
+    if (best >= 0) return best;
+    const alive = this.fighters.findIndex((g) => g.isEnemy(f) && !g.dead);
+    return alive >= 0 ? alive : this.fighters.findIndex((g) => g.isEnemy(f));
   }
 
   setPing(i: number, ms: number) {
@@ -272,7 +386,7 @@ export class Duel {
     log.push({ q, at: this.clock(), x: f.pos.x, y: f.pos.y, z: f.pos.z, sneaking: f.input.sneak, fallFlying: f.fallFlying });
     if (log.length > 60) log.shift();
     const flags = (f.onGround ? 1 : 0) | (f.sprinting ? 2 : 0) | (f.input.sneak ? 4 : 0) | (f.fallFlying ? 8 : 0);
-    return { t: 'mv', q, x: r3(f.pos.x), y: r3(f.pos.y), z: r3(f.pos.z), yaw: r3(f.yaw), pitch: r3(f.pitch), f: flags };
+    return { t: 'mv', i, q, x: r3(f.pos.x), y: r3(f.pos.y), z: r3(f.pos.z), yaw: r3(f.yaw), pitch: r3(f.pitch), f: flags };
   }
 
   /**
@@ -304,36 +418,61 @@ export class Duel {
   tick(): DuelEvent[] {
     this.tickCount++;
     const out: DuelEvent[] = [];
-    const [a, b] = this.fighters;
-    a.snapshot();
-    b.snapshot();
+    const all = this.fighters;
+    for (const f of all) f.snapshot();
     // Velocity as the clients last reported it: anything that changes it this tick came from
     // the server (knockback, explosions, wind) and has to be sent to that player.
-    const vel = this.fighters.map((f) => [f.vel.x, f.vel.y, f.vel.z]);
+    const vel = all.map((f) => [f.vel.x, f.vel.y, f.vel.z]);
 
     if (this.phase === 'fight') {
       this.fightTicks++;
-      for (let i = 0; i < 2; i++) this.handleActions(i);
+      for (let i = 0; i < this.seats; i++) {
+        const brain = this.brains[i];
+        if (!brain) this.handleActions(i);
+        else {
+          brain.chooseTarget(this.enemiesOf(i));
+          brain.tick();
+        }
+      }
     } else {
-      this.pendingAttacks[0] = this.pendingAttacks[1] = 0;
-      this.attackViews[0].length = this.attackViews[1].length = 0;
-      // Hotbar keys still work during the countdown (the client already shows the new slot).
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < this.seats; i++) {
+        this.pendingAttacks[i] = 0;
+        this.attackViews[i].length = 0;
+        this.attackClaims[i].length = 0;
+        this.attackTargets[i].length = 0;
+        // Hotbar keys still work during the countdown (the client already shows the new slot).
         const slot = this.pendingSlot[i];
-        if (slot !== null && !this.fighters[i].dead) this.fighters[i].selectSlot(slot);
+        if (slot !== null && !all[i].dead) all[i].selectSlot(slot);
         this.pendingSlot[i] = null;
+        const brain = this.brains[i];
+        if (brain && this.phase === 'countdown') {
+          const f = all[i];
+          const t = brain.opponent;
+          f.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
+          f.yaw = Math.atan2(-(t.pos.x - f.pos.x), -(t.pos.z - f.pos.z));
+        }
       }
     }
 
-    a.tick();
-    b.tick();
-    pushApart(a, b);
+    for (const f of all) f.tick();
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) pushApart(all[i], all[j]);
     this.world.tickEntities();
     if (this.mode && this.phase === 'fight') this.mode.tick(this);
     this.record();
 
-    for (let i = 0; i < 2; i++) {
-      const f = this.fighters[i];
+    for (let i = 0; i < this.seats; i++) {
+      const f = all[i];
+      if (this.brains[i]) {
+        // A bot's move goes out like a person's, stamped with the server tick, so the players
+        // draw it through the same smooth playback.
+        const q = this.tickCount;
+        const log = this.moveLog[i];
+        log.push({ q, at: this.clock(), x: f.pos.x, y: f.pos.y, z: f.pos.z, sneaking: f.input.sneak, fallFlying: f.fallFlying });
+        if (log.length > 60) log.shift();
+        const flags = (f.onGround ? 1 : 0) | (f.sprinting ? 2 : 0) | (f.input.sneak ? 4 : 0) | (f.fallFlying ? 8 : 0);
+        out.push({ mv: { t: 'mv', i, q, x: r3(f.pos.x), y: r3(f.pos.y), z: r3(f.pos.z), yaw: r3(f.yaw), pitch: r3(f.pitch), f: flags } });
+        continue;
+      }
       const respawned = f.events.some((e) => e.type === 'respawn');
       if (respawned || f.events.some((e) => e.type === 'pearlLand')) {
         const id = ++this.teleportId[i];
@@ -354,12 +493,17 @@ export class Duel {
       if (w) {
         this.phase = 'ended';
         this.phaseTicks = 0;
-        this.winner = this.fighters.indexOf(w);
+        this.winner = all.indexOf(w);
       }
-    } else if (this.phase === 'fight' && (a.dead || b.dead)) {
-      this.phase = 'ended';
-      this.phaseTicks = 0;
-      this.winner = a.dead ? (b.dead ? null : 1) : 0;
+    } else if (this.phase === 'fight') {
+      // Over when a whole team is down (in a duel, one player).
+      const redDown = all.every((f) => f.team !== 0 || f.dead);
+      const blueDown = all.every((f) => f.team !== 1 || f.dead);
+      if (redDown || blueDown) {
+        this.phase = 'ended';
+        this.phaseTicks = 0;
+        this.winner = redDown ? (blueDown ? null : 1) : 0;
+      }
     }
     return out;
   }
@@ -370,7 +514,9 @@ export class Duel {
    */
   private tickModeUi() {
     const mode = this.mode!;
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < this.seats; i++) {
+      // A server bot has no screen to send panels to (it loots chests through its planner).
+      if (this.brains[i]) continue;
       const f = this.fighters[i];
       for (const e of f.events) {
         if (e.type !== 'openBlock' || e.block !== B.CHEST || !(mode instanceof Skywars) || this.phase !== 'fight') continue;
@@ -458,7 +604,6 @@ export class Duel {
   resolveClicksNow(i: number): { hit: boolean; events: DuelEvent[] } {
     const none = { hit: false, events: [] };
     const f = this.fighters[i];
-    const other = this.fighters[1 - i];
     if (this.phase !== 'fight' || f.dead || f.usingItem || this.pendingAttacks[i] === 0) return none;
     if (this.world.crystals.length || this.world.carts.length) return none;
     const vel = this.fighters.map((g) => [g.vel.x, g.vel.y, g.vel.z]);
@@ -475,7 +620,9 @@ export class Duel {
     while (this.pendingAttacks[i] > 0) {
       const view = this.attackViews[i][0] ?? null;
       const claim = this.attackClaims[i][0] ?? null;
-      const unwind = (view !== null && this.rewindToView(1 - i, view)) || this.rewind(1 - i, this.rewindTicks(i));
+      const ts = this.targetSeat(i, this.attackTargets[i][0] ?? null);
+      const other = this.fighters[ts];
+      const unwind = (view !== null && this.rewindToView(ts, view)) || this.rewind(ts, this.rewindTicks(i));
       const yaw = f.yaw;
       const pitch = f.pitch;
       if (claim) {
@@ -488,6 +635,7 @@ export class Duel {
         this.pendingAttacks[i]--;
         this.attackViews[i].shift();
         this.attackClaims[i].shift();
+        this.attackTargets[i].shift();
         performAttack(f, other, judged);
         hit = true;
       }
@@ -497,7 +645,7 @@ export class Duel {
       if (!plain) break;
     }
     const events: DuelEvent[] = [];
-    for (let k = 0; k < 2; k++) {
+    for (let k = 0; k < this.seats; k++) {
       const g = this.fighters[k];
       if (g.vel.x !== vel[k][0] || g.vel.y !== vel[k][1] || g.vel.z !== vel[k][2]) events.push({ motion: { to: k, vx: g.vel.x, vy: g.vel.y, vz: g.vel.z } });
     }
@@ -507,7 +655,6 @@ export class Duel {
   /** Mirrors Match.handlePlayerActions, but for a remote player's queued inputs. */
   private handleActions(i: number) {
     const f = this.fighters[i];
-    const other = this.fighters[1 - i];
     const slot = this.pendingSlot[i];
     if (slot !== null) {
       f.selectSlot(slot);
@@ -521,6 +668,8 @@ export class Duel {
       if (!this.useHeld[i]) f.releaseUsingItem();
       this.pendingAttacks[i] = 0; // clicks are swallowed while an item is in use
       this.attackViews[i].length = 0;
+      this.attackClaims[i].length = 0;
+      this.attackTargets[i].length = 0;
       this.pendingUse[i] = 0;
       return;
     }
@@ -529,8 +678,10 @@ export class Duel {
       this.pendingAttacks[i]--;
       const view = this.attackViews[i].shift() ?? null;
       const claim = this.attackClaims[i].shift() ?? null;
+      const ts = this.targetSeat(i, this.attackTargets[i].shift() ?? null);
+      const other = this.fighters[ts];
       // An end crystal nearer than the opponent takes the hit (against the rewound opponent).
-      const unwind = (view !== null && this.rewindToView(1 - i, view)) || this.rewind(1 - i, this.rewindTicks(i));
+      const unwind = (view !== null && this.rewindToView(ts, view)) || this.rewind(ts, this.rewindTicks(i));
       // Swing with the aim the click was made with, not the one from the last move packet.
       const yaw = f.yaw;
       const pitch = f.pitch;
@@ -583,7 +734,7 @@ export class Duel {
 
   /** Snapshots both fighters so a later swing can be tested against where they used to be. */
   private record() {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < this.seats; i++) {
       const f = this.fighters[i];
       const h = this.history[i];
       h.push({ x: f.pos.x, y: f.pos.y, z: f.pos.z, sneaking: f.input.sneak, fallFlying: f.fallFlying });
@@ -658,7 +809,7 @@ export class Duel {
 
   /** Reach of i's crosshair onto the other fighter, or -1. Used only for diagnostics. */
   reach(i: number): number {
-    return rayDistanceToTarget(this.fighters[i], this.fighters[1 - i]);
+    return rayDistanceToTarget(this.fighters[i], this.fighters[this.targetSeat(i, null)]);
   }
 
   private idOf(o: object): number {
@@ -693,7 +844,7 @@ export class Duel {
   /** This tick's fighter events (fighter references as { f: index }) — then clears them. */
   takeEvents(): NetEvent[] {
     const out: NetEvent[] = [];
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < this.seats; i++) {
       const f = this.fighters[i];
       for (const e of f.events as FighterEvent[]) {
         if (LOCAL_EVENTS.has(e.type)) continue;
@@ -769,7 +920,7 @@ export class Duel {
       case 'move':
         return this.applyMove(i, msg);
       case 'attack':
-        this.queueAttack(i, msg.v, msg.p === undefined ? undefined : { p: msg.p, yaw: msg.yaw ?? NaN, pitch: msg.pitch ?? NaN });
+        this.queueAttack(i, msg.v, msg.p === undefined ? undefined : { p: msg.p, yaw: msg.yaw ?? NaN, pitch: msg.pitch ?? NaN }, msg.ti);
         return null;
       case 'use':
         this.setUse(i, !!msg.down);
@@ -801,7 +952,7 @@ export class Duel {
   }
 
   /** The per-tick state broadcast (call once per tick, after tick()). */
-  stateMessage(tick: number, pings: [number, number]): Extract<ServerMsg, { t: 'state' }> {
+  stateMessage(tick: number, pings: number[]): Extract<ServerMsg, { t: 'state' }> {
     const ev = this.takeEvents();
     const we = this.takeWorldEvents();
     return {
@@ -810,7 +961,7 @@ export class Duel {
       phase: this.phase,
       fightTicks: this.fightTicks,
       countdown: this.countdownSeconds,
-      players: [0, 1].map((i) => this.snapshot(i, pings[i])),
+      players: this.fighters.map((_, i) => this.snapshot(i, pings[i] ?? 0)),
       winner: this.winner,
       blocks: this.takeBlockChanges(),
       ents: this.entities(),
@@ -821,6 +972,6 @@ export class Duel {
 
   /** Forces the next snapshot to carry full inventories (a client just (re)joined). */
   resendInventories() {
-    this.lastInv[0] = this.lastInv[1] = '';
+    this.lastInv.fill('');
   }
 }

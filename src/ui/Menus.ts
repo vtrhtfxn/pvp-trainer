@@ -49,6 +49,11 @@ export interface MenuCallbacks {
   onHostOnline(name: string): void;
   /** Hosts an online tournament room: friends join with the code, bots fill the rest. */
   onHostTournament(name: string, size: number, field: string): void;
+  /** Host a 2v2 room: bots at `tier` fill the places nobody takes. */
+  onHostSquad(name: string, tier: DifficultyId): void;
+  /** 2v2 room: move to a team (0 red, 1 blue), or (host) start the game. */
+  onSquadSide(team: number): void;
+  onSquadGo(): void;
   onJoinOnline(code: string, name: string): void;
   onLeaveOnline(): void;
   /** Opens the Marketplace (mods and resource packs). */
@@ -161,6 +166,8 @@ export class Menus {
   private readonly settingsRepaint: (() => void)[] = [];
   private netStatusEl!: HTMLDivElement;
   private netRoomEl!: HTMLDivElement;
+  /** The 2v2 room panel: teams, who's in them, and the buttons. */
+  private squadEl!: HTMLDivElement;
   /** Multiplayer: the kit you host with (main kits and subtiers). */
   private mpKitSel!: HTMLSelectElement;
   private nameInput!: HTMLInputElement;
@@ -1088,6 +1095,23 @@ export class Menus {
         this.button('Host online tournament', () => this.cb.onHostTournament(name(), Number(tSize.value), tField.value), 'online tourney-btn'),
       ),
     );
+    // A 2v2 room: friends join with the code and pick a team; bots fill the empty places.
+    const sqTier = h('select', { class: 'mc-input mp-select', title: 'How strong the bots in empty places are' });
+    for (const id of DIFFICULTY_ORDER) sqTier.append(h('option', { value: id }, `${DIFFICULTIES[id].name} bots`));
+    sqTier.value = this.settings.difficulty;
+    panel.append(
+      h(
+        'div',
+        { class: 'mp-squad-host' },
+        sqTier,
+        Object.assign(this.button('Host online 2v2', () => this.cb.onHostSquad(name(), sqTier.value as DifficultyId), 'online squad-btn'), {
+          title: 'You and a friend against two bots, or two against two. Friends join with the code and pick a team.',
+        }),
+      ),
+    );
+    this.squadEl = h('div', { class: 'mp-squad' });
+    this.squadEl.style.display = 'none';
+    panel.append(this.squadEl);
     const code = h('input', { class: 'mc-input mp-code', type: 'text', placeholder: 'Friend\u2019s code', maxlength: '8', autocomplete: 'off', spellcheck: 'false' });
     const join = () => this.cb.onJoinOnline(code.value, name());
     code.addEventListener('keydown', (e) => {
@@ -1182,6 +1206,36 @@ export class Menus {
     box.append(h('div', { class: 'btn-row' }, this.button('Save relay', save), this.button('Remove', clear)), note);
     show(own ? 'Using your relay and the free public one.' : 'Using the free public relay.', 'lobby');
     return box;
+  }
+
+  /**
+   * A 2v2 room before its game: each team's two places (people, or the bot that will take an
+   * empty one), a button to move to each team, and Start for the host. `null` hides it.
+   */
+  showSquad(v: { kit: string; tier: string; started: boolean; members: { name: string; team: number; host: boolean; you: boolean }[] } | null) {
+    const el = this.squadEl;
+    if (!el) return;
+    el.style.display = v ? '' : 'none';
+    if (!v) return;
+    const me = v.members.find((m) => m.you);
+    const tier = DIFFICULTIES[v.tier as DifficultyId]?.name ?? v.tier;
+    const team = (t: number) => {
+      const people = v.members.filter((m) => m.team === t);
+      const rows = [0, 1].map((k) => {
+        const m = people[k];
+        return h('div', { class: `sq-place${m ? '' : ' bot'}${m?.you ? ' you' : ''}` }, m ? `${m.name}${m.host ? ' ★' : ''}` : `${tier} bot`);
+      });
+      const col = h('div', { class: `sq-team t${t}` }, h('div', { class: 'sq-team-name' }, t === 0 ? 'Red' : 'Blue'), ...rows);
+      if (!v.started && me && me.team !== t && people.length < 2) col.append(this.button('Join', () => this.cb.onSquadSide(t), 'sq-join'));
+      return col;
+    };
+    el.replaceChildren(
+      h('div', { class: 'sq-title' }, `2v2 · ${kitById(v.kit as KitId).name}`),
+      h('div', { class: 'sq-teams' }, team(0), team(1)),
+    );
+    if (v.started) el.append(h('div', { class: 'mp-hint' }, 'The game is on.'));
+    else if (me?.host) el.append(this.button('Start 2v2', () => this.cb.onSquadGo(), 'big sq-go'));
+    else el.append(h('div', { class: 'mp-hint' }, 'Waiting for the host to start…'));
   }
 
   setNetStatus(status: string, detail: string, room: string) {

@@ -4428,6 +4428,58 @@ body {
 .mp-select {
   padding: 4px 6px;
 }
+.mp-squad-host {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 6px;
+  margin: 6px 0;
+}
+.mp-squad {
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid #333;
+}
+.sq-title {
+  text-align: center;
+  color: #ffff55;
+  margin-bottom: 6px;
+}
+.sq-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.sq-team {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+.sq-team-name {
+  font-family: var(--display-font);
+  text-align: center;
+}
+.sq-team.t0 .sq-team-name {
+  color: #ff5555;
+}
+.sq-team.t1 .sq-team-name {
+  color: #5555ff;
+}
+.sq-place {
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.sq-place.bot {
+  color: #888;
+  font-style: italic;
+}
+.sq-place.you {
+  color: #55ff55;
+}
+.sq-go {
+  margin-top: 8px;
+  width: 100%;
+}
 .tourney-code {
   display: flex;
   align-items: baseline;

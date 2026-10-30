@@ -222,6 +222,30 @@ server being up. Both players need a build with online play (it fails with "Vers
 mismatch" otherwise), and the host's game must stay open: closing it or pressing Disconnect ends
 the duel. Whoever hosts picks the kit in the **Kit** list on the Multiplayer screen — any game mode or subtier (1.8 Sword, Spear Mace, Bed Wars, SkyWars, Cart, Diamond SMP).
 
+### 2v2
+
+Ten kits play 2v2: **Sword, Diamond Pot, NethPot, UHC, Axe, Mace, Crystal, Spear Mace, Bed Wars
+and SkyWars**. Teammates can't hurt each other — hits, arrows and thrown items pass through them,
+and their explosions don't damage you — and the game ends when a whole team is down (in Bed Wars,
+when both of a team are out for good; in SkyWars, the last team standing). Bed Wars teams share a
+bed, forge, shop and upgrades and spawn side by side; SkyWars teammates share an island and a cage
+two wide. Bots go for the nearest enemy, switch when another is clearly closer or low enough to
+finish, and play the mode's objectives as usual.
+
+- **Against bots, offline:** pick **2v2** in the Team row (title screen or Subtiers) and Start
+  Duel: you and a bot ally against two bots of the tier picked. Your clicks go to whichever enemy
+  is under your crosshair; your ally has a green nametag. Down while your ally still fights, you
+  watch through their eyes. A 2v2 is one game and earns no tier (it's kept in Progress as 2v2).
+- **Online:** on the Multiplayer screen pick a bot tier and **Host online 2v2**, then read out the
+  code. Up to three friends join with it; each can move to the other team with **Join** (two a
+  team). The host presses **Start 2v2** and server-run bots of that tier take every empty place —
+  so you and a friend against two bots, or two against two. Someone who leaves mid-game is
+  replaced by a bot. Rematch needs everyone still in the room.
+
+`tests/teams.test.ts` plays every 2v2 kit to a finish and checks friendly fire and click
+targeting; `tests/onlineTeams.test.ts` runs a server 2v2 with two clients and two bots, and the room
+(teams, start, a leaver replaced, a full room).
+
 ### Same network (LAN server)
 
 Double-click **`Start Server.command`** in this folder, or:
@@ -524,7 +548,7 @@ first duel against the Practice bot (win or lose), the Spacing (S-tap) drill, an
 LT5 bot. The dots fill in as you pass each one (from your drill results and duel records), and the
 Trainer opens on the next drill, marked **Start here**. **Hide** puts it away; **Trainer → Show
 Getting started** brings it back. The rest of the title screen is grouped: **Start Duel**, then
-**Improve** (Trainer, Replays & Coach, Progress), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
+**Team** (1v1 or 2v2), **Improve** (Trainer, Replays & Coach, Progress), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
 (Settings, Controls, My Tiers, Marketplace).
 
 ### Trainer

@@ -321,6 +321,9 @@ export class Game {
       onConnect: (url, room, name) => this.startOnline(url, room, name),
       onHostOnline: (name) => this.hostOnline(name),
       onHostTournament: (name, size, field) => this.hostOnline(name, { size, field }),
+      onHostSquad: (name, tier) => this.hostOnline(name, undefined, tier),
+      onSquadSide: (team) => this.net.send({ t: 'side', team }),
+      onSquadGo: () => this.net.send({ t: 'go' }),
       onJoinOnline: (code, name) => this.joinOnline(code, name),
       onLeaveOnline: () => this.leaveOnline(),
       onMarketplace: () => this.openMarket(),
@@ -374,7 +377,7 @@ export class Game {
         const target = this.aimedEnemy(m);
         const picked = renderedPick(m.player, target, this.renderAlpha);
         if (m instanceof Match) m.queueClick(picked, target);
-        else m.queueClick(picked, this.renderAlpha);
+        else m.queueClick(picked, this.renderAlpha, target);
         this.hud.registerClick(performance.now());
       },
       onSlot: (i) => this.state === 'playing' && this.match.queueSlot(i),
@@ -1364,12 +1367,16 @@ export class Game {
 
   /** Online over the internet: this game hosts, a friend joins with the code it shows. A
    * `tour` makes it a tournament room instead of a duel. */
-  private hostOnline(name: string, tour?: { size: number; field: string }) {
+  private hostOnline(name: string, tour?: { size: number; field: string }, squadTier?: DifficultyId) {
     this.sound.unlock();
     this.leaveOnline(false);
+    const kit = isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit;
+    if (squadTier && !teamKit(kit)) {
+      this.menus.setNetStatus('error', `${kitById(kit).name} has no 2v2. Pick Sword, Diamond Pot, NethPot, UHC, Axe, Mace, Crystal, Spear Mace, Bed Wars or SkyWars in the Kit list above.`, '');
+      return;
+    }
     const attempt = ++this.onlineAttempt;
     this.menus.setNetStatus('connecting', 'Setting up your game…', '');
-    const kit = isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit;
     OnlineHost.start().then(
       (host) => {
         // Cancelled (Disconnect, Back, another attempt) while it was being set up.
@@ -1378,7 +1385,7 @@ export class Game {
           return;
         }
         this.onlineHost = host;
-        this.net.joinExtra = { tour, rating: this.myRating() };
+        this.net.joinExtra = { tour, rating: this.myRating(), squad: squadTier ? { tier: squadTier } : undefined };
         this.net.connectVia(host.localSocket(), host.code, name, kit, 'Starting…', 8000, 'Could not start the game you are hosting.');
       },
       (err: Error) => {
@@ -1434,6 +1441,8 @@ export class Game {
     this.netMatch = null;
     this.lobbyNames = [];
     this.endTour();
+    this.squadView = null;
+    this.menus.showSquad(null);
     if (toMenu) this.toMenu();
   }
 
@@ -1463,6 +1472,18 @@ export class Game {
   }
 
   private onNetMessage(msg: ServerMsg) {
+    if (msg.t === 'squad') {
+      // "<name> joined the game" / "left the game", like a server.
+      const names = msg.members.map((m) => m.name);
+      if (this.squadView) {
+        for (const n of names) if (!this.squadView.members.some((m) => m.name === n)) this.chat.print([{ t: `${n} joined the game`, c: COLOR.yellow }]);
+        for (const m of this.squadView.members) if (!names.includes(m.name)) this.chat.print([{ t: `${m.name} left the game${msg.started ? ' — a bot took their place' : ''}`, c: COLOR.yellow }]);
+      }
+      this.squadView = msg;
+      this.menus.showSquad(msg);
+      if (!msg.started) this.menus.setNetStatus('lobby', `2v2 room · ${msg.members.length} of 4 people — bots take the empty places`, msg.room);
+      return;
+    }
     if (msg.t === 'tour') {
       this.tourView = msg.view;
       this.onTourView();
@@ -1486,8 +1507,9 @@ export class Game {
       this.lobbyNames = names;
     }
     if (msg.t === 'start') {
-      if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView) {
-        this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId);
+      const seats = msg.seats ?? 2;
+      if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView || seats > 2) {
+        this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId, seats);
         this.series = null;
         this.hud.setSeries(this.tourView ? this.tourLine() : null);
         this.hud.setPips(null);
@@ -1508,12 +1530,14 @@ export class Game {
     switch (msg.t) {
       case 'end':
         if (this.state === 'playing' || this.state === 'paused') {
-          const won = msg.winner === this.net.you;
-          this.hud.showCenter(msg.winner === null ? 'DRAW' : won ? 'VICTORY' : 'YOU DIED', won ? 'win' : 'lose', 40);
+          // Your team won (even seats are red, odd blue; in a duel that's just you).
+          const won = msg.winner !== null && msg.winner % 2 === this.net.you % 2;
+          const teams = !!this.netMatch?.teams;
+          this.hud.showCenter(msg.winner === null ? 'DRAW' : won ? 'VICTORY' : teams ? 'DEFEAT' : 'YOU DIED', won ? 'win' : 'lose', 40);
           const nm = this.netMatch;
           if (nm) {
             this.earn({ kind: 'duel', won, kit: nm.kit.id, tier: 'online', stats: nm.player.stats, seconds: nm.fightTicks / 20, health: nm.player.health, online: true, tierEarned: false, kitsWon: this.kitsWon() });
-            if (msg.winner !== null) recordDuel(this.history, entryFrom(nm.player.stats, { kit: nm.kit.id, tier: 'online', mode: this.tourView ? 'tournament' : 'online', won, secs: nm.fightTicks / 20 }));
+            if (msg.winner !== null) recordDuel(this.history, entryFrom(nm.player.stats, { kit: nm.kit.id, tier: 'online', mode: this.tourView ? 'tournament' : teams ? '2v2' : 'online', won, secs: nm.fightTicks / 20 }));
           }
           this.autoGG(won);
           this.resultTimer = 30;
@@ -1548,12 +1572,12 @@ export class Game {
     if (!m) return;
     if (this.tourView) {
       // A tournament game: no rematch, back to the bracket's live screen.
-      this.sound.jingle(m.winner === m.player);
+      this.sound.jingle(this.playerWon(m));
       this.netMatch = null;
       this.showTourScreen();
       return;
     }
-    const won = m.winner === m.player;
+    const won = this.playerWon(m);
     this.state = 'results';
     this.input.enabled = false;
     this.input.unlock();
@@ -1981,6 +2005,8 @@ export class Game {
 
   /** The replay of the duel that just finished (for the results screen). */
   private lastReplay: ReplayData | null = null;
+  /** The 2v2 room we're in (before and during its game), or null. */
+  private squadView: Extract<ServerMsg, { t: 'squad' }> | null = null;
   /** 2v2: you're down and the camera is on your ally. */
   private watchingAlly = false;
 

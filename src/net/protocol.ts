@@ -11,7 +11,7 @@
 import { ITEMS, POTIONS, type Enchants, type ItemId, type ItemStack, type PotionId } from '../game/items';
 import type { TourView } from './tourney';
 
-export const PROTOCOL_VERSION = 15;
+export const PROTOCOL_VERSION = 16;
 export const DEFAULT_PORT = 4180;
 /** Server simulation rate, matching the single-player sim. */
 export const NET_TPS = 20;
@@ -186,6 +186,13 @@ export const CHAT_MAX = 256;
 
 export type NetPhase = 'lobby' | 'countdown' | 'fight' | 'ended';
 
+export interface SquadMember {
+  name: string;
+  team: number;
+  host: boolean;
+  you: boolean;
+}
+
 export type ClientMsg =
   | {
       t: 'join';
@@ -197,7 +204,13 @@ export type ClientMsg =
       tour?: { size: number; field: string };
       /** Your best tier (0 = LT5 … 9 = HT1), for tournament seeding. */
       rating?: number;
+      /** Creating a 2v2 room: the tier of the bots that fill empty places. */
+      squad?: { tier: string };
     }
+  /** 2v2 room: move to a team (0 red, 1 blue) before the game. */
+  | { t: 'side'; team: number }
+  /** 2v2 room: the host starts the game (bots take the empty places). */
+  | { t: 'go' }
   /** Tournament: the host starts it; your ban or pick; how your game against a bot went. */
   | { t: 'tstart' }
   | { t: 'tdraft'; kit: string }
@@ -232,7 +245,7 @@ export type ClientMsg =
    * -1 = missed), with the aim `yaw` / `pitch` at that moment. The server checks the claim
    * against its own log before it counts.
    */
-  | { t: 'attack'; v?: number; p?: number; yaw?: number; pitch?: number }
+  | { t: 'attack'; v?: number; p?: number; yaw?: number; pitch?: number; ti?: number }
   | { t: 'use'; down: boolean }
   /** Holding left click on a block: mining. */
   | { t: 'mine'; down: boolean }
@@ -282,7 +295,9 @@ export type ServerMsg =
   | { t: 'error'; message: string }
   | { t: 'lobby'; room: string; players: { i: number; name: string }[]; kit: string }
   /** A duel starts. `you`: your seat in it (tournaments seat whoever plays this match). */
-  | { t: 'start'; countdown: number; kit: string; you?: number }
+  | { t: 'start'; countdown: number; kit: string; you?: number; seats?: number }
+  /** A 2v2 room before its game: who's in, on which team, and who is host. */
+  | { t: 'squad'; room: string; kit: string; tier: string; members: SquadMember[]; started: boolean }
   /** Tournament: the room, the bracket and what is happening now. */
   | { t: 'tour'; view: TourView }
   /** Tournament: your game against a bot — your own game plays it, then send tresult. */
@@ -306,7 +321,7 @@ export type ServerMsg =
    * The opponent's move, relayed as soon as the server gets it: their tick `q`, position,
    * look, and flags (1 on ground, 2 sprinting, 4 sneaking, 8 gliding).
    */
-  | { t: 'mv'; q: number; x: number; y: number; z: number; yaw: number; pitch: number; f: number }
+  | { t: 'mv'; i?: number; q: number; x: number; y: number; z: number; yaw: number; pitch: number; f: number }
   /** Knockback, an explosion or a wind burst moved YOU — the client takes this velocity. */
   | { t: 'motion'; vx: number; vy: number; vz: number }
   /** A pearl (or a respawn) moved YOU; moves sent before you applied it are ignored. */
