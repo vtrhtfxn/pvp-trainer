@@ -6,7 +6,7 @@ import type { FighterStats } from './Fighter';
  * crits, combos and trades getting better? — and picks the one thing worth practising next.
  */
 
-export type DuelMode = 'bot' | 'online' | 'gauntlet' | 'tournament';
+export type DuelMode = 'bot' | 'online' | 'gauntlet' | 'tournament' | '2v2';
 
 export interface DuelEntry {
   /** Date.now() when it ended. */

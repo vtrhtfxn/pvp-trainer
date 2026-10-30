@@ -1,6 +1,7 @@
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../ai/difficulty';
 import type { FighterStats } from '../game/Fighter';
 import { KITS, customKitList, isCustomKit, kitById, type KitDef, type KitId } from '../game/kits';
+import { teamKit } from '../game/Match';
 import type { CustomKitData } from '../game/customKits';
 import { KitEditor } from './KitEditor';
 import { ACTION_GROUPS, ACTION_LABELS, DEFAULT_KEYS, conflicts, keyName, type Action } from '../input/keybinds';
@@ -372,6 +373,8 @@ export class Menus {
       ),
     );
 
+    setup.append(this.teamRow());
+
     actions.append(this.button('Start Duel', () => this.cb.onStart(), 'big start-btn'));
     // The rest in two labelled groups — getting better, and other ways to play — then the extras.
     const group = (label: string, ...btns: HTMLElement[]) =>
@@ -467,6 +470,7 @@ export class Menus {
     const d = DIFFICULTIES[this.settings.difficulty];
     const cardId = kit.custom ? CUSTOM_CARD : kit.id;
     this.screens.main.querySelector('.subtier-btn')?.classList.toggle('selected', !!kit.subtier);
+    this.refreshTeamRows();
     this.screens.main.querySelectorAll<HTMLElement>('.kit-card').forEach((c) => {
       c.classList.toggle('selected', c.dataset.kit === cardId);
     });
@@ -487,6 +491,40 @@ export class Menus {
       ? `Record vs ${d.name}: ${r.wins}W – ${r.losses}L · best combo ${r.bestCombo}`
       : `No duels vs ${d.name} yet`;
     this.renderPath();
+  }
+
+  /**
+   * 1v1 or 2v2 (you and a bot ally against two bots of the tier picked). Only the kits that
+   * have 2v2 offer it; the row says so in the others.
+   */
+  private teamRow(): HTMLElement {
+    const row = h('div', { class: 'team-row' });
+    const pick = (teams: boolean) => {
+      this.cb.onUiSound();
+      this.settings.teams = teams;
+      saveSettings(this.settings);
+      this.refreshTeamRows();
+    };
+    const one = this.button('1v1', () => pick(false), 'team-btn');
+    const two = Object.assign(this.button('2v2', () => pick(true), 'team-btn'), { title: 'You and a bot ally against two bots of the tier picked above.' });
+    two.dataset.teams = '1';
+    row.append(h('span', { class: 'section-title' }, 'Team'), one, two, h('span', { class: 'team-note' }));
+    queueMicrotask(() => this.refreshTeamRows());
+    return row;
+  }
+
+  /** Shows the 1v1 / 2v2 choice in every team row (main menu and Subtiers). */
+  private refreshTeamRows() {
+    const kit = kitById(this.settings.kit);
+    const ok = teamKit(kit.id);
+    for (const row of document.querySelectorAll<HTMLElement>('.team-row')) {
+      row.querySelectorAll<HTMLButtonElement>('.team-btn').forEach((b) => {
+        const two = b.dataset.teams === '1';
+        b.classList.toggle('selected', two === (this.settings.teams && ok));
+        b.disabled = two && !ok;
+      });
+      row.querySelector('.team-note')!.textContent = ok ? (this.settings.teams ? 'You + bot ally vs 2 bots' : '') : `No 2v2 in ${kit.name}`;
+    }
   }
 
   /** Runs a beginner step: its drill, or a sword duel against its tier. */
@@ -1581,6 +1619,7 @@ export class Menus {
     panel.append(desc);
     const held = this.cb.myTiers()[kit.id];
     panel.append(h('div', { class: 'tiers-sub' }, `Your ${kit.name} tier: ${held ? DIFFICULTIES[held].name : 'Unranked'} · First to ${s.firstTo} (change it on the title screen)`));
+    panel.append(this.teamRow());
     panel.append(this.button('Start Duel', () => this.cb.onStart(), 'big'));
     panel.append(h('div', { class: 'btn-row' }, this.button('Watch Bot vs Bot', () => this.show('versus')), this.button('Back', () => this.show('main'))));
     root.append(panel);

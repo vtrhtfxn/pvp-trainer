@@ -14,7 +14,7 @@ import { ANCHOR_POWER, CRYSTAL_POWER, attackCrystal, canPlaceCrystal, crosshairC
 import { Blocks } from '../game/Blocks';
 import type { BotProfile } from './difficulty';
 import { SkyPlanner } from './SkyPlanner';
-import type { Match } from '../game/Match';
+import type { SkyHost } from '../game/modes/GameMode';
 
 export type BotState = 'engage' | 'retreat' | 'eat';
 
@@ -269,7 +269,7 @@ export class BotBrain {
 
   constructor(
     private readonly bot: Fighter,
-    private readonly target: Fighter,
+    private target: Fighter,
     private readonly world: World,
     readonly profile: BotProfile,
     private readonly rng: Rng,
@@ -278,8 +278,40 @@ export class BotBrain {
     this.swingThreshold = rng.range(profile.chargeMin, profile.chargeMax);
   }
 
+  /** Who it is fighting right now. */
+  get opponent(): Fighter {
+    return this.target;
+  }
+
+  /** 2v2: fight someone else (what it remembers of the old target is dropped). */
+  setTarget(f: Fighter) {
+    if (f === this.target) return;
+    this.target = f;
+    this.seen = [];
+    this.targetSwingTick = -100;
+    this.targetHeldPrev = null;
+    this.targetShieldDownUntil = 0;
+    this.sky?.setTarget(f);
+  }
+
+  /**
+   * 2v2: picks whom to fight among `enemies` — the nearest one standing, but it sticks with its
+   * current target unless another is clearly closer (3 blocks), or one is low enough to finish.
+   */
+  chooseTarget(enemies: readonly Fighter[]) {
+    const b = this.bot;
+    const alive = enemies.filter((f) => !f.dead && f.gameMode !== 'spectator');
+    if (!alive.length) return;
+    const score = (f: Fighter) => Math.hypot(f.pos.x - b.pos.x, f.pos.y - b.pos.y, f.pos.z - b.pos.z) - (f.effectiveHealth() <= 6 ? 4 : 0);
+    let best = alive[0];
+    for (const f of alive) if (score(f) < score(best)) best = f;
+    const cur = this.target;
+    if (alive.includes(cur) && score(cur) - score(best) < 3) return;
+    this.setTarget(best);
+  }
+
   /** Plays a minigame's objectives (Bed Wars, SkyWars) on top of the sword game. */
-  attachSky(match: Match) {
+  attachSky(match: SkyHost) {
     this.sky = new SkyPlanner(this.bot, this.target, this.world, match, this.rng, this);
   }
 

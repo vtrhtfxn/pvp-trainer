@@ -1969,6 +1969,31 @@ body {
   font-size: 17px;
   color: #ffffa0;
 }
+.team-row {
+  display: grid;
+  grid-template-columns: auto 64px 64px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.team-row .section-title {
+  margin: 0;
+}
+.team-btn {
+  padding: 4px 0;
+}
+.team-btn.selected {
+  outline: 2px solid #ffff55;
+  color: #ffff55;
+}
+.team-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.team-note {
+  font-size: 14px;
+  color: #aaa;
+}
 .btn-row.four {
   grid-template-columns: repeat(4, 1fr);
 }

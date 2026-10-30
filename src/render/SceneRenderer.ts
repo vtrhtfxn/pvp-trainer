@@ -77,6 +77,16 @@ export interface ViewExtras {
   lerpLook: boolean;
   /** Spectator free camera (CameraMode 'free'): where it is and where it looks. */
   freeCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null;
+  /** 2v2: everyone besides the two main fighters, each with their nametag. */
+  others: OtherFighter[];
+}
+
+/** A fighter drawn besides `player` and `bot` (a 2v2 ally or second opponent). */
+export interface OtherFighter {
+  f: Fighter;
+  name: string;
+  color: string;
+  status: string;
 }
 
 export type CameraMode = 'first' | 'third' | 'orbit' | 'free';
@@ -132,6 +142,9 @@ export class SceneRenderer {
   private readonly fog: THREE.Fog;
   private readonly background = SKY_HORIZON.clone();
   private readonly rain = new RainView();
+  private readonly assets: Assets;
+  /** Models, nametags and fire for the 2v2 fighters (made the first time they're needed). */
+  private readonly otherViews: { model: PlayerModel; tag: Nametag; fire: FireView }[] = [];
   private readonly glowPlayer = new GlowOutline();
   private readonly glowBot = new GlowOutline();
   readonly extras: ViewExtras = {
@@ -142,6 +155,7 @@ export class SceneRenderer {
     smoothLook: false,
     lerpLook: false,
     freeCam: null,
+    others: [],
   };
   /** Smoothed look of the followed fighter (spectating): reset when the camera moves to another. */
   private readonly look = new LookSmoother();
@@ -176,6 +190,7 @@ export class SceneRenderer {
     this.glint = new Glint();
     this.glint.warm(this.renderer, this.camera);
     const glintMat = this.glint;
+    this.assets = assets;
     this.playerModel = new PlayerModel(assets, glintMat);
     this.botModel = new PlayerModel(assets, glintMat);
     this.scene.add(this.playerModel.root, this.playerModel.shadow, this.botModel.root, this.botModel.shadow);
@@ -558,6 +573,34 @@ export class SceneRenderer {
   /** Seconds the last frame took (for smoothing that has to work at any frame rate). */
   private frameDt = 1 / 60;
 
+  /** 2v2: the ally and the second opponent — model, nametag and fire, like the bot's. */
+  private drawOthers(alpha: number, time: number, view: ViewSettings) {
+    const list = this.extras.others;
+    while (this.otherViews.length < list.length) {
+      const v = { model: new PlayerModel(this.assets, this.glint), tag: new Nametag(), fire: new FireView() };
+      this.scene.add(v.model.root, v.model.shadow, v.tag.sprite, v.fire.group);
+      this.otherViews.push(v);
+    }
+    this.otherViews.forEach((v, i) => {
+      const o = list[i];
+      v.model.setVisible(!!o);
+      v.tag.sprite.visible = false;
+      if (!o) {
+        v.model.shadow.visible = false;
+        v.fire.group.visible = false;
+        return;
+      }
+      const f = o.f;
+      v.model.shadowsOn = view.entityShadows;
+      v.model.update(f, alpha, time);
+      v.fire.group.visible = true;
+      v.fire.update(f, alpha, this.camera, time, true);
+      v.tag.set(o.name, o.color, f.health, f.absorption, o.status);
+      v.tag.sprite.position.set(lerp(f.prevPos.x, f.pos.x, alpha), lerp(f.prevPos.y, f.pos.y, alpha) + (f.sneaking ? 1.95 : 2.28), lerp(f.prevPos.z, f.pos.z, alpha));
+      v.tag.sprite.visible = view.showNametag && !f.dead && !f.effects.has('invisibility') && v.tag.sprite.position.distanceTo(this.camera.position) > 1.6;
+    });
+  }
+
   /** The spectator's own camera: no body, no collision. */
   private placeFreeCamera(view: ViewSettings) {
     const f = this.extras.freeCam;
@@ -594,6 +637,8 @@ export class SceneRenderer {
     this.playerModel.update(player, alpha, time);
     this.botModel.setVisible(true);
     this.botModel.update(bot, alpha, time);
+
+    this.drawOthers(alpha, time, view);
 
     if (tag) {
       this.nametag.set(tag.name, tag.color, bot.health, bot.absorption, tag.status);

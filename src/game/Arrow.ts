@@ -119,7 +119,8 @@ export class Arrow {
     if (speed > 1e-6) {
       tmpDir.set(v.x / speed, v.y / speed, v.z / speed);
       for (const f of world.fighters) {
-        if (f === this.owner || f.dead) continue;
+        // Teammates are passed through (no friendly fire).
+        if (f.dead || f.team === this.owner.team) continue;
         f.aabbInto(tmpBox, 0.3);
         const t = rayAABB(this.pos, tmpDir, tmpBox);
         if (t >= 0 && t / speed <= travel) {

@@ -134,6 +134,9 @@ export class NetMatch {
     this.bot = new Fighter('bot', 'Opponent', this.world);
     this.world.fighters.push(this.player, this.bot);
     this.player.replica = this.bot.replica = true;
+    // Seat 0 is red (team 0), seat 1 blue.
+    this.player.team = you === 0 ? 0 : 1;
+    this.bot.team = you === 0 ? 1 : 0;
     this.bot.networked = true;
     const half = SPAWN_DISTANCE / 2;
     const mine = you === 0 ? half : -half;
@@ -151,7 +154,7 @@ export class NetMatch {
     const w = this.world;
     const phase = this.phase;
     const fightTicks = this.fightTicks;
-    return { world: w, player: you === 0 ? me : them, bot: you === 0 ? them : me, phase, fightTicks };
+    return { world: w, player: you === 0 ? me : them, bot: you === 0 ? them : me, fighters: you === 0 ? [me, them] : [them, me], phase, fightTicks };
   }
 
   /** Builds the mode's map and puts both fighters on their spawns, as the server does. */

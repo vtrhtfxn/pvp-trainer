@@ -127,7 +127,7 @@ export interface SkywarsLayout {
  * with four better chests on a raised centre, and two small side islands with one chest each
  * (counted as middle loot). Players start in glass cages that open when the countdown ends.
  */
-export function buildSkywarsMap(b: Blocks): SkywarsLayout {
+export function buildSkywarsMap(b: Blocks, wide = false): SkywarsLayout {
   b.clear();
   const spawnIsland = (sign: 1 | -1) => {
     const Z = (z: number) => (sign > 0 ? z : -z - 1);
@@ -140,13 +140,15 @@ export function buildSkywarsMap(b: Blocks): SkywarsLayout {
       { x: 3, y: 0, z: Z(20) },
     ];
     for (const c of chests) b.set(c.x, c.y, c.z, B.CHEST);
-    // Glass cage above the middle of the island: floor at y = 1, walls, roof at y = 4.
+    // Glass cage above the middle of the island: floor at y = 1, walls, roof at y = 4. A 2v2
+    // team's cage is two wide, one player in each half.
     const cz = Z(22);
     const cage: Spot[] = [];
+    const x1 = wide ? 2 : 1;
     for (let y = 1; y <= 4; y++)
       for (let dz = -1; dz <= 1; dz++)
-        for (let dx = -1; dx <= 1; dx++) {
-          const wall = dx !== 0 || dz !== 0;
+        for (let dx = -1; dx <= x1; dx++) {
+          const wall = dx === -1 || dx === x1 || dz !== 0;
           if ((y === 1 || y === 4) || wall) {
             if (y > 1 && y < 4 && !wall) continue;
             b.set(dx, y, cz + dz, B.GLASS);

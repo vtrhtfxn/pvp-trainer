@@ -2,7 +2,7 @@ import { B } from '../Blocks';
 import { DroppedItem } from '../DroppedItem';
 import type { Fighter } from '../Fighter';
 import type { ItemId } from '../items';
-import { TEAM_COLORS, TEAM_NAMES, teamOf, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
+import { TEAM_COLORS, TEAM_NAMES, members, teamOf, teamSlot, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
 import { buildBedwarsMap, type BedwarsLayout, type Spot } from './maps';
 import { SHOP, applyTeamEnchants, buy, respawnLoadout, type Currency, type ShopItem, type TeamGear } from './shop';
 
@@ -23,11 +23,8 @@ export const BED_GONE_TICKS = 20 * 60 * 12;
 interface TeamState {
   gear: TeamGear;
   bedAlive: boolean;
-  /** Tick (fight time) to come back at, or null if alive / out. */
-  respawnAt: number | null;
-  /** Died with no bed: out of the game. */
+  /** Every player on the team is out. */
   eliminated: boolean;
-  deathHandled: boolean;
   kills: number;
   finalKills: number;
   bedsBroken: number;
@@ -37,8 +34,17 @@ function newGear(team: 0 | 1): TeamGear {
   return { armor: 0, pickaxe: 0, axe: 0, shears: false, sharpness: false, protection: 0, wool: team === 0 ? 'red_wool' : 'blue_wool', leather: team === 0 ? 'red' : 'blue' };
 }
 
+/** One player's life cycle. */
+interface LifeState {
+  /** Tick (fight time) to come back at, or null if alive / out. */
+  respawnAt: number | null;
+  /** Died with no bed: out of the game. */
+  out: boolean;
+  deathHandled: boolean;
+}
+
 /**
- * Bed Wars, 1v1 (Hypixel rules, one player per team). Collect iron and gold at your island's
+ * Bed Wars, 1v1 or 2v2 (Hypixel rules). Collect iron and gold at your island's
  * forge, buy blocks and gear at the shop, bridge over, break the other bed and then finish them.
  * While your bed stands you respawn 5 s after dying (losing what you carried to your killer);
  * once it is gone, the next death is final. The map is protected — only placed blocks break.
@@ -47,22 +53,35 @@ export class Bedwars implements GameMode {
   readonly id = 'bedwars' as const;
   layout!: BedwarsLayout;
   teams: [TeamState, TeamState] = [this.freshTeam(0), this.freshTeam(1)];
+  private lives = new Map<Fighter, LifeState>();
   private timers = { iron: 0, gold: 0, diamond: 0, emerald: 0 };
   private announcements: ScoreLine[] = [];
   private bedsGoneAnnounced = false;
 
   private freshTeam(team: 0 | 1): TeamState {
-    return { gear: newGear(team), bedAlive: true, respawnAt: null, eliminated: false, deathHandled: false, kills: 0, finalKills: 0, bedsBroken: 0 };
+    return { gear: newGear(team), bedAlive: true, eliminated: false, kills: 0, finalKills: 0, bedsBroken: 0 };
   }
 
   gear(m: Match, f: Fighter): TeamGear {
     return this.teams[teamOf(m, f)].gear;
   }
 
+  private life(f: Fighter): LifeState {
+    let l = this.lives.get(f);
+    if (!l) this.lives.set(f, (l = { respawnAt: null, out: false, deathHandled: false }));
+    return l;
+  }
+
+  /** `f` died with no bed and is out of the game. */
+  isOut(f: Fighter): boolean {
+    return this.life(f).out;
+  }
+
   setup(m: Match) {
     const w = m.world;
     this.layout = buildBedwarsMap(w.blocks);
     this.teams = [this.freshTeam(0), this.freshTeam(1)];
+    this.lives = new Map();
     this.timers = { iron: 0, gold: 0, diamond: 0, emerald: 0 };
     this.announcements = [];
     this.bedsGoneAnnounced = false;
@@ -77,10 +96,10 @@ export class Bedwars implements GameMode {
     // No building on top of a generator or inside a spawn point.
     w.placeRule = (_f, x, y, z) => {
       const near = (s: Spot, r: number) => Math.abs(x + 0.5 - s.x) <= r && Math.abs(z + 0.5 - s.z) <= r && y >= Math.floor(s.y) && y <= Math.floor(s.y) + 2;
-      for (const t of this.layout.teams) if (near(t.spawn, 0.6)) return false;
+      for (const t of this.layout.teams) if (near(t.spawn, 0.6) || near({ ...t.spawn, x: t.spawn.x + 1 }, 0.6)) return false;
       return true;
     };
-    for (const f of [m.player, m.bot]) this.spawn(m, f, false);
+    for (const f of m.fighters) this.spawn(m, f, false);
   }
 
   /** Puts `f` at its spawn with the respawn loadout. */
@@ -89,7 +108,8 @@ export class Bedwars implements GameMode {
     const s = this.layout.teams[team].spawn;
     const g = this.teams[team].gear;
     const kit = respawnLoadout(g, onDeath);
-    f.respawn(s.x, s.y, s.z, s.yaw, kit);
+    // A 2v2 teammate spawns a block to the side.
+    f.respawn(s.x + teamSlot(m, f), s.y, s.z, s.yaw, kit);
     f.naturalRegen = true;
     f.food.locked = true;
     applyTeamEnchants(f, g);
@@ -152,7 +172,9 @@ export class Bedwars implements GameMode {
       if (t >= BED_GONE_TICKS) continue;
       const other = team === 0 ? 1 : 0;
       this.teams[other].bedsBroken++;
-      const breaker = other === 0 ? m.player : m.bot;
+      // Whoever of the other team stood nearest the bed broke it.
+      const bed = cells[0];
+      const breaker = members(m, other).sort((a, b) => Math.hypot(a.pos.x - bed.x, a.pos.z - bed.z) - Math.hypot(b.pos.x - bed.x, b.pos.z - bed.z))[0];
       breaker.events.push({ type: 'bedBroken', team });
       this.announcements.push({ text: `BED DESTRUCTION > ${TEAM_NAMES[team]} Bed was destroyed by ${breaker.name}!`, color: TEAM_COLORS[team] });
     }
@@ -162,13 +184,13 @@ export class Bedwars implements GameMode {
     }
 
     // ---- deaths and respawns
-    for (const f of [m.player, m.bot]) {
+    for (const f of m.fighters) {
       const team = teamOf(m, f);
       const st = this.teams[team];
-      const enemy = f === m.player ? m.bot : m.player;
-      if (f.dead && !st.deathHandled) {
-        st.deathHandled = true;
-        const killer = f.lastDamage?.attacker && f.lastDamage.attacker !== f ? f.lastDamage.attacker : null;
+      const life = this.life(f);
+      if (f.dead && !life.deathHandled) {
+        life.deathHandled = true;
+        const killer = f.lastDamage?.attacker && f.lastDamage.attacker !== f && f.lastDamage.attacker.team !== f.team ? f.lastDamage.attacker : null;
         // What you carried goes to whoever killed you (Hypixel): the resources, nothing else.
         if (killer && !killer.dead) {
           for (const c of ['iron_ingot', 'gold_ingot', 'diamond', 'emerald'] as Currency[]) {
@@ -183,13 +205,13 @@ export class Bedwars implements GameMode {
         }
         // (The chat's death message says how; only a final kill needs saying on top of it.)
         if (final) this.announcements.push({ text: `FINAL KILL! ${f.name} is out of the game.`, color: '#ff5555' });
-        if (final) st.eliminated = true;
-        else st.respawnAt = t + RESPAWN_TICKS;
-        void enemy;
+        if (final) life.out = true;
+        else life.respawnAt = t + RESPAWN_TICKS;
+        if (members(m, team).every((g) => this.life(g).out)) st.eliminated = true;
       }
-      if (f.dead && st.respawnAt !== null && t >= st.respawnAt) {
-        st.respawnAt = null;
-        st.deathHandled = false;
+      if (f.dead && life.respawnAt !== null && t >= life.respawnAt) {
+        life.respawnAt = null;
+        life.deathHandled = false;
         this.spawn(m, f, true);
         m.onRespawn?.(f);
       }
@@ -197,8 +219,8 @@ export class Bedwars implements GameMode {
   }
 
   winner(m: Match): Fighter | null {
-    if (this.teams[0].eliminated) return m.bot;
-    if (this.teams[1].eliminated) return m.player;
+    if (this.teams[0].eliminated) return members(m, 1)[0] ?? m.bot;
+    if (this.teams[1].eliminated) return members(m, 0)[0] ?? m.player;
     return null;
   }
 
@@ -212,7 +234,8 @@ export class Bedwars implements GameMode {
     } else lines.push({ text: 'Sudden death', color: '#ff5555' });
     for (const team of [0, 1] as const) {
       const st = this.teams[team];
-      const mark = st.eliminated ? '✘' : st.bedAlive ? '✔' : '1';
+      const left = members(m, team).filter((g) => !this.life(g).out).length;
+      const mark = st.eliminated ? '✘' : st.bedAlive ? '✔' : String(left);
       const you = teamOf(m, viewer) === team ? ' YOU' : '';
       lines.push({ text: `${TEAM_NAMES[team][0]} ${TEAM_NAMES[team]}: ${mark}${you}`, color: TEAM_COLORS[team] });
     }
@@ -223,9 +246,9 @@ export class Bedwars implements GameMode {
   }
 
   title(m: Match, viewer: Fighter): { title: string; sub: string } | null {
-    const st = this.teams[teamOf(m, viewer)];
-    if (viewer.dead && st.respawnAt !== null) {
-      const left = Math.max(1, Math.ceil((st.respawnAt - m.fightTicks) / 20));
+    const life = this.life(viewer);
+    if (viewer.dead && life.respawnAt !== null) {
+      const left = Math.max(1, Math.ceil((life.respawnAt - m.fightTicks) / 20));
       return { title: 'YOU DIED!', sub: `Respawning in ${left}…` };
     }
     return null;

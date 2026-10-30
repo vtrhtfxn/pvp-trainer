@@ -70,7 +70,7 @@ const BLOCK_COLORS: Record<number, number> = {
 function blockSound(block: number): 'wood' | 'stone' | 'web' {
   return block === B.PLANKS ? 'wood' : block === B.COBWEB ? 'web' : 'stone';
 }
-import { Match, PREP_TICKS } from './Match';
+import { Match, PREP_TICKS, teamKit } from './Match';
 import { Spectate, type SpecCam, type Watch } from './Spectate';
 import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
 import { ReplayWatch } from './ReplayWatch';
@@ -370,8 +370,10 @@ export class Game {
         if (this.state !== 'playing') return;
         // Judge the click on what is on screen right now (see renderedPick).
         const m = this.match;
-        const picked = renderedPick(m.player, m.bot, this.renderAlpha);
-        if (m instanceof Match) m.queueClick(picked);
+        // 2v2: the click is judged against whichever enemy is nearest under the crosshair.
+        const target = this.aimedEnemy(m);
+        const picked = renderedPick(m.player, target, this.renderAlpha);
+        if (m instanceof Match) m.queueClick(picked, target);
         else m.queueClick(picked, this.renderAlpha);
         this.hud.registerClick(performance.now());
       },
@@ -1072,17 +1074,20 @@ export class Game {
     const kit = kitById(drillDef ? drillDef.kit : tg ? tg.kit : g ? g.kit : this.settings.kit);
     const profile = DIFFICULTIES[drillDef ? drillDef.profile ?? 'practice' : tg ? tg.tier : g ? gauntletTier(g) : this.settings.difficulty];
     const s = this.series;
+    // 2v2 against bots (you and an ally), in the kits that have it: one game, no tier at stake.
+    const teams = !drillDef && !tg && !g && this.settings.teams && teamKit(kit.id);
     if (!nextRound || !s || s.kit !== kit.id || s.tier !== profile.id) {
       this.series = newSeries(kit.id, profile.id, this.settings.firstTo);
     }
     // A tournament game is one round; the match score is the tournament's own.
-    if (tg) this.series = newSeries(kit.id, profile.id, 1);
+    if (tg || teams) this.series = newSeries(kit.id, profile.id, 1);
+    if (teams) this.series!.modified = true;
     this.hud.setSeries(tg ? this.tourneyLine() : g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
     const sr = this.series!;
     this.hud.setPips(!tg && !g && !drillDef && sr.target > 1 ? { you: sr.you, them: sr.bot, target: sr.target } : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
     this.hudName = loadPlayerName();
-    this.match = new Match(kit, profile, seed);
+    this.match = new Match(kit, profile, seed, teams ? {} : undefined);
     if (tg) this.match.bot.name = tg.name;
     // A real duel opens with 10 s to sort your inventory (drills get straight to the point).
     if (!drillDef) this.match.countdownTicks = PREP_TICKS;
@@ -1090,7 +1095,7 @@ export class Game {
     this.state = 'playing';
     this.applySession(true);
     this.cheated = sessionModified(this.session);
-    if (!drillDef && !this.cheated) this.startRecording(this.match as Match, seed);
+    if (!drillDef && !this.cheated && !teams) this.startRecording(this.match as Match, seed);
     this.sprinting = null;
     this.stepTicks = 0;
     this.sound.muted = false;
@@ -1839,11 +1844,61 @@ export class Game {
     }
   }
 
+  /** Your team won (in a 1v1, you did). */
+  private playerWon(m: { winner: Fighter | null; player: Fighter }): boolean {
+    return !!m.winner && m.winner.team === m.player.team;
+  }
+
+  /** 2v2: everyone besides you and the main opponent (your ally, the second opponent). */
+  private othersOf(m: { player: Fighter; bot: Fighter; world: World }): Fighter[] {
+    return m.world.fighters.length > 2 ? m.world.fighters.filter((f) => f !== m.player && f !== m.bot) : [];
+  }
+
+  /** 2v2: the enemy you're aiming at, else the nearest one still standing. */
+  private focusEnemy(m: { player: Fighter; bot: Fighter; world: World }): Fighter {
+    const aimed = this.aimedEnemy(m);
+    if (rayDistanceToTarget(m.player, aimed) >= 0) return aimed;
+    return this.nearestEnemy(m, m.player);
+  }
+
+  /** The nearest enemy of `f` still standing (the main opponent if none is). */
+  private nearestEnemy(m: { bot: Fighter; world: World }, f: Fighter): Fighter {
+    let best: Fighter | null = null;
+    let bestD = Infinity;
+    for (const g of m.world.fighters) {
+      if (!f.isEnemy(g) || g.dead) continue;
+      const d = Math.hypot(g.pos.x - f.pos.x, g.pos.z - f.pos.z);
+      if (d < bestD) {
+        bestD = d;
+        best = g;
+      }
+    }
+    return best ?? (f.isEnemy(m.bot) ? m.bot : m.world.fighters.find((g) => f.isEnemy(g)) ?? m.bot);
+  }
+
+  /** The enemy a click is aimed at: in a 2v2 the nearest one under the crosshair as drawn. */
+  private aimedEnemy(m: { player: Fighter; bot: Fighter; world: World }): Fighter {
+    const p = m.player;
+    if (m.world.fighters.length <= 2) return m.bot;
+    let best = m.bot;
+    let bestD = Infinity;
+    for (const f of m.world.fighters) {
+      if (!p.isEnemy(f)) continue;
+      const d = renderedPick(p, f, this.renderAlpha);
+      if (d >= 0 && d < bestD) {
+        bestD = d;
+        best = f;
+      }
+    }
+    if (bestD === Infinity && m.bot.dead) best = m.world.fighters.find((f) => p.isEnemy(f) && !f.dead) ?? m.bot;
+    return best;
+  }
+
   private finishDuel() {
     const m = this.match;
-    const won = m.winner === m.player;
+    const won = this.playerWon(m);
     this.keepReplay(m as Match);
-    const key = `${m.kit.id}:${m.profile.id}`;
+    const key = `${m.kit.id}:${m.profile.id}${(m as Match).teams ? ':2v2' : ''}`;
     const rec = this.records[key] ?? { wins: 0, losses: 0, bestCombo: 0 };
     const newBest = !this.cheated && m.player.stats.maxCombo > rec.bestCombo;
     // Duels changed by commands (reach, tick rate, creative…) don't count.
@@ -1853,7 +1908,7 @@ export class Game {
       rec.bestCombo = Math.max(rec.bestCombo, m.player.stats.maxCombo);
       this.records[key] = rec;
       saveRecords(this.records);
-      const mode = this.tourneyGame ? 'tournament' : this.gauntlet ? 'gauntlet' : 'bot';
+      const mode = this.tourneyGame ? 'tournament' : this.gauntlet ? 'gauntlet' : (m as Match).teams ? '2v2' : 'bot';
       recordDuel(this.history, entryFrom(m.player.stats, { kit: m.kit.id, tier: m.profile.id, mode, won, secs: m.fightTicks / 20 }));
     }
     if (this.sprinting) this.finishSprint();
@@ -1926,6 +1981,8 @@ export class Game {
 
   /** The replay of the duel that just finished (for the results screen). */
   private lastReplay: ReplayData | null = null;
+  /** 2v2: you're down and the camera is on your ally. */
+  private watchingAlly = false;
 
   private startRecording(m: Match, seed: number) {
     const s = this.session;
@@ -2176,6 +2233,7 @@ export class Game {
       this.view.extras.lerpLook = pov;
       this.view.extras.smoothLook = !pov;
       const [cp, cb] = onB ? [m.bot, m.player] : [m.player, m.bot];
+      this.view.extras.others = [];
       tag.name = cb.name;
       tag.color = onB ? spec.colorA : spec.colorB;
       tag.status = spec.label(onB ? 'a' : 'b');
@@ -2206,20 +2264,37 @@ export class Game {
       this.view.extras.lerpLook = false;
       this.view.extras.freeCam = null;
       this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;
-      tag.name = m.bot.name;
-      tag.color = m.profile.color;
-      tag.status = this.state === 'menu' ? '' : m.brain.label;
+      // 2v2: the main opponent is the enemy you're on (or the nearest one standing); the others
+      // are drawn with their own nametags — your ally in green. Down while your ally still
+      // fights, you watch through their eyes.
+      const others = this.othersOf(m);
+      const foe = others.length ? this.focusEnemy(m) : m.bot;
+      const ally = others.find((f) => f.team === p.team && !f.dead);
+      const watchAlly = !!ally && p.dead && m.phase === 'fight' && this.state === 'playing';
+      const eye = watchAlly ? ally! : p;
+      const theirFoe = watchAlly ? this.nearestEnemy(m, ally!) : foe;
+      this.view.extras.others = [p, ...others, m.bot]
+        .filter((f) => f !== eye && f !== theirFoe && others.length > 0)
+        .map((f) => ({ f, name: f.name, color: f.team === p.team ? '#55ff55' : m.profile.color, status: '' }));
+      tag.name = theirFoe.name;
+      tag.color = theirFoe.team === p.team ? '#55ff55' : m.profile.color;
+      tag.status = this.state === 'menu' || theirFoe !== m.bot ? '' : m.brain.label;
       this.view.crosshairOn = (this.state === 'playing' || this.state === 'paused') && this.hud.crosshairShown;
       this.view.crosshairGui = this.hud.guiScale;
-      this.view.render(p, m.bot, alpha, this.time, dt, s, tag);
+      if (watchAlly !== this.watchingAlly) {
+        this.watchingAlly = watchAlly;
+        if (watchAlly) this.hud.showCenter(`Watching ${ally!.name}`, 'toast', 60);
+      }
+      this.view.render(eye, theirFoe, alpha, this.time, dt, s, tag);
     }
     if (this.mods.on('damageindicator')) this.damage.update(this.view.camera, dt);
 
     const inDuel = this.state !== 'menu' && this.state !== 'spectating';
     if (inDuel) {
-      this.hud.update(p, m.bot, s, {
-        aimingAtBot: rayDistanceToTarget(p, m.bot) >= 0,
-        botName: m.bot.name,
+      const foe = this.othersOf(m).length ? this.focusEnemy(m) : m.bot;
+      this.hud.update(p, foe, s, {
+        aimingAtBot: rayDistanceToTarget(p, foe) >= 0,
+        botName: foe.name,
         botColor: m.profile.color,
         botStatus: m.brain.label,
         botTag: this.netMatch ? 'P2' : m.profile.name,
@@ -2428,17 +2503,19 @@ export class Game {
 
     this.handleEvents(m.player, true);
     this.handleEvents(m.bot, true);
+    for (const f of this.othersOf(m)) this.handleEvents(f, true);
     this.handleWorldEvents(m.world);
 
-    for (const f of [m.player, m.bot]) {
+    for (const f of m.world.fighters) {
       if (f.dead && f.deathTime === 20) this.view.particles.poof(f.pos.x, f.pos.y, f.pos.z);
     }
     if (m.phase === 'ended' && this.state === 'playing' && !this.drill) {
       if (this.resultTimer < 0) {
         // Immediate respawn skips the results screen, so don't linger either.
         this.resultTimer = this.session.rules.doImmediateRespawn ? 22 : 30;
-        this.hud.showCenter(m.winner === m.player ? 'VICTORY' : 'YOU DIED', m.winner === m.player ? 'win' : 'lose', 40);
-        this.autoGG(m.winner === m.player);
+        const won = this.playerWon(m);
+        this.hud.showCenter(won ? 'VICTORY' : (m as Match).teams ? 'DEFEAT' : 'YOU DIED', won ? 'win' : 'lose', 40);
+        this.autoGG(won);
       } else if (--this.resultTimer === 0) this.finishDuel();
     }
   }

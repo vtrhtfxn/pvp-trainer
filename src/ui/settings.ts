@@ -83,6 +83,8 @@ export interface Settings {
   difficulty: DifficultyId;
   /** Rounds to win against the bot ("first to"); 1 = a single duel. */
   firstTo: number;
+  /** 2v2 against bots (you and a bot ally), in the kits that have it. */
+  teams: boolean;
   /** Bot vs Bot: the two tiers last picked. */
   versusA: DifficultyId;
   versusB: DifficultyId;
@@ -143,6 +145,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kit: 'sword',
   difficulty: 'ht4',
   firstTo: 1,
+  teams: false,
   versusA: 'lt1',
   versusB: 'ht1',
 };

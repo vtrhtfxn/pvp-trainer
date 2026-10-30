@@ -432,11 +432,21 @@ export class Fighter {
   stats = newStats();
   events: FighterEvent[] = [];
 
+  /** Team (0 red, 1 blue): teammates can't hurt each other (2v2). */
+  team: number;
+
   constructor(
     readonly id: 'player' | 'bot',
     public name: string,
     readonly world: World,
-  ) {}
+  ) {
+    this.team = id === 'player' ? 0 : 1;
+  }
+
+  /** On the other team (and not yourself). */
+  isEnemy(f: Fighter): boolean {
+    return f !== this && f.team !== this.team;
+  }
 
   // ---------------------------------------------------------------- setup
 
