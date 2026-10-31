@@ -3185,7 +3185,7 @@ export class BotBrain {
           const on =
             !!hit &&
             ((hit.x + hit.nx === plan.x && hit.y + hit.ny === plan.y && hit.z + hit.nz === plan.z) ||
-              // Our own web: pouring into it works as well.
+              // Our own web: pouring onto it works as well (the water flows into it).
               (plan.kind === 'water' && hit.id === B.COBWEB && Math.abs(hit.x - plan.x) + Math.abs(hit.z - plan.z) === 0));
           if (on && this.settle >= U.aimSettle && b.startUsingItem(true)) {
             plan.phase = 'wait';
@@ -3194,7 +3194,8 @@ export class BotBrain {
           return 'own';
         }
         if (plan.phase === 'wait') {
-          const hold = plan.kind === 'lava' ? 30 : 6;
+          // Water poured onto a web takes its 5-tick flow to wash it away.
+          const hold = plan.kind === 'lava' ? 30 : 8;
           if (plan.timer >= hold) {
             plan.phase = 'pickup';
             plan.timer = 0;

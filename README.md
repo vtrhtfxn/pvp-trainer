@@ -848,7 +848,8 @@ nametag reads *Passive*.
   slows you (×0.8, ×0.9 sprinting) and puts out fire; two sources make a third. **Lava** flows 3 blocks
   (every 30 ticks); standing in it deals 4 damage (armor applies) and sets you alight for 15 s. Water
   hardens a lava source into **obsidian** and flowing lava into **cobblestone**; lava falling into water
-  makes stone. Pouring onto a cobweb washes it away.
+  makes stone. A cobweb counts as solid for a bucket: the fluid goes on top of (or beside) it and only
+  destroys the web when it flows in — lava melts it 1.5 s later, water washes it away after 0.25 s.
 - **Cobwebs**: movement × 0.25 horizontally and × 0.05 vertically, velocity wiped every tick (so
   knockback does nothing) and no fall distance (so no crits).
 - **Golden head** (server item): 1 s to eat, Regeneration III for 5 s (4 hearts), Absorption I for

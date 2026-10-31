@@ -1308,15 +1308,15 @@ export class Fighter {
     }
     const hit = this.crosshairBlock(this.blockReach(), false);
     if (!hit) return false;
-    // A web is replaceable by fluids: pouring onto one fills its own cell (and washes it away).
-    const intoWeb = hit.id === B.COBWEB;
-    const x = intoWeb ? hit.x : hit.x + hit.nx;
-    const y = intoWeb ? hit.y : hit.y + hit.ny;
-    const z = intoWeb ? hit.z : hit.z + hit.nz;
+    // A web counts as solid for a bucket (vanilla's forceSolidOn): the fluid goes on the face you
+    // clicked — on top of it, say — and only melts (lava) or washes (water) the web away when it
+    // flows into it, a flow delay later (lava 1.5 s, water 0.25 s).
+    const x = hit.x + hit.nx;
+    const y = hit.y + hit.ny;
+    const z = hit.z + hit.nz;
     if (!blocks.inside(x, y, z)) return false;
     const cur = blocks.get(x, y, z);
-    if (cur !== B.AIR && cur !== B.COBWEB && !isFluid(cur)) return false;
-    if (cur === B.COBWEB) this.world.emit({ type: 'blockConvert', x, y, z, from: B.COBWEB, to: fluid });
+    if (cur !== B.AIR && !isFluid(cur)) return false;
     blocks.placeSource(x, y, z, fluid as typeof B.WATER | typeof B.LAVA);
     if (!this.instabuild()) this.setSlot(slot, { id: 'bucket', count: 1 });
     if (hand === 'main') this.swing();
