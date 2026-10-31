@@ -70,6 +70,8 @@ if (uncapped) {
 }
 // Use the GPU for everything it can do, even on drivers Chromium is cautious about.
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// Laptops with two graphics chips: draw on the fast (dedicated) one, not the power-saving one.
+app.commandLine.appendSwitch('force_high_performance_gpu');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 // Windows: don't let a window that is partly covered be treated as hidden (it would throttle).

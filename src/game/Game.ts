@@ -219,6 +219,7 @@ export class Game {
     const lowEnd = (nav.deviceMemory ?? 8) < 8 || (navigator.hardwareConcurrency || 4) < 4;
     const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && (window.devicePixelRatio || 1) < 2 && !lowEnd);
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
+    if (this.view.softwareGL) console.warn(`WebGL is software-rendered (${this.view.gpuName}): expect low FPS.`);
     const packIcon = (id: ItemId) =>
       itemIcon({ id, count: 1, potion: 'healing' });
     const kitIcons: Record<string, Sprite> = {};
@@ -329,6 +330,7 @@ export class Game {
       onMarketplace: () => this.openMarket(),
       installedMods: () => this.mods.installedCount,
     }, customKits);
+    if (this.view.softwareGL) this.menus.setGpuWarning(this.view.gpuName || 'software WebGL');
     this.menus.setReplays(this.replays);
     this.tourney = new TournamentUI(uiRoot, {
       onUiSound: () => {
