@@ -641,8 +641,8 @@ export class SceneRenderer {
     else if (this.cameraMode === 'free') this.placeFreeCamera(view);
     else this.placePlayerCamera(player, alpha, view);
 
-    // Drawn without a graphics card, the clouds and the scenery outside the walls (about 40% of a
-    // frame there) are left out; the arena itself is untouched.
+    // Drawn without a graphics card, the clouds and the trees outside the walls are left out; the
+    // arena, its walls and the ground are untouched.
     this.applyEnvironment(orbit ? null : player, view, view.clouds && !this.softwareGL);
     this.arena.update(time, this.camera);
     this.rain.update(this.camera, this.extras.sky.rain, dt);
@@ -688,7 +688,9 @@ export class SceneRenderer {
     this.blocks.update(player.world.blocks, player.world.fighters, player, !orbit, time);
     // Crystal brings its own diggable ground; every other kit stands on the arena's grass.
     this.arena.floor.visible = player.world.blocks.depth === 0 && !player.world.blocks.voidWorld;
-    this.arena.scenery.visible = !player.world.blocks.voidWorld && !this.softwareGL;
+    this.arena.scenery.visible = !player.world.blocks.voidWorld;
+    // Without a graphics card the trees outside are left out (the walls and ground stay).
+    if (this.softwareGL) for (const c of this.arena.scenery.children) if (c.name === 'oak_log' || c.name === 'oak_leaves') c.visible = false;
     this.crystals.update(player.world.crystals, alpha);
     this.carts.update(player.world.carts, alpha, performance.now() / 1000);
     this.explosions.update(dt);

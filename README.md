@@ -355,7 +355,7 @@ pixels of a really dense (2×) screen when frames run slow, never below 1.5× �
 scaled to 125–150 % always draws at its own resolution (dropping to 100 % there stretched the picture
 and made it blurry). If WebGL is drawn without a graphics card (hardware acceleration off, no driver,
 a virtual machine — SwiftShader, llvmpipe, Microsoft Basic Render), the title screen says so and
-how to fix it, and the clouds and the scenery outside the walls are left out; the desktop app asks
+how to fix it, and the clouds and the trees outside the walls are left out; the desktop app asks
 for the dedicated graphics chip on laptops that have two. **Render Scale** goes from 25% (smoother on weak computers) to 150%
 (supersampling, extra crisp on strong ones). Block textures use the graphics card's best
 anisotropic filtering, so the ground and walls stay sharp at a slant, and the fog sits further out. Behind a screen it draws
