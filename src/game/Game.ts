@@ -49,7 +49,7 @@ import {
 import { Toasts } from '../ui/Toasts';
 import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
 import { KITS, isCustomKit, kitById, type KitId } from './kits';
-import { isYours, recordGame, roundName, saveTournament } from './tournament';
+import { entrantColor, isYours, recordGame, roundName, saveTournament, teamSlot, type Entrant, type TMatch } from './tournament';
 import { TournamentUI } from '../ui/Tournament';
 import { entryFrom, loadHistory, recordDuel, saveHistory, type DuelEntry } from './history';
 import { netheriteSpearLogo, uhcLogo } from '../ui/kitLogos';
@@ -71,6 +71,8 @@ function blockSound(block: number): 'wood' | 'stone' | 'web' {
   return block === B.PLANKS ? 'wood' : block === B.COBWEB ? 'web' : 'stone';
 }
 import { Match, PREP_TICKS, teamKit } from './Match';
+import { TourneyWatch } from './TourneyWatch';
+import { BroadcastHud } from '../ui/Broadcast';
 import { Spectate, type SpecCam, type Watch } from './Spectate';
 import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
 import { ReplayWatch } from './ReplayWatch';
@@ -99,6 +101,8 @@ export class Game {
   private demoBrain: BotBrain;
   /** Bot vs Bot: the fight being watched. */
   private spec: Watch | null = null;
+  /** The tournament broadcast overlay (watching a bracket match). */
+  private castHud!: BroadcastHud;
   /** Saved replays, newest first. */
   private replays: ReplayData[] = loadReplays();
   /** Where Esc goes from a replay (the Replays list or the Coach), or null for the title screen. */
@@ -248,6 +252,7 @@ export class Game {
         this.sound.ui();
       },
     );
+    this.castHud = new BroadcastHud(uiRoot);
     this.scoreboard = new ScoreboardHud(uiRoot);
     const overlayCb = {
       onClose: () => this.closeModeScreens(),
@@ -337,10 +342,12 @@ export class Game {
         this.sound.unlock();
         this.sound.ui();
       },
+      onWatch: (m) => this.watchTourney(m),
       onPlayGame: (kit, opp) => {
         this.tourney.hide();
         this.tourneyGame = { kit, tier: opp.tier ?? 'lt3', name: opp.name };
         this.startDuel(true);
+        this.introYourGame(kit, opp);
       },
       onLeave: () => {
         this.tourney.hide();
@@ -1028,6 +1035,7 @@ export class Game {
 
   private toMenu() {
     this.spec = null;
+    this.castHud.hide();
     this.gauntlet = null;
     // Leaving a tournament game half-way doesn't count; the match waits in the saved bracket.
     this.tourneyGame = null;
@@ -1173,6 +1181,49 @@ export class Game {
   // ------------------------------------------------------------------ bot vs bot
 
   /** Watch two tier bots fight, round after round (Bot vs Bot on the title screen). */
+  /** Watch a tournament match between two bots (from the bracket's LIVE panel). */
+  private watchTourney(m: TMatch) {
+    const t = this.tourney.t;
+    if (!t) return;
+    this.sound.unlock();
+    this.inventory.hide();
+    this.series = null;
+    this.tourney.hide();
+    const w = new TourneyWatch(t, m);
+    this.spec = w;
+    this.match = w.match;
+    this.state = 'spectating';
+    this.chat.hide();
+    this.menus.hideAll();
+    this.hud.setVisible(false);
+    this.specHud.show();
+    this.view.particles.clear();
+    this.damage.clear();
+    this.sound.muted = false;
+    this.acc = 0;
+    this.enterSpectateCam(null);
+  }
+
+  /** The broadcast intro card before your own tournament game. */
+  private introYourGame(kit: KitId, opp: Entrant) {
+    const t = this.tourney.t;
+    const m = t && t.matches.filter((x) => isYours(t, x) && x.draft && x.winner === null).pop();
+    if (!t || !m) return;
+    const d = m.draft!;
+    const n = m.games.length;
+    const picker = n < 2 ? t.entrants[m.players[teamSlot(d, n === 0 ? 'A' : 'B')]!] : null;
+    const pickedBy = !picker ? 'Decider' : picker.id === t.you ? 'Your Pick' : `${picker.name} Pick`;
+    this.castHud.intro({ top: `${roundName(t, m)} · Game ${n + 1}`, a: loadPlayerName() || 'You', b: opp.name, kit: `${kitById(kit).name} — ${pickedBy}`, colorA: '#55ff55', colorB: entrantColor(opp) }, true);
+  }
+
+  /** From watching a tournament match back to the bracket, where the bot matches play on. */
+  private backToBracket() {
+    this.toMenu();
+    this.menus.hideAll();
+    this.tourney.showBracket();
+    this.tourney.startRun();
+  }
+
   private startSpectate(kitId: KitId, a: DifficultyId, b: DifficultyId) {
     this.sound.unlock();
     this.inventory.hide();
@@ -1193,6 +1244,10 @@ export class Game {
   }
 
   private tickSpectate(spec: Watch) {
+    if (spec instanceof TourneyWatch && spec.finished) {
+      this.backToBracket();
+      return;
+    }
     const replaced = spec.tick();
     if (replaced) {
       this.match = spec.match;
@@ -1244,6 +1299,10 @@ export class Game {
       }
       // After a jump in time the hand shows what they hold now, not what they held before.
       this.snapPov(spec);
+    } else if (e.code === 'Escape' && this.spec instanceof TourneyWatch) {
+      this.backToBracket();
+      e.preventDefault();
+      return;
     } else if (e.code === 'Escape') {
       const back = this.spec instanceof ReplayWatch ? this.replayBack : null;
       this.toMenu();
@@ -2269,6 +2328,19 @@ export class Game {
       this.view.crosshairGui = this.hud.guiScale;
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);
       this.specHud.update(spec, dt);
+      // Watching a tournament match: the broadcast overlay, and its intro card for each game.
+      const tw = spec instanceof TourneyWatch ? spec : null;
+      this.specHud.setBroadcast(!!tw);
+      if (tw) {
+        this.castHud.show();
+        if (tw.newGame) {
+          tw.newGame = false;
+          const b = tw.broadcast();
+          this.castHud.intro({ top: `${b.round} · Game ${b.game}`, a: tw.nameA, b: tw.nameB, kit: `${b.kit.name} — ${b.pickedBy}`, colorA: tw.colorA, colorB: tw.colorB });
+          this.sound.jingle(true);
+        }
+        this.castHud.update(tw.broadcast(), m.player, m.bot, m.fightTicks);
+      } else this.castHud.hide();
       this.specHud.setPov(pov);
       this.hud.setVisible(pov);
       if (pov) {

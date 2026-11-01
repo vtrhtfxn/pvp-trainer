@@ -634,14 +634,26 @@ main ones (Sword, Axe, UHC, Diamond Pot, NethPot, Crystal, SMP, Mace) and the su
 Sword, Spear Mace, Cart, Diamond SMP): Team A (the higher seed)
 bans, Team B bans, Team A picks, Team B picks, and the **Decider** is drawn at random from what's
 left. Game 1 is played on Team A's pick, game 2 on Team B's, game 3 on the decider. Bots pick their
-favourite kits and ban your best one. Your games are real duels; bot-vs-bot matches are simulated
-from their tiers. The bracket is saved after every game, so **Save & Quit** and come back later.
+favourite kits and ban your best one. Your games are real duels — and so are the bot-vs-bot ones:
+the two bots really fight each game out (to a kill, or 2½ minutes then health and totems decide),
+nothing is rolled. On the bracket, **Continue** (or **Play the other matches** while yours waits)
+plays them one after another: each is announced **UP NEXT** for a few seconds, then goes **LIVE**,
+with a **Watch** button to see it through the Bot vs Bot cameras, and a results feed that flags
+**UPSETS** (a lower tier knocking out a higher one). **Skip** settles the rest at once from their
+tiers. The bracket is saved after every game, so **Save & Quit** and come back later.
+
+Watching a tournament match comes with a **broadcast overlay**, PvP Champs style: the kit and whose
+pick it was, both fighters' names, hearts, seeds and series diamonds around the crest; an
+**Inventory** row with their pots, apples, totems, pearls… and every armor piece's durability; and
+the round, series and match clock on the side. Every game — theirs and yours — opens with an intro
+card: the round and game number, the two names, and the kit with whose pick it was.
 **Online tournaments** (Multiplayer → pick the size and the bots → **Host online tournament**):
 friends join with the code like any online game, up to 16 people, and bots fill the rest of the
 bracket. The host presses **Start**. It runs one match at a time while everyone watches the live
 Kit Selection or the bracket: the two players in a match draft live (30 s per ban or pick, or a
 bot picks for you). Two people fight a real online duel; a person against a bot plays it in their
-own game and the result goes back to the host; bot against bot is decided straight away. Every
+own game and the result goes back to the host; bot against bot is decided straight away from their
+tiers (online the host's page keeps the bracket moving rather than play every bot game out). Every
 duel opens with the 10 s inventory time. Someone who leaves is replaced by a bot under their name,
 so the bracket always finishes. The host runs it (`src/net/tourney.ts`, tests:
 `tests/onlineTourney.test.ts` and `tests/tourneyRoom.test.ts`).

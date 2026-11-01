@@ -10,7 +10,7 @@ import type { KitId } from './kits';
  * Every match is a best of three, drafted first: each side bans a kit, then each picks one,
  * and the decider is drawn at random from what is left. Game 1 is played on the higher seed's
  * pick, game 2 on the other's, game 3 (if it comes to that) on the decider. Bot-vs-bot matches
- * are simulated from their tiers; yours are real duels.
+ * are real duels between the two bots (simulated, or watched); yours are your own duels.
  */
 
 export type TourneySize = 4 | 8 | 16 | 32;
@@ -276,6 +276,11 @@ export function nextMatch(t: Tournament): TMatch | null {
   return t.matches.find((m) => m.winner === null && m.players[0] !== null && m.players[1] !== null) ?? null;
 }
 
+/** The next match between two bots that is ready to play (yours can wait meanwhile). */
+export function nextBotMatch(t: Tournament): TMatch | null {
+  return t.matches.find((m) => m.winner === null && m.players[0] !== null && m.players[1] !== null && !isYours(t, m)) ?? null;
+}
+
 export function isYours(t: Tournament, m: TMatch): boolean {
   return m.players.includes(t.you);
 }
@@ -433,16 +438,35 @@ function strength(t: Tournament, id: number, kit: KitId): number {
   return base + (e.favs.includes(kit) ? 0.4 : 0);
 }
 
-/** Plays a bot-vs-bot match out: the draft, then each game from their strengths. */
-export function simulateMatch(t: Tournament, m: TMatch): void {
+/** Decides one game between two bots in `kit`: 0 if the first player won, 1 the second. */
+export type GamePlayer = (kit: KitId, a: Entrant, b: Entrant, seed: number) => 0 | 1;
+
+/** A quick game: decided from the two bots' strengths (the online host uses this). */
+export const quickGame = (t: Tournament): GamePlayer => (kit, a, b) => {
+  const diff = strength(t, a.id, kit) - strength(t, b.id, kit);
+  const pA = 1 / (1 + Math.exp(-diff * 0.6));
+  return rand(t) < pA ? 0 : 1;
+};
+
+/** A bot-vs-bot match's bans, picks and decider, made before its games are played or watched. */
+export function prepareBotMatch(t: Tournament, m: TMatch): Draft {
   const d = startDraft(t, m);
   for (let step = draftStep(d); step && step.kind !== 'decider'; step = draftStep(d)) draftChoose(d, botChoice(t, m));
   rollDecider(t, d);
+  return d;
+}
+
+/** A seed for the next game (from the tournament's own random state, so it saves). */
+export function gameSeed(t: Tournament): number {
+  return Math.floor(rand(t) * 2 ** 30);
+}
+
+/** Plays a bot-vs-bot match out: the draft, then each game (`play` decides them). */
+export function simulateMatch(t: Tournament, m: TMatch, play: GamePlayer = quickGame(t)): void {
+  const d = prepareBotMatch(t, m);
   while (m.winner === null) {
     const kit = gameKit(d, m.games.length)!;
-    const diff = strength(t, m.players[0]!, kit) - strength(t, m.players[1]!, kit);
-    const pA = 1 / (1 + Math.exp(-diff * 0.6));
-    recordGame(t, m, rand(t) < pA ? 0 : 1);
+    recordGame(t, m, play(kit, t.entrants[m.players[0]!], t.entrants[m.players[1]!], gameSeed(t)));
   }
 }
 
