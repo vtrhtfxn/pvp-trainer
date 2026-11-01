@@ -166,6 +166,8 @@ export class Menus {
   private readonly settingsRepaint: (() => void)[] = [];
   private netStatusEl!: HTMLDivElement;
   private netRoomEl!: HTMLDivElement;
+  /** Title screen: the game is drawn without a graphics card (and how to fix that). */
+  private gpuWarnEl!: HTMLDivElement;
   /** The 2v2 room panel: teams, who's in them, and the buttons. */
   private squadEl!: HTMLDivElement;
   /** Multiplayer: the kit you host with (main kits and subtiers). */
@@ -290,7 +292,9 @@ export class Menus {
     // New players get a short path through the drills that matter (until finished or hidden),
     // right under the logo so it is the first thing they see on any window size.
     this.pathEl = h('div', { class: 'mm-path' });
-    head.append(this.pathEl);
+    this.gpuWarnEl = h('div', { class: 'gpu-warn' });
+    this.gpuWarnEl.style.display = 'none';
+    head.append(this.gpuWarnEl, this.pathEl);
 
     setup.append(h('div', { class: 'section-title' }, 'Game mode'));
     const grid = h('div', { class: 'kit-grid' });
@@ -1236,6 +1240,23 @@ export class Menus {
     if (v.started) el.append(h('div', { class: 'mp-hint' }, 'The game is on.'));
     else if (me?.host) el.append(this.button('Start 2v2', () => this.cb.onSquadGo(), 'big sq-go'));
     else el.append(h('div', { class: 'mp-hint' }, 'Waiting for the host to start…'));
+  }
+
+  /** Shows (or hides, with null) the software-rendering warning on the title screen. */
+  setGpuWarning(gpu: string | null) {
+    const el = this.gpuWarnEl;
+    if (!el) return;
+    el.style.display = gpu ? '' : 'none';
+    if (!gpu) return;
+    el.replaceChildren(
+      h('b', {}, 'Your graphics card isn\u2019t being used'),
+      ` — the game is drawn by the processor (${gpu}), so it runs at about 20 FPS (the clouds and the trees outside the arena are left out to help). `,
+      h(
+        'span',
+        {},
+        'Fix: in Chrome or Edge open Settings → System, turn on \u201cUse graphics acceleration when available\u201d and restart the browser. In the desktop app, update your graphics driver. On a laptop, plug it in and pick High performance in Windows Settings → Display → Graphics.',
+      ),
+    );
   }
 
   setNetStatus(status: string, detail: string, room: string) {

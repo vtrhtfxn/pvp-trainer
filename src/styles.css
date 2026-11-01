@@ -1969,6 +1969,20 @@ body {
   font-size: 17px;
   color: #ffffa0;
 }
+.gpu-warn {
+  margin: 6px auto 8px;
+  max-width: 640px;
+  padding: 8px 10px;
+  background: rgba(120, 20, 20, 0.85);
+  border: 2px solid #ff5555;
+  color: #ffdddd;
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+}
+.gpu-warn b {
+  color: #ffff55;
+}
 .team-row {
   display: grid;
   grid-template-columns: auto 64px 64px 1fr;

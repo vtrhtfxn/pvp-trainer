@@ -42,6 +42,38 @@ function lookAt(f: Fighter, x: number, y: number, z: number) {
   f.pitch = Math.atan2(y - ey, Math.hypot(dx, dz));
 }
 
+describe('buckets and cobwebs', () => {
+  const pour = (fluid: 'lava_bucket' | 'water_bucket') => {
+    const { world, a, b } = setup(3);
+    b.pos.set(6.5, 0, 0.5);
+    world.blocks.set(0, 0, 1, B.COBWEB);
+    a.selectSlot(a.inventory.findIndex((s) => s?.id === fluid));
+    // The top face of the web.
+    lookAt(a, 0.5, 0.999, 1.5);
+    expect(a.startUsingItem(true)).toBe(true);
+    return { world, a, b };
+  };
+
+  it('lava poured onto a web sits on top of it, then flows in and melts it 1.5 s later', () => {
+    const { world, a, b } = pour('lava_bucket');
+    // The web is still there and the lava is on top of it, not in its place.
+    expect(world.blocks.get(0, 0, 1)).toBe(B.COBWEB);
+    expect(world.blocks.get(0, 1, 1)).toBe(B.LAVA);
+    for (let t = 0; t < 25; t++) step(world, a, b);
+    expect(world.blocks.get(0, 0, 1)).toBe(B.COBWEB);
+    for (let t = 0; t < 10; t++) step(world, a, b);
+    expect(world.blocks.get(0, 0, 1)).toBe(B.LAVA);
+  });
+
+  it('water poured onto a web washes it away a quarter second later', () => {
+    const { world, a, b } = pour('water_bucket');
+    expect(world.blocks.get(0, 0, 1)).toBe(B.COBWEB);
+    expect(world.blocks.get(0, 1, 1)).toBe(B.WATER);
+    for (let t = 0; t < 8; t++) step(world, a, b);
+    expect(world.blocks.get(0, 0, 1)).toBe(B.WATER);
+  });
+});
+
 describe('UHC loadout', () => {
   it('matches the mcpvp.club tier-test kit', () => {
     const { a } = setup();

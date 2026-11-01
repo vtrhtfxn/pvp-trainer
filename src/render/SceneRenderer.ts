@@ -89,11 +89,21 @@ export interface OtherFighter {
   status: string;
 }
 
+/** Renderer names of WebGL drawn in software. */
+const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i;
+
 export type CameraMode = 'first' | 'third' | 'orbit' | 'free';
 
 /** Owns the WebGL renderer, the world scene, both fighter models and the first-person view. */
 export class SceneRenderer {
   readonly renderer: THREE.WebGLRenderer;
+  /** The graphics card as WebGL reports it ('' if the browser hides it). */
+  readonly gpuName: string;
+  /**
+   * WebGL is drawn on the processor, not a graphics card (hardware acceleration off, no driver,
+   * a virtual machine): about 20 FPS whatever the settings.
+   */
+  readonly softwareGL: boolean;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 600);
   readonly arena: Arena;
@@ -162,6 +172,10 @@ export class SceneRenderer {
 
   constructor(canvas: HTMLCanvasElement, world: World, assets: Assets, opts: { antialias: boolean } = { antialias: true }) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: opts.antialias, powerPreference: 'high-performance' });
+    const gl = this.renderer.getContext();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    this.gpuName = String((dbg && gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || '');
+    this.softwareGL = SOFTWARE_GL.test(this.gpuName);
     this.maxPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     this.pixelRatio = this.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
@@ -233,10 +247,11 @@ export class SceneRenderer {
       this.adaptCooldown -= dt;
       return;
     }
-    // Auto never goes below the screen's own resolution: dropping to 60% (as it used to) made
-    // everything soft and blurry. It only trims the extra pixels of a high-density screen. Lower
-    // than that is the Render Scale setting's job.
-    const min = Math.min(this.maxPixelRatio, Math.max(1, this.maxPixelRatio * 0.65));
+    // Auto never goes below the screen's own resolution: anything less is stretched to fit and
+    // looks soft and blurry — including on a Windows screen scaled to 125–150 %, where it used to
+    // drop to 100 %. It only trims the extra pixels of a really dense (2×) screen, and not below
+    // 1.5×. Lower than that is the Render Scale setting's job.
+    const min = this.maxPixelRatio <= 1.5 ? this.maxPixelRatio : Math.max(1.5, this.maxPixelRatio * 0.75);
     // Below ~33 fps: drop a step. Rise again only after a few seconds at ~55 fps or better —
     // measured against a 60 Hz display, where frames never get much faster than 16.7 ms.
     if (this.smoothedFrameMs > 30 && this.pixelRatio > min) {
@@ -626,7 +641,9 @@ export class SceneRenderer {
     else if (this.cameraMode === 'free') this.placeFreeCamera(view);
     else this.placePlayerCamera(player, alpha, view);
 
-    this.applyEnvironment(orbit ? null : player, view, view.clouds);
+    // Drawn without a graphics card, the clouds and the scenery outside the walls (about 40% of a
+    // frame there) are left out; the arena itself is untouched.
+    this.applyEnvironment(orbit ? null : player, view, view.clouds && !this.softwareGL);
     this.arena.update(time, this.camera);
     this.rain.update(this.camera, this.extras.sky.rain, dt);
     this.glint.update(time);
@@ -671,7 +688,7 @@ export class SceneRenderer {
     this.blocks.update(player.world.blocks, player.world.fighters, player, !orbit, time);
     // Crystal brings its own diggable ground; every other kit stands on the arena's grass.
     this.arena.floor.visible = player.world.blocks.depth === 0 && !player.world.blocks.voidWorld;
-    this.arena.scenery.visible = !player.world.blocks.voidWorld;
+    this.arena.scenery.visible = !player.world.blocks.voidWorld && !this.softwareGL;
     this.crystals.update(player.world.crystals, alpha);
     this.carts.update(player.world.carts, alpha, performance.now() / 1000);
     this.explosions.update(dt);
