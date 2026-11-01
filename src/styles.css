@@ -587,7 +587,7 @@ body {
 }
 
 /* ---- versus bar (top centre): you vs them, the fight clock between */
-.versus {
+.hud .versus {
   position: absolute;
   left: 50%;
   top: 10px;
@@ -840,7 +840,7 @@ body {
   }
 }
 @media (max-width: 1000px) {
-  .versus {
+  .hud .versus {
     width: min(560px, calc(100vw - 24px));
     top: 6px;
   }
