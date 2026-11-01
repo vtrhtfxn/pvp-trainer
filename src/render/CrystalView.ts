@@ -160,7 +160,12 @@ export class ExplosionView {
     this.puffs.push({ sprite: s, age: 0, life: 6 + Math.floor(Math.random() * 4), frames: this.frames });
   }
 
-  update(dt: number) {
+  /**
+   * `eye`: the camera. A puff (a wind burst's gust, an explosion cloud) right on top of it would
+   * fill the whole screen — six of them per Mace launch, through your own eyes — so it fades out
+   * as the camera gets inside it and isn't drawn at all once it's there.
+   */
+  update(dt: number, eye?: { x: number; y: number; z: number }) {
     this.acc += dt * 20;
     while (this.acc >= 1) {
       this.acc -= 1;
@@ -186,6 +191,18 @@ export class ExplosionView {
       // Swapping one texture for another needs no program rebuild; flagging needsUpdate every
       // frame for every puff made three.js re-derive each program (costly in crystal fights).
       const mat = p.sprite.material as THREE.SpriteMaterial;
+      if (eye) {
+        const s = p.sprite;
+        const d = Math.hypot(s.position.x - eye.x, s.position.y - eye.y, s.position.z - eye.z);
+        const r = s.scale.x * 0.5;
+        const op = Math.min(1, Math.max(0, (d - r) / Math.max(0.5, r)));
+        mat.opacity = op;
+        s.visible = op > 0.05;
+      } else {
+        // (A recycled sprite may still carry the last fade.)
+        mat.opacity = 1;
+        p.sprite.visible = true;
+      }
       const next = p.frames[f] ?? null;
       if (mat.map !== next) {
         if (!mat.map !== !next) mat.needsUpdate = true;
