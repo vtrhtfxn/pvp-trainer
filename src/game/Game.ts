@@ -1036,6 +1036,7 @@ export class Game {
   private toMenu() {
     this.spec = null;
     this.castHud.hide();
+    document.body.classList.remove('broadcasting');
     this.gauntlet = null;
     // Leaving a tournament game half-way doesn't count; the match waits in the saved bracket.
     this.tourneyGame = null;
@@ -2331,6 +2332,7 @@ export class Game {
       // Watching a tournament match: the broadcast overlay, and its intro card for each game.
       const tw = spec instanceof TourneyWatch ? spec : null;
       this.specHud.setBroadcast(!!tw);
+      document.body.classList.toggle('broadcasting', !!tw);
       if (tw) {
         this.castHud.show();
         if (tw.newGame) {

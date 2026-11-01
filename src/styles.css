@@ -4917,6 +4917,32 @@ body {
   align-items: center;
   gap: 3px;
 }
+.bc-diff {
+  color: #bbb;
+  font-size: 13px;
+  padding: 0 2px;
+}
+.bc-diff.up {
+  color: #55ff55;
+}
+.bc-diff.down {
+  color: #ff5555;
+}
+/* Broadcasting: the overlay's bar replaces the HUD's own top bar, and the camera buttons and help
+   line sit under the inventory row instead of behind it. */
+body.broadcasting .hud .versus,
+body.broadcasting .hud .practice {
+  display: none;
+}
+body.broadcasting .hud .effects {
+  top: 128px;
+}
+.spec-hud.broadcast.pov .spec-cams {
+  top: 128px;
+}
+.spec-hud.broadcast.pov .spec-help {
+  top: 160px;
+}
 .bc-cell.armor b {
   color: #aee;
 }
