@@ -75,6 +75,11 @@ export interface ViewExtras {
    * (in your own duel the mouse turns the camera every frame; a replay only has it per tick).
    */
   lerpLook: boolean;
+  /**
+   * Through a bot's eyes: its look is steadied like a broadcast camera (a bot re-aims up to 45° a
+   * tick, which through its eyes is a jerky mess); `lerpLook` stays exact for your own replays.
+   */
+  cinematic: boolean;
   /** Spectator free camera (CameraMode 'free'): where it is and where it looks. */
   freeCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null;
   /** 2v2: everyone besides the two main fighters, each with their nametag. */
@@ -87,6 +92,16 @@ export interface OtherFighter {
   name: string;
   color: string;
   status: string;
+}
+
+/**
+ * A nametag's world size (it reads well from a few blocks away). Seen in first person from up
+ * close it shrinks with the distance, so an opponent right on you doesn't put a banner across the
+ * screen.
+ */
+function fitTag(s: THREE.Sprite, eye: THREE.Vector3, firstPerson: boolean) {
+  const f = firstPerson ? Math.min(1, s.position.distanceTo(eye) / 4) : 1;
+  s.scale.set(1.6 * f, 0.5 * f, 1);
 }
 
 /** Renderer names of WebGL drawn in software. */
@@ -164,6 +179,7 @@ export class SceneRenderer {
     sky: { dayTime: 6000, rain: 0, thunder: 0, flash: 0 },
     smoothLook: false,
     lerpLook: false,
+    cinematic: false,
     freeCam: null,
     others: [],
   };
@@ -485,7 +501,7 @@ export class SceneRenderer {
       pitch = lerp(p.prevPitch, p.pitch, a);
       this.look.reset();
     } else if (this.extras.smoothLook) {
-      this.look.update(p, p.prevYaw, p.yaw, p.prevPitch, p.pitch, a, this.frameDt);
+      this.look.update(p, p.prevYaw, p.yaw, p.prevPitch, p.pitch, a, this.frameDt, this.extras.cinematic && this.cameraMode === 'first' ? 0.14 : undefined);
       yaw = this.look.yaw;
       pitch = this.look.pitch;
     } else this.look.reset();
@@ -613,6 +629,7 @@ export class SceneRenderer {
       v.fire.update(f, alpha, this.camera, time, true);
       v.tag.set(o.name, o.color, f.health, f.absorption, o.status);
       v.tag.sprite.position.set(lerp(f.prevPos.x, f.pos.x, alpha), lerp(f.prevPos.y, f.pos.y, alpha) + (f.sneaking ? 1.95 : 2.28), lerp(f.prevPos.z, f.pos.z, alpha));
+      fitTag(v.tag.sprite, this.camera.position, this.cameraMode === 'first');
       v.tag.sprite.visible = view.showNametag && !f.dead && !f.effects.has('invisibility') && v.tag.sprite.position.distanceTo(this.camera.position) > 1.6;
     });
   }
@@ -666,6 +683,7 @@ export class SceneRenderer {
         lerp(bot.prevPos.z, bot.pos.z, alpha),
       );
     }
+    if (tag) fitTag(this.nametag.sprite, this.camera.position, this.cameraMode === 'first');
     // Hidden when dead, invisible, switched off, or when the camera is practically inside it
     // (it would fill the screen).
     this.nametag.sprite.visible =

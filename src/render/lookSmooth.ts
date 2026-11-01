@@ -15,7 +15,7 @@ export class LookSmoother {
   pitch = 0;
 
   /** `a` is how far into the tick the frame is (0..1), `dt` the frame time in seconds. */
-  update(who: object, prevYaw: number, yaw: number, prevPitch: number, pitch: number, a: number, dt: number) {
+  update(who: object, prevYaw: number, yaw: number, prevPitch: number, pitch: number, a: number, dt: number, tau = TAU) {
     const ty = lerpAngle(prevYaw, yaw, a);
     const tp = lerp(prevPitch, pitch, a);
     if (this.who !== who) {
@@ -24,7 +24,7 @@ export class LookSmoother {
       this.pitch = tp;
       return;
     }
-    const k = 1 - Math.exp(-Math.max(0, dt) / TAU);
+    const k = 1 - Math.exp(-Math.max(0, dt) / tau);
     this.yaw = wrapAngle(this.yaw + wrapAngle(ty - this.yaw) * k);
     this.pitch += (tp - this.pitch) * k;
   }

@@ -703,6 +703,10 @@ export class BotBrain {
       input.sprint = true;
     }
 
+    // Nobody walks into the other player: right on top of them it stops pushing forward (they'd
+    // only grind against each other's hitboxes — and through its eyes, a face filling the screen).
+    if (dist < 1.4 && !targetEating && !this.crystalKit && !this.cartKit) input.forward = Math.min(input.forward, 0);
+
     // W-tap / S-tap after a sprint hit so the next hit gets sprint knockback again.
     if (this.wtapTimer > 0) {
       this.wtapTimer--;

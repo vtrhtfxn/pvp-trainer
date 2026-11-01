@@ -644,7 +644,7 @@ tiers. The bracket is saved after every game, so **Save & Quit** and come back l
 
 Watching a tournament match comes with a **broadcast overlay**, PvP Champs style: the kit and whose
 pick it was, both fighters' names, hearts, seeds and series diamonds around the crest; an
-**Inventory** row with their pots, apples, totems, pearls… and every armor piece's durability; and
+**Inventory** row with their pots, apples, totems, pearls…, every armor piece's durability and the difference in their total armor durability (+28 / −28); and
 the round, series and match clock on the side. Every game — theirs and yours — opens with an intro
 card: the round and game number, the two names, and the kit with whose pick it was.
 **Online tournaments** (Multiplayer → pick the size and the bots → **Host online tournament**):

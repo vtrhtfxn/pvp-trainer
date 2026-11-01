@@ -1036,6 +1036,7 @@ export class Game {
   private toMenu() {
     this.spec = null;
     this.castHud.hide();
+    document.body.classList.remove('broadcasting');
     this.gauntlet = null;
     // Leaving a tournament game half-way doesn't count; the match waits in the saved bracket.
     this.tourneyGame = null;
@@ -2317,8 +2318,11 @@ export class Game {
       // (interpolated between ticks), their hand, their HUD and crosshair. Following from behind,
       // the camera is smoothed instead, so a bot's 20 turns a second don't judder.
       const pov = spec.cam === 'povA' || spec.cam === 'povB';
-      this.view.extras.lerpLook = pov;
-      this.view.extras.smoothLook = !pov;
+      // Your own eyes in your own replay stay exact (1:1 with what you saw); a bot's are steadied.
+      const exact = pov && spec instanceof ReplayWatch && spec.cam === 'povA';
+      this.view.extras.lerpLook = exact;
+      this.view.extras.smoothLook = !exact;
+      this.view.extras.cinematic = pov && !exact;
       const [cp, cb] = onB ? [m.bot, m.player] : [m.player, m.bot];
       this.view.extras.others = [];
       tag.name = cb.name;
@@ -2331,6 +2335,7 @@ export class Game {
       // Watching a tournament match: the broadcast overlay, and its intro card for each game.
       const tw = spec instanceof TourneyWatch ? spec : null;
       this.specHud.setBroadcast(!!tw);
+      document.body.classList.toggle('broadcasting', !!tw);
       if (tw) {
         this.castHud.show();
         if (tw.newGame) {
@@ -2362,6 +2367,7 @@ export class Game {
     } else {
       this.view.extras.smoothLook = false;
       this.view.extras.lerpLook = false;
+      this.view.extras.cinematic = false;
       this.view.extras.freeCam = null;
       this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;
       // 2v2: the main opponent is the enemy you're on (or the nearest one standing); the others

@@ -41,6 +41,11 @@ function durability(s: ItemStack | null): number | null {
   return max ? max - (s.damage ?? 0) : null;
 }
 
+/** Durability left on everything worn, added up. */
+function totalArmor(f: Fighter): number {
+  return f.armorSlots.reduce((n, s) => n + (durability(s) ?? 0), 0);
+}
+
 const iconUrls = new Map<string, string>();
 function iconUrl(s: ItemStack): string {
   const key = `${s.id}:${s.potion ?? ''}`;
@@ -166,8 +171,13 @@ export class BroadcastHud {
         el('b', '', cell, String(d));
         if (!right) icon(s, cell);
       });
-      // Left: consumables then armor (outside in); right: armor then consumables.
-      for (const draw of right ? [...armor, ...items] : [...items, ...armor.reverse()]) draw();
+      // Their whole armor's durability against the other's: −28 on one side, +28 on the other.
+      const diff = () => {
+        const d = totalArmor(f) - totalArmor(right ? a : b);
+        el('span', `bc-diff${d > 0 ? ' up' : d < 0 ? ' down' : ''}`, h, d > 0 ? `+${d}` : d < 0 ? `−${-d}` : '±0');
+      };
+      // Left: consumables, the difference, then armor (outside in); right mirrored.
+      for (const draw of right ? [...armor, diff, ...items] : [...items, diff, ...armor.reverse()]) draw();
     };
     half(a, false);
     el('div', 'bc-inv-label', this.inv, 'INVENTORY');
