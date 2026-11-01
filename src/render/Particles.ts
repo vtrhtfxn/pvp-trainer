@@ -40,10 +40,16 @@ class ParticleLayer {
     g.setAttribute('pcolor', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('psize', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
     this.material = new THREE.ShaderMaterial({
-      uniforms: { map: { value: particleTexture(kind) }, scale: { value: 800 } },
-      vertexShader: `attribute vec4 pcolor; attribute float psize; varying vec4 vColor; uniform float scale;
-        void main(){ vColor = pcolor; vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = psize * scale / max(0.1, -mv.z); gl_Position = projectionMatrix * mv; }`,
+      uniforms: { map: { value: particleTexture(kind) }, scale: { value: 800 }, maxPx: { value: 120 } },
+      // A particle right at the eye (a wind burst at your feet, seen through your eyes) used to
+      // grow to a screen-sized square, and dozens of them stacked: the frame rate fell through
+      // the floor exactly when Mace fights got busy. Now one is never bigger than a share of the
+      // screen, and those within a block of the eye fade out (they're inside your head anyway).
+      vertexShader: `attribute vec4 pcolor; attribute float psize; varying vec4 vColor; uniform float scale; uniform float maxPx;
+        void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); float d = -mv.z;
+        float near = smoothstep(0.3, 1.0, d);
+        vColor = vec4(pcolor.rgb, pcolor.a * near);
+        gl_PointSize = near <= 0.0 ? 0.0 : min(psize * scale / max(0.1, d), maxPx); gl_Position = projectionMatrix * mv; }`,
       fragmentShader: `uniform sampler2D map; varying vec4 vColor;
         void main(){ vec4 t = texture2D(map, gl_PointCoord); float a = t.a * vColor.a; if (a < 0.1) discard;
         gl_FragColor = vec4(t.rgb * vColor.rgb, a);
@@ -57,8 +63,9 @@ class ParticleLayer {
     this.points.renderOrder = 3;
   }
 
-  setScale(s: number) {
+  setScale(s: number, maxPx: number) {
     this.material.uniforms.scale.value = s;
+    this.material.uniforms.maxPx.value = maxPx;
   }
 
   spawn(p: P) {
@@ -134,9 +141,11 @@ export class Particles {
 
   setViewport(heightPx: number, fovDeg: number) {
     const s = heightPx / (2 * Math.tan((fovDeg * Math.PI) / 360));
-    this.stars.setScale(s);
-    this.squares.setScale(s);
-    this.smoke.setScale(s);
+    // Biggest a particle may be drawn: 12% of the screen's height.
+    const max = Math.max(16, heightPx * 0.12);
+    this.stars.setScale(s, max);
+    this.squares.setScale(s, max);
+    this.smoke.setScale(s, max);
   }
 
   /** Minecraft's tracking emitter: particles burst out of the target's hitbox. */

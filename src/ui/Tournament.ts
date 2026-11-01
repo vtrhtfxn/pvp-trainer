@@ -11,13 +11,17 @@ import {
   draftStep,
   entrantColor,
   gameKit,
+  gameSeed,
   isOut,
   isYours,
   loadTournament,
+  nextBotMatch,
   nextMatch,
   placeLabel,
   placement,
   playUntilYours,
+  prepareBotMatch,
+  recordGame,
   rollDecider,
   roundName,
   saveTournament,
@@ -31,6 +35,7 @@ import {
   type TourneySize,
 } from '../game/tournament';
 import { faceUrl } from './faces';
+import { botGame, stepBotGame } from '../game/TourneyWatch';
 import type { TourView } from '../net/tourney';
 
 /** What the online tournament screens can ask the host for. */
@@ -50,10 +55,16 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, 
   return e;
 }
 
+/** How long a bot match is announced ("Up next") before it's played. */
+const UP_NEXT_MS = 4000;
+const TIER_RANK = ['lt5', 'ht5', 'lt4', 'ht4', 'lt3', 'ht3', 'lt2', 'ht2', 'lt1', 'ht1'];
+
 export interface TourneyCallbacks {
   onUiSound(): void;
   /** Plays game `n` of your current match: a duel in `kit` against `opponent`. */
   onPlayGame(kit: KitId, opponent: Entrant): void;
+  /** Watch a match between two bots live (its games go into the bracket as they finish). */
+  onWatch(m: TMatch): void;
   /** Back to the title screen (the tournament is saved and can be resumed). */
   onLeave(): void;
   /** You won the whole thing (or not): for advancements. */
@@ -77,6 +88,14 @@ export class TournamentUI {
   private field: FieldId = 'contender';
   /** Bumped on every render, so a pending bot move from an old screen does nothing. */
   private token = 0;
+  /**
+   * The bot matches being played out in the background, one real game at a time: the match, the
+   * game in progress, and when the runner was started (null: not running).
+   */
+  private run: { m: TMatch; game: ReturnType<typeof botGame> | null; kit: KitId | null; startAt: number } | null = null;
+  private runTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Results as they come in (newest first) — the bracket's live feed. */
+  private feed: { text: string; upset: boolean }[] = [];
 
   constructor(parent: HTMLElement, private readonly cb: TourneyCallbacks) {
     this.root.style.display = 'none';
@@ -89,6 +108,7 @@ export class TournamentUI {
 
   hide() {
     this.token++;
+    this.stopRun();
     this.root.style.display = 'none';
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
@@ -219,15 +239,30 @@ export class TournamentUI {
   showBracket() {
     const t = this.t;
     if (!t) return this.showSetup();
+    // Keep the bracket where it was scrolled to when it redraws with a new result.
+    const sc = this.root.querySelector('.tb-scroll');
+    const keep = sc && this.root.style.display !== 'none' ? { x: sc.scrollLeft, y: sc.scrollTop } : null;
+    const token = this.token + 1;
     this.open();
+    if (keep) {
+      requestAnimationFrame(() => {
+        if (this.token !== token) return;
+        const n = this.root.querySelector('.tb-scroll');
+        if (n) {
+          n.scrollLeft = keep.x;
+          n.scrollTop = keep.y;
+        }
+      });
+    }
     const wrap = this.bracketBoard(t);
 
+    wrap.append(this.livePanel(t));
     const foot = h('div', { class: 'tb-foot' });
     const next = nextMatch(t);
     if (t.champion !== null) {
       const champ = t.entrants[t.champion];
       const me = placement(t, t.you)!;
-      foot.append(h('div', { class: 'tb-champ' }, `Champion: ${champ.name}`), h('div', { class: 'tb-place' }, champ.id === t.you ? 'You won the tournament!' : `You finished ${placeLabel(me)} of ${t.size}`));
+      foot.append(h('div', { class: 'tb-champ' }, `🏆 Champion: ${champ.name} 🏆`), h('div', { class: 'tb-place' }, champ.id === t.you ? 'You won the tournament!' : `You finished ${placeLabel(me)} of ${t.size}`));
       foot.append(
         h(
           'div',
@@ -246,28 +281,45 @@ export class TournamentUI {
         h(
           'div',
           { class: 'btn-row' },
-          this.button('Finish the bracket', () => {
-            for (let m = nextMatch(t); m; m = nextMatch(t)) simulateMatch(t, m);
-            saveTournament(t);
-            this.cb.onFinished(false, t.size);
-            this.showBracket();
-          }, 'big'),
+          this.run
+            ? this.button('Skip to the end', () => {
+                this.stopRun();
+                for (let m = nextMatch(t); m; m = nextMatch(t)) simulateMatch(t, m);
+                saveTournament(t);
+                this.cb.onFinished(false, t.size);
+                this.showBracket();
+              }, 'big')
+            : this.button('Play out the bracket', () => this.startRun(), 'big'),
           this.button('Title Screen', () => this.cb.onLeave()),
         ),
       );
     } else if (next) {
-      const yours = isYours(t, next);
-      const label = yours ? `Your match: ${roundName(t, next)}` : 'Play the bot matches up to yours';
+      // Your match is ready (the bot matches can be played around it).
+      const mine = t.matches.find((m) => m.winner === null && m.players[0] !== null && m.players[1] !== null && isYours(t, m)) ?? null;
+      const yours = !!mine;
+      const label = yours
+        ? `Your match: ${roundName(t, mine!)}`
+        : this.run
+          ? 'The bot matches are being played — watch one, or skip straight to yours'
+          : 'Play the bot matches up to yours (real games — you can watch any of them)';
       foot.append(
         h(
           'div',
           { class: 'btn-row' },
-          this.button(yours ? 'To Kit Selection' : 'Continue', () => {
-            const mine = playUntilYours(t);
-            saveTournament(t);
-            if (mine && yours) this.showDraft(mine);
-            else this.showBracket();
-          }, 'big start-btn'),
+          yours
+            ? this.button('To Kit Selection', () => {
+                this.stopRun();
+                this.showDraft(mine!);
+              }, 'big start-btn')
+            : this.run
+              ? this.button('Skip to my match', () => {
+                  this.stopRun();
+                  playUntilYours(t);
+                  saveTournament(t);
+                  this.showBracket();
+                }, 'big')
+              : this.button('Continue', () => this.startRun(), 'big start-btn'),
+          ...(yours && !this.run && nextBotMatch(t) ? [this.button('Play the other matches', () => this.startRun())] : []),
           this.button('Save & Quit', () => this.cb.onLeave()),
           this.button('Forfeit', () => {
             if (!confirm('Forfeit this tournament? It will be deleted.')) return;
@@ -282,7 +334,116 @@ export class TournamentUI {
     wrap.append(foot);
     this.root.append(wrap);
     // Bring your next match into view.
-    requestAnimationFrame(() => this.root.querySelector('.tb-card.yours.live')?.scrollIntoView({ block: 'center', inline: 'center' }));
+    if (!keep) requestAnimationFrame(() => this.root.querySelector('.tb-card.yours.live')?.scrollIntoView({ block: 'center', inline: 'center' }));
+  }
+
+  // ------------------------------------------------------------------ bot matches, live
+
+  /** The match being played right now (with Watch), and the results feed. */
+  private livePanel(t: Tournament): HTMLElement {
+    const box = h('div', { class: 'tb-live' });
+    const r = this.run;
+    if (r && r.m.winner === null) {
+      const a = t.entrants[r.m.players[0]!];
+      const b = t.entrants[r.m.players[1]!];
+      const upNext = performance.now() < r.startAt;
+      const kit = r.kit ? kitById(r.kit).name : kitById(gameKit(r.m.draft!, r.m.games.length) ?? 'sword').name;
+      box.append(
+        h(
+          'div',
+          { class: `tb-live-now${upNext ? ' next' : ''}` },
+          h('span', { class: 'tb-live-dot' }, upNext ? 'UP NEXT' : 'LIVE'),
+          h('span', { class: 'tb-live-what' }, `${roundName(t, r.m)} · Game ${r.m.games.length + 1} · ${kit}`),
+          h('span', { class: 'tb-live-vs' }, h('b', {}, a.name), ` ${r.m.wins[0]} – ${r.m.wins[1]} `, h('b', {}, b.name)),
+          this.button('Watch', () => {
+            const m = r.m;
+            this.stopRun();
+            this.cb.onWatch(m);
+          }, 'tb-watch'),
+        ),
+      );
+    }
+    if (this.feed.length) {
+      const list = h('div', { class: 'tb-feed' });
+      for (const f of this.feed.slice(0, 6)) list.append(h('div', { class: `tb-feed-line${f.upset ? ' upset' : ''}` }, f.upset ? h('b', {}, 'UPSET ') : '', f.text));
+      box.append(list);
+    }
+    return box;
+  }
+
+  /** Plays the bot matches out in the background, one real game at a time, up to yours. */
+  startRun() {
+    const t = this.t;
+    if (!t || this.runTimer) return;
+    this.run = this.run ?? null;
+    const slice = () => {
+      this.runTimer = null;
+      const until = performance.now() + 12;
+      while (performance.now() < until) {
+        let r = this.run;
+        if (!r || r.m.winner !== null) {
+          const m = nextBotMatch(t);
+          if (!m) {
+            this.run = null;
+            saveTournament(t);
+            if (t.champion !== null && isOut(t, t.you)) this.cb.onFinished(false, t.size);
+            this.showBracket();
+            return;
+          }
+          prepareBotMatch(t, m);
+          // "Up next" for a few seconds — time to hit Watch — before it's played out.
+          r = this.run = { m, game: null, kit: null, startAt: performance.now() + UP_NEXT_MS };
+          this.showBracket();
+        }
+        if (performance.now() < r.startAt) {
+          this.runTimer = setTimeout(slice, 250);
+          return;
+        }
+        if (!r.game) {
+          r.kit = gameKit(r.m.draft!, r.m.games.length);
+          r.game = botGame(r.kit!, t.entrants[r.m.players[0]!], t.entrants[r.m.players[1]!], gameSeed(t));
+          this.showBracket();
+        }
+        // A few hundred ticks at a time keeps the page responsive.
+        for (let i = 0; i < 200; i++) {
+          const w = stepBotGame(r.game);
+          const g = r.game.match;
+          g.world.events.length = 0;
+          g.player.events.length = 0;
+          g.bot.events.length = 0;
+          if (w === null) continue;
+          this.gameDone(t, r.m, w, r.kit!);
+          r.game = null;
+          break;
+        }
+        if (!r.game) {
+          this.showBracket();
+          break;
+        }
+      }
+      this.runTimer = setTimeout(slice, 0);
+    };
+    this.runTimer = setTimeout(slice, 0);
+    this.showBracket();
+  }
+
+  private stopRun() {
+    if (this.runTimer) clearTimeout(this.runTimer);
+    this.runTimer = null;
+    this.run = null;
+  }
+
+  /** A bot game finished: into the bracket, and the feed. */
+  gameDone(t: Tournament, m: TMatch, winner: 0 | 1, kit: KitId) {
+    recordGame(t, m, winner);
+    saveTournament(t);
+    const w = t.entrants[m.players[winner]!];
+    const l = t.entrants[m.players[1 - winner]!];
+    const rank = (e: Entrant) => (e.tier ? TIER_RANK.indexOf(e.tier) : 5);
+    const upset = rank(w) < rank(l) - 1;
+    const text = m.winner !== null ? `${w.name} beats ${l.name} ${Math.max(...m.wins)}–${Math.min(...m.wins)} (${roundName(t, m)})` : `${w.name} takes ${kitById(kit).name} off ${l.name}`;
+    this.feed.unshift({ text, upset: upset && m.winner !== null });
+    this.feed.length = Math.min(this.feed.length, 20);
   }
 
   private card(t: Tournament, m: TMatch, liveId: string | null): HTMLElement {

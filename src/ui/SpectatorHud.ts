@@ -91,6 +91,11 @@ export class SpectatorHud {
     this.root.classList.toggle('pov', on);
   }
 
+  /** A tournament broadcast overlay is up: its top bar replaces our health boxes and score. */
+  setBroadcast(on: boolean) {
+    this.root.classList.toggle('broadcast', on);
+  }
+
   show() {
     this.root.style.display = '';
     this.last = '';

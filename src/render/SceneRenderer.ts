@@ -252,9 +252,10 @@ export class SceneRenderer {
     // drop to 100 %. It only trims the extra pixels of a really dense (2×) screen, and not below
     // 1.5×. Lower than that is the Render Scale setting's job.
     const min = this.maxPixelRatio <= 1.5 ? this.maxPixelRatio : Math.max(1.5, this.maxPixelRatio * 0.75);
-    // Below ~33 fps: drop a step. Rise again only after a few seconds at ~55 fps or better —
-    // measured against a 60 Hz display, where frames never get much faster than 16.7 ms.
-    if (this.smoothedFrameMs > 30 && this.pixelRatio > min) {
+    // Below ~20 fps: drop a step (at 30 a dense laptop screen still looks better sharp). Rise again
+    // only after a few seconds at ~55 fps or better — measured against a 60 Hz display, where
+    // frames never get much faster than 16.7 ms.
+    if (this.smoothedFrameMs > 50 && this.pixelRatio > min) {
       this.setPixelRatio(Math.max(min, this.pixelRatio - 0.25));
       this.adaptCooldown = 1;
       this.calm = 0;
@@ -693,7 +694,7 @@ export class SceneRenderer {
     if (this.softwareGL) for (const c of this.arena.scenery.children) if (c.name === 'oak_log' || c.name === 'oak_leaves') c.visible = false;
     this.crystals.update(player.world.crystals, alpha);
     this.carts.update(player.world.carts, alpha, performance.now() / 1000);
-    this.explosions.update(dt);
+    this.explosions.update(dt, this.camera.position);
     this.bolts.update(dt);
     this.playerFire.update(player, alpha, this.camera, time, !firstPerson);
     this.botFire.update(bot, alpha, this.camera, time, true);
