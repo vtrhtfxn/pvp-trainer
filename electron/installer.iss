@@ -22,8 +22,10 @@ DefaultGroupName=PvP Trainer
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+; One installer for both kinds of PC: ARM ones (Snapdragon) get the native ARM64 app, which is
+; several times faster than the x64 one running under emulation.
+ArchitecturesAllowed=x64compatible or arm64
+ArchitecturesInstallIn64BitMode=x64compatible or arm64
 OutputDir=..\dist-app
 OutputBaseFilename=PvP-Trainer-Setup
 SetupIconFile=icon.ico
@@ -41,9 +43,12 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 ; An update replaces the app whole, so no file of an older version is left behind.
 Type: filesandordirs; Name: "{app}\resources"
 Type: filesandordirs; Name: "{app}\locales"
+Type: files; Name: "{app}\*.dll"
+Type: files; Name: "{app}\*.bin"
 
 [Files]
-Source: "..\dist-app\PvP Trainer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist-app\PvP Trainer\*"; DestDir: "{app}"; Check: not IsArm64; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist-app\arm64\PvP Trainer\*"; DestDir: "{app}"; Check: IsArm64; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\PvP Trainer"; Filename: "{app}\PvP Trainer.exe"

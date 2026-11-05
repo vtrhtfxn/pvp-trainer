@@ -2,7 +2,9 @@
 //   macOS (default on a Mac): "PvP Trainer.app". Host architecture by default; pass --universal
 //     for a universal binary, or --arch=x64 / --arch=arm64.
 //   Windows: --win (from any OS) builds "PvP Trainer-win32-x64/" plus a ready-to-send
-//     "PvP Trainer (Windows).zip" with a read-me for friends.
+//     "PvP Trainer (Windows).zip" with a read-me for friends. --win --arch=arm64 builds the native
+//     version for ARM PCs (Snapdragon) into dist-app/arm64/ (run in an x64 build it is emulated
+//     and several times slower).
 
 import { packager } from '@electron/packager';
 import fs from 'node:fs';
@@ -88,10 +90,13 @@ if (win) {
   const locales = path.join(dir, 'locales');
   for (const f of fs.readdirSync(locales)) if (f !== 'en-US.pak') fs.rmSync(path.join(locales, f));
   fs.writeFileSync(path.join(dir, 'READ ME FIRST.txt'), WINDOWS_README.replace(/\n/g, '\r\n'));
-  const zip = path.join(ROOT, 'dist-app', 'PvP Trainer (Windows).zip');
+  const arm = arch === 'arm64';
+  const base = arm ? path.join(ROOT, 'dist-app', 'arm64') : path.join(ROOT, 'dist-app');
+  fs.mkdirSync(base, { recursive: true });
+  const zip = path.join(ROOT, 'dist-app', arm ? 'PvP Trainer (Windows ARM).zip' : 'PvP Trainer (Windows).zip');
   fs.rmSync(zip, { force: true });
   const folder = 'PvP Trainer';
-  const staged = path.join(ROOT, 'dist-app', folder);
+  const staged = path.join(base, folder);
   fs.rmSync(staged, { recursive: true, force: true });
   fs.renameSync(dir, staged);
   // On Windows (CI) the folder is what the installer packs; the workflow zips it itself.
@@ -99,6 +104,6 @@ if (win) {
     console.log(`app folder → ${path.relative(process.cwd(), staged)}`);
     process.exit(0);
   }
-  execFileSync('zip', ['-qry9', zip, folder], { cwd: path.join(ROOT, 'dist-app') });
+  execFileSync('zip', ['-qry9', zip, folder], { cwd: base });
   console.log(`zip → ${path.relative(process.cwd(), zip)} (${(fs.statSync(zip).size / 1e6).toFixed(0)} MB)`);
 }

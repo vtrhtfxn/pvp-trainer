@@ -1243,6 +1243,24 @@ export class Menus {
   }
 
   /** Shows (or hides, with null) the software-rendering warning on the title screen. */
+  /** The Intel/AMD (x64) app is running on an ARM PC: emulated, several times slower. */
+  setArmWarning(onDownload?: () => void) {
+    const el = this.gpuWarnEl;
+    if (!el) return;
+    el.style.display = '';
+    const parts: (Node | string)[] = [
+      h('b', {}, 'You\u2019re running the Intel version on an ARM PC'),
+      ' \u2014 Windows has to translate it, which makes the game several times slower. ',
+      h('span', {}, 'Fix: download PvP-Trainer-Setup.exe again and run it: it installs the native ARM version (your settings and replays stay).'),
+    ];
+    if (onDownload) {
+      const b = h('button', { class: 'mc-btn small' }, 'Download');
+      b.onclick = onDownload;
+      parts.push(' ', b);
+    }
+    el.replaceChildren(...parts);
+  }
+
   setGpuWarning(gpu: string | null) {
     const el = this.gpuWarnEl;
     if (!el) return;

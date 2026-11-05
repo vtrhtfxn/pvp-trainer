@@ -336,6 +336,10 @@ export class Game {
       installedMods: () => this.mods.installedCount,
     }, customKits);
     if (this.view.softwareGL) this.menus.setGpuWarning(this.view.gpuName || 'software WebGL');
+    else if (armUnderEmulation(this.view.gpuName)) {
+      const n = window.pvpNative;
+      this.menus.setArmWarning(n?.openDownload ? () => void n.openDownload!() : undefined);
+    }
     this.menus.setReplays(this.replays);
     this.tourney = new TournamentUI(uiRoot, {
       onUiSound: () => {
@@ -2886,4 +2890,13 @@ export class Game {
     }
     f.events.length = 0;
   }
+}
+
+/**
+ * The desktop app built for Intel/AMD running on a Snapdragon (ARM) Windows PC: Windows emulates
+ * it, JavaScript included, which costs most of the frame rate. The GPU gives the PC away.
+ */
+function armUnderEmulation(gpuName: string): boolean {
+  const n = window.pvpNative;
+  return !!n && n.platform === 'win32' && n.arch !== 'arm64' && /qualcomm|adreno|snapdragon/i.test(gpuName);
 }

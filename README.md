@@ -28,7 +28,10 @@ and run it. It installs for you only (no admin password) into `%LOCALAPPDATA%\Pr
 with a Start menu entry, a desktop shortcut and an uninstaller (Settings → Apps). The app isn't
 signed with a paid certificate, so Windows may say "Windows protected your PC": click **More info →
 Run anyway**. Rather not install? **[PvP-Trainer-windows.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-windows.zip)**
-is the same app: extract it and run `PvP Trainer.exe`. It updates itself like the Mac app. The build
+is the same app: extract it and run `PvP Trainer.exe`. It updates itself like the Mac app. On an ARM
+PC (Snapdragon / Copilot+ laptops) the installer puts in the native ARM64 app, several times faster
+than the Intel one under Windows' emulation (portable: **[PvP-Trainer-windows-arm.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-windows-arm.zip)**);
+the game notices the Intel app running on an ARM PC and offers the download. The build
 workflow builds the Windows app on a Windows machine, starts it, then installs it silently, starts the
 installed copy and uninstalls it, before anything is published.
 
