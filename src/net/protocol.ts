@@ -302,6 +302,11 @@ export type ServerMsg =
   | { t: 'tour'; view: TourView }
   /** Tournament: your game against a bot — your own game plays it, then send tresult. */
   | { t: 'tplay'; kit: string; bot: { name: string; tier: string } }
+  /**
+   * Online tournament: two people's game starts and you're not in it. The duel's states and moves
+   * (each move with its seat, `i`) follow, so you can watch it.
+   */
+  | { t: 'watch'; countdown: number; kit: string }
   | {
       t: 'state';
       tick: number;

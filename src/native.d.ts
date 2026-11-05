@@ -3,6 +3,8 @@ interface PvpNative {
   /** The app's "Toggle Hitboxes ⌘M" menu item. */
   onToggleHitboxes(cb: () => void): void;
   readonly platform: string;
+  /** CPU the app was built for ('x64', 'arm64'). Older app shells lack it. */
+  readonly arch?: string;
   /** Uncapped FPS (VSync off) is on for this launch. */
   readonly uncapped: boolean;
   /** Saves the Uncapped FPS choice for the next launch. */

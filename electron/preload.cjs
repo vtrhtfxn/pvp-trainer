@@ -6,6 +6,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('pvpNative', {
   onToggleHitboxes: (cb) => ipcRenderer.on('pvp:toggle-hitboxes', () => cb()),
   platform: process.platform,
+  /** CPU the app was built for: an x64 app on an ARM PC runs emulated (slow). */
+  arch: process.arch,
   /** Uncapped FPS is on for this launch. */
   uncapped: process.argv.includes('--pvp-uncapped=1'),
   /** Saves the Uncapped FPS choice; it applies when the app next starts. */

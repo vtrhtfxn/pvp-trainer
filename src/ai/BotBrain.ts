@@ -130,6 +130,9 @@ const FACES: [number, number, number][] = [
   [0, -1, 0],
 ];
 
+/** At or below this (health + absorption) the bot drops everything to heal, at every tier. */
+const CRITICAL_HP = 5;
+
 export class BotBrain {
   state: BotState = 'engage';
   private seen: Seen[] = [];
@@ -610,19 +613,22 @@ export class BotBrain {
     this.stateTimer++;
     switch (this.state) {
       case 'engage':
-        if (gaps > 0 && this.retreatCooldown <= 0 && eff <= P.retreatHP && !b.effects.has('regeneration')) {
+        // Nearly dead it goes whatever else is going on (regenerating, just tried, mid-plan): no
+        // real player keeps swinging on half a heart with a stack of apples.
+        if (gaps > 0 && ((this.retreatCooldown <= 0 && eff <= P.retreatHP && !b.effects.has('regeneration')) || eff <= CRITICAL_HP)) {
           this.enter('retreat');
         }
         break;
       case 'retreat':
         if (gaps === 0 || eff >= P.returnHP) this.enter('engage');
         else if (
-          this.stateTimer > this.partingTicks &&
-          (trueDist >= P.eatDistance || this.stateTimer >= P.maxRetreatTicks || this.cornered(trueDist))
+          (this.stateTimer > this.partingTicks && (trueDist >= P.eatDistance || this.stateTimer >= P.maxRetreatTicks || this.cornered(trueDist))) ||
+          // Critical: a couple of steps of room is enough — waiting for more gets it killed.
+          (eff <= CRITICAL_HP && this.stateTimer > 8 && trueDist > 2.2)
         ) {
           // Couldn't get clear and you're right on it: an apple eaten in your reach just eats your
           // hits too, so unless it's about to die it fights on and tries again in a moment.
-          if (P.sense.safeEat && trueDist < 3.5 && eff > 4 && trueDist < P.eatDistance) {
+          if (P.sense.safeEat && trueDist < 3.5 && eff > CRITICAL_HP && trueDist < P.eatDistance) {
             this.enter('engage');
             this.retreatCooldown = 30;
           } else this.enter('eat');

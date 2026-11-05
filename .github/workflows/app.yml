@@ -110,8 +110,11 @@ jobs:
           npm run build
           node -e "require('fs').writeFileSync('dist/build.json', JSON.stringify({ build: Number(process.env.BUILD), shell: require('./electron/shell-version.json').shell }))"
 
-      - name: Package the Windows app
-        run: node electron/build-app.mjs --win
+      - name: Package the Windows app (x64, and native ARM64 for Snapdragon PCs)
+        run: |
+          node electron/build-app.mjs --win
+          node electron/build-app.mjs --win --arch=arm64
+          test -f "dist-app/arm64/PvP Trainer/PvP Trainer.exe"
 
       - name: Smoke test — the app starts and the game loads (on Windows)
         env:
@@ -152,6 +155,7 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           Move-Item dist-app\PvP-Trainer-Setup.exe out\
           Compress-Archive -Path "dist-app\PvP Trainer" -DestinationPath out\PvP-Trainer-windows.zip
+          Compress-Archive -Path "dist-app\arm64\PvP Trainer" -DestinationPath out\PvP-Trainer-windows-arm.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -185,14 +189,16 @@ jobs:
           - **Windows:** download **PvP-Trainer-Setup.exe** and run it. It installs for you only (no admin
             password), with a Start menu entry and a desktop shortcut. If Windows says "Windows protected
             your PC", click **More info → Run anyway** (the app is not signed with a paid certificate).
-            No install wanted? **PvP-Trainer-windows.zip** is the same app to extract and run.
+            It installs the native version on ARM PCs (Snapdragon / Copilot+ laptops) by itself.
+            No install wanted? **PvP-Trainer-windows.zip** is the same app to extract and run
+            (**PvP-Trainer-windows-arm.zip** on an ARM PC).
           - **Mac:** download **PvP-Trainer-mac.zip**, open it, and drag **PvP Trainer** into **Applications**.
             The first time, macOS says it can't check the app: open **System Settings → Privacy & Security**,
             scroll down and click **Open Anyway** (on older macOS: right-click the app → **Open**). After that it opens with a click.
 
           The app updates the game by itself from here on.
           NOTES
-          gh release create "build-$BUILD" PvP-Trainer-Setup.exe PvP-Trainer-windows.zip PvP-Trainer-mac.zip game.html build.json \
+          gh release create "build-$BUILD" PvP-Trainer-Setup.exe PvP-Trainer-windows.zip PvP-Trainer-windows-arm.zip PvP-Trainer-mac.zip game.html build.json \
             --repo "$GITHUB_REPOSITORY" --title "PvP Trainer — build $BUILD" --notes-file notes.md --target "$GITHUB_SHA" --latest
           # Keep the five newest builds.
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | grep '^build-' | tail -n +6 | while read -r tag; do

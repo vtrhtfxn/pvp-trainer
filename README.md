@@ -28,7 +28,10 @@ and run it. It installs for you only (no admin password) into `%LOCALAPPDATA%\Pr
 with a Start menu entry, a desktop shortcut and an uninstaller (Settings → Apps). The app isn't
 signed with a paid certificate, so Windows may say "Windows protected your PC": click **More info →
 Run anyway**. Rather not install? **[PvP-Trainer-windows.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-windows.zip)**
-is the same app: extract it and run `PvP Trainer.exe`. It updates itself like the Mac app. The build
+is the same app: extract it and run `PvP Trainer.exe`. It updates itself like the Mac app. On an ARM
+PC (Snapdragon / Copilot+ laptops) the installer puts in the native ARM64 app, several times faster
+than the Intel one under Windows' emulation (portable: **[PvP-Trainer-windows-arm.zip](https://github.com/vtrhtfxn/pvp-trainer/releases/latest/download/PvP-Trainer-windows-arm.zip)**);
+the game notices the Intel app running on an ARM PC and offers the download. The build
 workflow builds the Windows app on a Windows machine, starts it, then installs it silently, starts the
 installed copy and uninstalls it, before anything is published.
 
@@ -651,7 +654,9 @@ card: the round and game number, the two names, and the kit with whose pick it w
 friends join with the code like any online game, up to 16 people, and bots fill the rest of the
 bracket. The host presses **Start**. It runs one match at a time while everyone watches the live
 Kit Selection or the bracket: the two players in a match draft live (30 s per ban or pick, or a
-bot picks for you). Two people fight a real online duel; a person against a bot plays it in their
+bot picks for you). Two people fight a real online duel, and everyone else in the room watches it
+live with the broadcast overlay and the Bot vs Bot cameras (Esc back to the bracket, **▶ Watch
+live** to go back in; `src/game/NetWatch.ts`, tests: `tests/netWatch.test.ts`). A person against a bot plays it in their
 own game and the result goes back to the host; bot against bot is decided straight away from their
 tiers (online the host's page keeps the bracket moving rather than play every bot game out). Every
 duel opens with the 10 s inventory time. Someone who leaves is replaced by a bot under their name,

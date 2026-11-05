@@ -128,21 +128,24 @@ describe('Spear Mace bots', () => {
   it('jab with Lunge on the way in (and still smash with the mace)', async () => {
     const { DIFFICULTIES } = await import('../src/ai/difficulty');
     const { Spectate } = await import('../src/game/Spectate');
-    const s = new Spectate(kitById('spear_mace'), DIFFICULTIES.ht1, DIFFICULTIES.ht1, 3);
     let lunges = 0;
     let smashes = 0;
-    for (let i = 0; i < 20 * 120; i++) {
-      s.tick();
-      for (const f of [s.match.player, s.match.bot]) {
-        for (const e of f.events) {
-          if (e.type === 'lunge') lunges++;
-          if (e.type === 'smash') smashes++;
+    // A few fights (a Lunge is a now-and-then move: some 2-minute fights have none).
+    for (const seed of [3, 4, 5]) {
+      const s = new Spectate(kitById('spear_mace'), DIFFICULTIES.ht1, DIFFICULTIES.ht1, seed);
+      for (let i = 0; i < 20 * 120; i++) {
+        s.tick();
+        for (const f of [s.match.player, s.match.bot]) {
+          for (const e of f.events) {
+            if (e.type === 'lunge') lunges++;
+            if (e.type === 'smash') smashes++;
+          }
+          f.events.length = 0;
         }
-        f.events.length = 0;
+        s.match.world.events.length = 0;
       }
-      s.match.world.events.length = 0;
     }
     expect(lunges).toBeGreaterThan(0);
     expect(smashes).toBeGreaterThan(0);
-  }, 60000);
+  }, 180000);
 });

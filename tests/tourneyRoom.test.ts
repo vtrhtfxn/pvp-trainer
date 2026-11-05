@@ -40,6 +40,7 @@ describe('online tournament room', () => {
 
     const room = [...lobby.rooms.values()][0];
     let duels = 0;
+    let watched = 0;
     let locals = 0;
     const answered = new Set<string>();
     for (let s = 0; s < 4000; s++) {
@@ -68,6 +69,17 @@ describe('online tournament room', () => {
       const duel = room.duel;
       if (duel && duel.phase === 'fight') {
         duels++;
+        // The two playing move; whoever's left watches, and sees whose move each one was.
+        const last = (p: ReturnType<typeof conn>) => p.got.filter((m) => m.t === 'start' || m.t === 'watch').at(-1);
+        const seated = people.filter((p) => last(p)?.t === 'start');
+        const watching = people.filter((p) => last(p)?.t === 'watch');
+        expect(seated).toHaveLength(2);
+        expect(watching).toHaveLength(1);
+        for (const p of seated) p.say({ t: 'move', q: 1, x: 0.5, y: 0, z: 0.5, yaw: 0, pitch: 0, g: true, sp: false, sn: false, vy: 0, ff: false, fd: 0, tp: 0 });
+        const mvs = watching[0].got.filter((m) => m.t === 'mv') as Extract<ServerMsg, { t: 'mv' }>[];
+        expect(new Set(mvs.slice(-2).map((m) => m.i))).toEqual(new Set([0, 1]));
+        expect(watching[0].got.some((m) => m.t === 'state')).toBe(true);
+        watched++;
         const f = duel.fighters[1];
         f.health = 0;
         f.die();
@@ -78,6 +90,7 @@ describe('online tournament room', () => {
     expect(t.champion).not.toBeNull();
     expect(locals).toBeGreaterThan(0);
     expect(duels).toBeGreaterThan(0);
+    expect(watched).toBe(duels);
     // Every duel told its two players their seats.
     expect(people.flatMap((p) => p.got.filter((m) => m.t === 'start')).every((m) => (m as { you?: number }).you !== undefined)).toBe(true);
     lobby.closeAll();
