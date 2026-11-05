@@ -218,6 +218,11 @@ class Room {
   relay(from: LobbyClient, msg: ServerMsg) {
     const text = JSON.stringify(msg);
     for (const c of this.players) if (c !== from) c.sendRaw(text);
+    const watchers = this.watchers;
+    if (watchers.length && msg.t === 'mv' && from.seat >= 0) {
+      const tagged = JSON.stringify({ ...msg, i: from.seat });
+      for (const c of watchers) c.sendRaw(tagged);
+    }
   }
 
   makeTour(size: number, field: string) {
@@ -271,6 +276,7 @@ class Room {
     this.duel.countdownTicks = PREP_TICKS;
     a.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 0 });
     b.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 1 });
+    for (const c of this.watchers) c.send({ t: 'watch', countdown: this.duel.countdownSeconds, kit });
     this.startClock();
     this.lobby.log(`room ${this.code}: tournament game — ${a.name} vs ${b.name} on ${kit}`);
   }
@@ -306,6 +312,11 @@ class Room {
     return this.seats.filter((s): s is LobbyClient => s !== null);
   }
 
+  /** A tournament's members who aren't in the game being played: they watch it. */
+  get watchers(): LobbyClient[] {
+    return this.tour && this.duel ? this.members.filter((c) => c.seat < 0) : [];
+  }
+
   freeSeat(): number {
     return this.seats.findIndex((s) => s === null);
   }
@@ -313,6 +324,10 @@ class Room {
   broadcast(msg: ServerMsg) {
     const text = JSON.stringify(msg);
     for (const c of this.players) c.sendRaw(text);
+    // Watchers get the game itself; a duel's moves name no seat (they're the opponent's), and
+    // watchers need to know whose (relay tags them).
+    if (msg.t !== 'state' && msg.t !== 'end' && !(msg.t === 'mv' && typeof msg.i === 'number')) return;
+    for (const c of this.watchers) c.sendRaw(text);
   }
 
   sendLobby() {

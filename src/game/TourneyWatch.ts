@@ -83,6 +83,22 @@ export interface BroadcastInfo {
   wins: [number, number];
 }
 
+/** The overlay's facts about the game of match `m` being played on `kit`. */
+export function broadcastInfo(t: Tournament, m: TMatch, kit: KitDef): BroadcastInfo {
+  const d = m.draft;
+  const n = Math.min(2, m.games.length);
+  const picker = d && n < 2 ? t.entrants[m.players[teamSlot(d, n === 0 ? 'A' : 'B')]!]?.name : null;
+  const e = (slot: 0 | 1) => t.entrants[m.players[slot]!];
+  return {
+    kit,
+    pickedBy: picker ? `${picker} Pick` : 'Decider',
+    round: roundName(t, m),
+    game: n + 1,
+    seeds: [e(0)?.seed ?? 0, e(1)?.seed ?? 0],
+    wins: [m.wins[0], m.wins[1]],
+  };
+}
+
 /**
  * Watching a tournament match between two bots: game after game on the drafted kits, through the
  * Bot vs Bot cameras. Each result goes into the bracket as it happens; `finished` turns true once
@@ -131,17 +147,7 @@ export class TourneyWatch implements Watch {
   }
 
   broadcast(): BroadcastInfo {
-    const d = this.m.draft!;
-    const n = Math.min(2, this.m.games.length);
-    const picker = n < 2 ? this.t.entrants[this.m.players[teamSlot(d, n === 0 ? 'A' : 'B')]!].name : null;
-    return {
-      kit: this.kit,
-      pickedBy: picker ? `${picker} Pick` : 'Decider',
-      round: roundName(this.t, this.m),
-      game: n + 1,
-      seeds: [this.entrant(0).seed, this.entrant(1).seed],
-      wins: [this.m.wins[0], this.m.wins[1]],
-    };
+    return broadcastInfo(this.t, this.m, this.kit);
   }
 
   private startGame() {

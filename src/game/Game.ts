@@ -72,6 +72,7 @@ function blockSound(block: number): 'wood' | 'stone' | 'web' {
 }
 import { Match, PREP_TICKS, teamKit } from './Match';
 import { TourneyWatch } from './TourneyWatch';
+import { NetWatch } from './NetWatch';
 import { BroadcastHud } from '../ui/Broadcast';
 import { Spectate, type SpecCam, type Watch } from './Spectate';
 import { ReplayRecorder, loadReplays, saveReplays, REPLAY_VERSION, type ReplayAction, type ReplayData } from './replay';
@@ -131,6 +132,8 @@ export class Game {
   private tourneyGame: { kit: KitId; tier: TierId; name: string } | null = null;
   /** Online tournament: the latest view from the host (null outside a tournament room). */
   private tourView: TourView | null = null;
+  /** Two other people's game in the online tournament, followed live (shown or not). */
+  private netWatch: NetWatch | null = null;
   /** Your game against a bot in an online tournament is running locally right now. */
   private onlineTourGame = false;
   /** The online tournament's result was already counted for advancements. */
@@ -1253,6 +1256,10 @@ export class Game {
       this.backToBracket();
       return;
     }
+    if (spec instanceof NetWatch && spec.finished) {
+      this.hideNetWatch();
+      return;
+    }
     const replaced = spec.tick();
     if (replaced) {
       this.match = spec.match;
@@ -1306,6 +1313,10 @@ export class Game {
       this.snapPov(spec);
     } else if (e.code === 'Escape' && this.spec instanceof TourneyWatch) {
       this.backToBracket();
+      e.preventDefault();
+      return;
+    } else if (e.code === 'Escape' && this.spec instanceof NetWatch) {
+      this.hideNetWatch();
       e.preventDefault();
       return;
     } else if (e.code === 'Escape') {
@@ -1519,9 +1530,15 @@ export class Game {
 
   /** Back to the multiplayer screen from an online match (the connection may stay open). */
   private leaveOnlineMatch() {
-    const wasPlaying = this.netMatch !== null || this.onlineTourGame;
+    const watching = this.spec instanceof NetWatch;
+    const wasPlaying = this.netMatch !== null || this.onlineTourGame || watching;
     this.netMatch = null;
     this.endTour();
+    if (watching) {
+      this.specHud.hide();
+      this.castHud.hide();
+      document.body.classList.remove('broadcasting');
+    }
     if (wasPlaying) {
       this.inventory.hide();
       this.state = 'menu';
@@ -1559,6 +1576,14 @@ export class Game {
       this.playTourLocal(msg.kit as KitId, msg.bot);
       return;
     }
+    if (msg.t === 'watch') {
+      this.startNetWatch(msg.countdown, msg.kit as KitId);
+      return;
+    }
+    if (this.netWatch && !this.netMatch && (msg.t === 'state' || msg.t === 'mv' || msg.t === 'end')) {
+      this.netWatch.handle(msg);
+      return;
+    }
     if (msg.t === 'chat') {
       this.chat.print(this.chatLine(msg.kind, msg.from, msg.text), !msg.from);
       return;
@@ -1573,6 +1598,14 @@ export class Game {
       this.lobbyNames = names;
     }
     if (msg.t === 'start') {
+      // Your own game starts: stop following anyone else's.
+      if (this.spec instanceof NetWatch) {
+        this.spec = null;
+        this.specHud.hide();
+        this.castHud.hide();
+        document.body.classList.remove('broadcasting');
+      }
+      this.netWatch = null;
       const seats = msg.seats ?? 2;
       if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView || seats > 2) {
         this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId, seats);
@@ -1767,6 +1800,15 @@ export class Game {
       const me = t.entrants.find((e) => e.pid === v.you);
       if (me) this.earn({ kind: 'tournament', won: t.champion === me.id, size: t.size });
     }
+    const w = this.netWatch;
+    if (w) {
+      w.setView(v);
+      const live = v.live;
+      if (!live || live.stage !== 'game' || live.match !== w.matchId) w.cancel();
+      // Watching it: the result plays out, then back to the tournament screen.
+      if (this.spec === w && !w.finished) return;
+      if (w.finished) this.netWatch = null;
+    }
     if (this.onlineTourGame) return;
     const nm = this.netMatch;
     if (nm) {
@@ -1800,7 +1842,59 @@ export class Game {
         this.leaveOnline(true);
         this.menus.show('multiplayer');
       },
+      watch: this.netWatch && !this.netWatch.finished ? () => this.showNetWatch() : undefined,
     });
+  }
+
+  /** Two other people's tournament game starts: follow it, and show it. */
+  private startNetWatch(countdown: number, kit: KitId) {
+    const v = this.tourView;
+    const live = v?.live;
+    if (!v || !live || this.onlineTourGame || this.netMatch) return;
+    if (this.spec === this.netWatch) this.spec = null;
+    const w = new NetWatch(this.net, kit, live.match, v);
+    w.handle({ t: 'start', countdown, kit });
+    this.netWatch = w;
+    this.showNetWatch();
+  }
+
+  private showNetWatch() {
+    const w = this.netWatch;
+    if (!w || w.finished) return;
+    this.sound.unlock();
+    this.inventory.hide();
+    this.series = null;
+    this.tourney.hide();
+    this.menus.hideAll();
+    this.spec = w;
+    this.match = w.net;
+    this.state = 'spectating';
+    this.chat.hide();
+    this.hud.setVisible(false);
+    this.specHud.show();
+    this.view.particles.clear();
+    this.damage.clear();
+    this.sound.muted = false;
+    this.acc = 0;
+    w.newGame = true;
+    this.enterSpectateCam(null);
+  }
+
+  /** From the live game back to the tournament screen (it plays on unseen). */
+  private hideNetWatch() {
+    if (this.spec instanceof NetWatch) this.spec = null;
+    if (this.netWatch?.finished) this.netWatch = null;
+    this.castHud.hide();
+    document.body.classList.remove('broadcasting');
+    this.specHud.hide();
+    this.view.extras.freeCam = null;
+    this.state = 'menu';
+    this.view.cameraMode = 'orbit';
+    this.input.enabled = false;
+    this.input.unlock();
+    this.match = this.newDemo();
+    this.demoBrain = this.makeDemoBrain(this.match as Match);
+    this.showTourScreen();
   }
 
   /** Your game against a bot: played here, the result goes back to the host. */
@@ -1818,6 +1912,8 @@ export class Game {
     this.tourView = null;
     this.onlineTourGame = false;
     this.tourAwarded = false;
+    this.netWatch = null;
+    if (this.spec instanceof NetWatch) this.spec = null;
     if (this.tourneyGame) this.tourneyGame = null;
     this.tourney.clearOnline();
     this.tourney.hide();
@@ -2337,18 +2433,18 @@ export class Game {
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);
       this.specHud.update(spec, dt);
       // Watching a tournament match: the broadcast overlay, and its intro card for each game.
-      const tw = spec instanceof TourneyWatch ? spec : null;
-      this.specHud.setBroadcast(!!tw);
-      document.body.classList.toggle('broadcasting', !!tw);
-      if (tw) {
+      const tw = spec instanceof TourneyWatch || spec instanceof NetWatch ? spec : null;
+      const info = tw?.broadcast() ?? null;
+      this.specHud.setBroadcast(!!info);
+      document.body.classList.toggle('broadcasting', !!info);
+      if (tw && info) {
         this.castHud.show();
         if (tw.newGame) {
           tw.newGame = false;
-          const b = tw.broadcast();
-          this.castHud.intro({ top: `${b.round} · Game ${b.game}`, a: tw.nameA, b: tw.nameB, kit: `${b.kit.name} — ${b.pickedBy}`, colorA: tw.colorA, colorB: tw.colorB });
+          this.castHud.intro({ top: `${info.round} · Game ${info.game}`, a: tw.nameA, b: tw.nameB, kit: `${info.kit.name} — ${info.pickedBy}`, colorA: tw.colorA, colorB: tw.colorB });
           this.sound.jingle(true);
         }
-        this.castHud.update(tw.broadcast(), m.player, m.bot, m.fightTicks);
+        this.castHud.update(info, m.player, m.bot, m.fightTicks);
       } else this.castHud.hide();
       this.specHud.setPov(pov);
       this.hud.setVisible(pov);
@@ -2561,6 +2657,14 @@ export class Game {
 
   private tick() {
     const m = this.match;
+    // A tournament game you aren't looking at plays on unseen, so you can switch to it.
+    const w = this.netWatch;
+    if (w && this.spec !== w) {
+      w.tick();
+      for (const f of w.net.fighters) f.events.length = 0;
+      w.net.world.events.length = 0;
+      if (w.finished) this.netWatch = null;
+    }
     if (this.netMatch) {
       this.tickOnline(this.netMatch);
       return;

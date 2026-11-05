@@ -43,6 +43,8 @@ export interface OnlineTourActions {
   start(): void;
   draft(kit: KitId): void;
   leave(): void;
+  /** Two people's game is being played and you can watch it live (absent: nothing to watch). */
+  watch?: () => void;
 }
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
@@ -671,6 +673,8 @@ export class TournamentUI {
         if (live!.stage === 'break') actions.append(timer(`Game ${m.games.length + 1}${m.games.length === 2 ? ' (decider)' : ''}: ${name} — ${playing ? 'get ready' : 'starting'}`));
         else actions.append(h('div', { class: 'tc-say' }, `Game ${m.games.length + 1} live: ${name}${live!.pve ? '' : ' — player vs player'}`));
       }
+      const watch = act.watch;
+      if (watch && live!.stage === 'game') actions.append(h('div', { class: 'btn-row' }, this.button('▶ Watch live', () => watch())));
       actions.append(h('div', { class: 'btn-row' }, this.button('Bracket', () => {
         this.onlineBracket = true;
         this.renderOnline();

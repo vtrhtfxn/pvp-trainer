@@ -654,7 +654,9 @@ card: the round and game number, the two names, and the kit with whose pick it w
 friends join with the code like any online game, up to 16 people, and bots fill the rest of the
 bracket. The host presses **Start**. It runs one match at a time while everyone watches the live
 Kit Selection or the bracket: the two players in a match draft live (30 s per ban or pick, or a
-bot picks for you). Two people fight a real online duel; a person against a bot plays it in their
+bot picks for you). Two people fight a real online duel, and everyone else in the room watches it
+live with the broadcast overlay and the Bot vs Bot cameras (Esc back to the bracket, **▶ Watch
+live** to go back in; `src/game/NetWatch.ts`, tests: `tests/netWatch.test.ts`). A person against a bot plays it in their
 own game and the result goes back to the host; bot against bot is decided straight away from their
 tiers (online the host's page keeps the bracket moving rather than play every bot game out). Every
 duel opens with the 10 s inventory time. Someone who leaves is replaced by a bot under their name,

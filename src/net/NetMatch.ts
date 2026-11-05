@@ -285,6 +285,11 @@ export class NetMatch {
   private q = 0;
   /** Everyone by seat (yours is `player`): two in a duel, four in a 2v2. */
   readonly fighters: Fighter[];
+  /**
+   * Watching someone else's game (an online tournament): no seat of ours, everyone is played back
+   * from the server and nothing is sent. `player` is seat 0, `bot` seat 1.
+   */
+  readonly spectator: boolean;
   /** The playback of every other seat. */
   private readonly remotes = new Map<number, Playback>();
   /** The main opponent's playback (`bot`). */
@@ -321,15 +326,17 @@ export class NetMatch {
     }
     this.world.legacyCombat = !!this.kit.legacyCombat;
     const n = seats > 2 ? 4 : 2;
+    this.spectator = you < 0;
+    const first = this.spectator ? 0 : you;
     // Even seats are red (team 0), odd seats blue.
     this.fighters = Array.from({ length: n }, (_, i) => {
-      const f = new Fighter(i === you ? 'player' : 'bot', i === you ? 'You' : n > 2 ? `Player ${i + 1}` : 'Opponent', this.world);
+      const f = new Fighter(i === first ? 'player' : 'bot', i === you ? 'You' : n > 2 ? `Player ${i + 1}` : 'Opponent', this.world);
       f.team = i % 2;
       f.replica = true;
       f.networked = i !== you;
       return f;
     });
-    this.player = this.fighters[you];
+    this.player = this.fighters[first];
     this.bot = this.fighters.find((f) => f.team !== this.player.team)!;
     this.world.fighters.push(...this.fighters);
     this.fighters.forEach((f, i) => {
@@ -365,7 +372,7 @@ export class NetMatch {
     this.mode.setup(this.host);
     for (const f of this.fighters) {
       f.events.length = 0;
-      f.networked = f !== this.player;
+      f.networked = f !== this.player || this.spectator;
     }
     this.modeUi = { sb: [], title: null, gear: null };
     this.announcements = [];
@@ -535,7 +542,7 @@ export class NetMatch {
     for (const st of players) {
       const f = this.fighters[st.i];
       if (!f) continue;
-      if (f === this.player) {
+      if (f === this.player && !this.spectator) {
         this.applyAuthoritative(f, st);
         this.myPing = st.ping;
         continue;
@@ -643,6 +650,7 @@ export class NetMatch {
 
   /** Copies everything the server owns onto a fighter, leaving movement alone. */
   private applyAuthoritative(f: Fighter, s: NetFighter) {
+    const mine = f === this.player && !this.spectator;
     f.health = s.hp;
     f.absorption = s.ab;
     f.food.level = s.food;
@@ -654,7 +662,7 @@ export class NetMatch {
     // round trip old, and taking it undid every click (the bar refilled at once, so the next
     // swing landed in the opponent's hurt immunity) and every slot switch still in flight
     // (the held item flipped back and reset the cooldown).
-    if (f !== this.player) {
+    if (!mine) {
       f.attackStrengthTicker = s.ast;
       f.selected = s.sel;
     } else if (this.pendingSlot === null || s.sel === this.pendingSlot || ++this.pendingSlotAge > 40) {
@@ -667,7 +675,7 @@ export class NetMatch {
         f.attackStrengthTicker = t;
       }
     }
-    if (Array.isArray(s.inv) && !(f === this.player && this.holdInventory)) {
+    if (Array.isArray(s.inv) && !(mine && this.holdInventory)) {
       for (let k = 0; k < SLOT_COUNT; k++) f.setSlot(k, fromSlot(s.inv[k]));
     }
     f.cooldowns.clear();
@@ -675,7 +683,7 @@ export class NetMatch {
     f.fireTicks = s.fire ?? 0;
     f.mining = s.mn ? { x: s.mn[0], y: s.mn[1], z: s.mn[2], block: this.world.blocks.get(s.mn[0], s.mn[1], s.mn[2]) } : null;
     f.mineProgress = s.mn ? s.mn[3] : 0;
-    if (f !== this.player) {
+    if (!mine) {
       f.fallFlying = !!s.ff;
       f.fallFlyTicks = s.fft ?? 0;
     }
@@ -711,6 +719,16 @@ export class NetMatch {
     this.tickCount++;
     const p = this.player;
     for (const f of this.fighters) f.snapshot();
+    if (this.spectator) {
+      // Watching: everyone is played back; nothing of ours to simulate or send.
+      if (this.pendingEnts) {
+        this.applyEntities(this.pendingEnts);
+        this.pendingEnts = null;
+      } else for (const r of this.replicas.values()) r.obj.prevPos?.copy(r.obj.pos);
+      for (const pb of this.remotes.values()) pb.step();
+      if (this.phase === 'countdown') this.phaseTicks++;
+      return;
+    }
 
     if (this.phase !== 'fight') {
       p.input = { forward: 0, strafe: 0, jump: false, sneak: p.input.sneak, sprint: false };
