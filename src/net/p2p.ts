@@ -198,29 +198,52 @@ export class OnlineHost {
     });
   }
 
-  /** Registers a free code with the signalling server (a taken one is retried with another). */
-  static start(timeoutMs = 15000): Promise<OnlineHost> {
+  /**
+   * Registers a free code with the signalling server. A taken code is retried with another, and a
+   * hiccup of the free signalling service (it often fails the first, cold connection) is retried
+   * too, a moment later — rather than showing an error that a relaunch would have "fixed".
+   */
+  static start(timeoutMs = 25000): Promise<OnlineHost> {
     return new Promise((resolve, reject) => {
       let tries = 0;
+      let settled = false;
+      const deadline = Date.now() + timeoutMs;
+      const fail = (why: string) => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(why));
+      };
       const attempt = () => {
+        if (settled) return;
         tries++;
         const code = onlineCode();
         const peer = new Peer(PEER_PREFIX + code, peerOptions());
-        const timer = setTimeout(() => {
-          peer.destroy();
-          reject(new Error('The matchmaking service did not answer. Check your internet connection and try again.'));
-        }, timeoutMs);
+        const timer = setTimeout(
+          () => {
+            peer.destroy();
+            fail('The matchmaking service did not answer. Check your internet connection and try again.');
+          },
+          Math.max(1000, deadline - Date.now()),
+        );
         peer.on('open', () => {
           clearTimeout(timer);
+          if (settled) {
+            peer.destroy();
+            return;
+          }
+          settled = true;
           resolve(new OnlineHost(code, peer));
         });
         peer.on('error', (e) => {
-          if (peer.open) return; // errors about a single connection, once hosting
+          // Once hosting, errors are about one connection or a signalling blip (it reconnects by
+          // itself — see the constructor): never a reason to tear the game down.
+          if (settled) return;
           clearTimeout(timer);
           peer.destroy();
-          if (e.type === 'unavailable-id' && tries < 5) attempt();
-          else if (e.type === 'browser-incompatible') reject(new Error('This browser cannot make direct connections (WebRTC). Use the PvP Trainer app, Chrome, Edge or Firefox.'));
-          else reject(new Error('Could not reach the matchmaking service. Check your internet connection and try again.'));
+          const transient = e.type === 'unavailable-id' || e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error' || e.type === 'socket-closed';
+          if (transient && tries < 6 && Date.now() < deadline - 1500) setTimeout(attempt, e.type === 'unavailable-id' ? 0 : 600 * tries);
+          else if (e.type === 'browser-incompatible') fail('This browser cannot make direct connections (WebRTC). Use the PvP Trainer app, Chrome, Edge or Firefox.');
+          else fail('Could not reach the matchmaking service. Check your internet connection and try again.');
         });
       };
       attempt();
@@ -296,6 +319,9 @@ export function joinOnline(code: string): SocketLike {
     watchIce(c, () => fail(sock.readyState === 1 ? 'The connection to the host was lost.' : NO_DIRECT));
   });
   peer.on('error', (e) => {
+    // Connected: the game runs over our own channel (its errors are handled above); a hiccup of
+    // the signalling service doesn't end it.
+    if (sock.readyState === 1) return;
     if (e.type === 'peer-unavailable') fail(`No game is being hosted with code ${code}. Check the code with your friend — it changes every time they host.`);
     else if (e.type === 'browser-incompatible') fail('This browser cannot make direct connections (WebRTC). Use the PvP Trainer app, Chrome, Edge or Firefox.');
     else if (e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error' || e.type === 'socket-closed') {
