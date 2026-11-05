@@ -268,7 +268,7 @@ const BASIC: Skills = {
   maxGapsPerRetreat: 1,
   comboEscape: 'none',
   axe: { shieldChance: 0.25, shieldLead: 1, shieldReact: 7, swap: false, axeDelay: [12, 20], readAxe: 0, ranged: 0, rangedNoiseDeg: 4 },
-  neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 30, hotbarTotem: false, rebuff: false, mendAt: 0, pcrit: 0, gapDist: 7, buffChance: 0 },
+  neth: { potHP: 7, potNoiseDeg: 16, potGap: 6, invTicks: 30, totemReact: 30, hotbarTotem: false, rebuff: false, mendAt: 0.3, pcrit: 0, gapDist: 7, buffChance: 0 },
   // Picks its lava back up and puts itself out with water: decisions every tier makes.
   uhc: { lava: 0.15, lavaPickup: true, web: 0, water: true, pillar: false, mine: false, headHP: 6, aimSettle: 8 },
   crystal: {
@@ -277,7 +277,7 @@ const BASIC: Skills = {
   },
   mace: { launch: 0.25, steer: 0.4, elytra: false, pickMace: false, defend: 0, smashDepth: 0 },
   legacy: { cps: 5, blockHit: 0, blockTicks: [3, 5], blockOnHurt: 0 },
-  sense: { escape: 0.01, escapeHP: 5, mendRun: 0.01, slide: 0.03, finish: 0.05, wall: 0.02, read: 0.25, safeEat: true },
+  sense: { escape: 0.01, escapeHP: 5, mendRun: 0.2, slide: 0.03, finish: 0.05, wall: 0.02, read: 0.25, safeEat: true },
 };
 
 /** Skill 2 (from LT2 up): starts to space and W-tap; anchors, pearls, water and a crossbow come in. */
@@ -321,7 +321,7 @@ const DECENT: Skills = {
   },
   mace: { launch: 0.55, steer: 0.6, elytra: false, pickMace: true, defend: 1, smashDepth: 0.3 },
   legacy: { cps: 7, blockHit: 0.15, blockTicks: [3, 5], blockOnHurt: 0 },
-  sense: { escape: 0.35, escapeHP: 7, mendRun: 0.15, slide: 0.5, finish: 0.35, wall: 0.25, read: 0.45, safeEat: true },
+  sense: { escape: 0.35, escapeHP: 7, mendRun: 0.25, slide: 0.5, finish: 0.35, wall: 0.25, read: 0.45, safeEat: true },
 };
 
 /** Skill 4 = HT2: times its hits, sometimes W-taps and crits; uses the crossbow and hotbar totems. */
@@ -367,7 +367,7 @@ const GOOD: Skills = {
   },
   mace: { launch: 0.8, steer: 0.75, elytra: true, pickMace: true, defend: 1, smashDepth: 0.6 },
   legacy: { cps: 8.5, blockHit: 0.3, blockTicks: [2, 4], blockOnHurt: 0.1 },
-  sense: { escape: 0.6, escapeHP: 8, mendRun: 0.22, slide: 0.65, finish: 0.6, wall: 0.5, read: 0.6, safeEat: true },
+  sense: { escape: 0.6, escapeHP: 8, mendRun: 0.3, slide: 0.65, finish: 0.6, wall: 0.5, read: 0.6, safeEat: true },
 };
 
 /** Skill 6 = LT1: W-taps, jump-resets, crits, attribute swaps, surrounds and digs — every item. */
@@ -413,7 +413,7 @@ const STRONG: Skills = {
   },
   mace: { launch: 0.9, steer: 0.88, elytra: true, pickMace: true, defend: 2, smashDepth: 1 },
   legacy: { cps: 10, blockHit: 0.45, blockTicks: [2, 3], blockOnHurt: 0.2 },
-  sense: { escape: 0.8, escapeHP: 9, mendRun: 0.28, slide: 0.8, finish: 0.8, wall: 0.7, read: 0.75, safeEat: true },
+  sense: { escape: 0.8, escapeHP: 9, mendRun: 0.32, slide: 0.8, finish: 0.8, wall: 0.7, read: 0.75, safeEat: true },
 };
 
 /** Skill 8 (between LT1 and HT1): tier-tester level — near-perfect timing and spacing. */
@@ -448,7 +448,7 @@ const ELITE: Skills = {
   crystal: { ...STRONG.crystal, clickGap: 2, aimSettle: 2, comboGap: 5, thinkTicks: 3, selfWeight: 1 },
   mace: { launch: 0.92, steer: 0.9, elytra: true, pickMace: true, defend: 2, smashDepth: 1.1 },
   legacy: { cps: 11, blockHit: 0.5, blockTicks: [2, 3], blockOnHurt: 0.25 },
-  sense: { escape: 0.88, escapeHP: 9.5, mendRun: 0.32, slide: 0.86, finish: 0.88, wall: 0.8, read: 0.85, safeEat: true },
+  sense: { escape: 0.88, escapeHP: 9.5, mendRun: 0.34, slide: 0.86, finish: 0.88, wall: 0.8, read: 0.85, safeEat: true },
 };
 
 /**
