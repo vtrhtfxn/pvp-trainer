@@ -80,12 +80,12 @@ describe('off hand', () => {
 });
 
 describe('shields', () => {
-  it('blocks a front hit only after 5 ticks raised', () => {
+  it('blocks a front hit from the moment it is raised', () => {
     const { a, b, world } = setup();
     b.selectSlot(1);
     b.startUsingItem(true);
-    for (let t = 0; t < C.SHIELD_RAISE_TICKS - 1; t++) step(world, a, b);
-    expect(b.isBlocking()).toBe(false);
+    // No warm-up: a hit straight after raising it is already blocked.
+    expect(b.isBlocking()).toBe(true);
     step(world, a, b);
     expect(b.isBlocking()).toBe(true);
 
@@ -370,3 +370,41 @@ describe('axe bot', () => {
   });
 });
 
+
+describe('instant shields for people', () => {
+  it("a person's shield blocks the hit that lands the tick it goes up; a bot's still needs 5 ticks", () => {
+    const m = new Match(kitById('axe'), DIFFICULTIES.ht1, 1);
+    const p = m.player;
+    const b = m.bot;
+    expect(p.shieldRaiseTicks).toBe(0);
+    expect(b.shieldRaiseTicks).toBe(C.BOT_SHIELD_RAISE_TICKS);
+    // Face each other at sword range; the bot holds its sword, the person a shield in the off hand.
+    p.pos.set(0.5, 0, 1.5);
+    b.pos.set(0.5, 0, -0.5);
+    p.yaw = 0;
+    b.yaw = Math.PI;
+    const shieldSlot = p.inventory.findIndex((s) => s?.id === 'shield');
+    if (shieldSlot >= 0) p.selectSlot(shieldSlot);
+    expect(p.startUsingItem(true)).toBe(true);
+    expect(p.isBlocking()).toBe(true);
+    charge(b);
+    const hp = p.health;
+    performAttack(b, p);
+    expect(p.health).toBe(hp);
+    expect(p.stats.blocked).toBe(1);
+  });
+
+  it('online, a shield goes up on the host the moment the press arrives', async () => {
+    const { Duel } = await import('../src/net/Duel');
+    const duel = new Duel(['A', 'B'], 'axe');
+    for (let t = 0; t < 400 && duel.phase !== 'fight'; t++) duel.tick();
+    expect(duel.phase).toBe('fight');
+    const a = duel.fighters[0];
+    const slot = a.inventory.findIndex((s) => s?.id === 'shield');
+    if (slot >= 0) a.selectSlot(slot);
+    duel.receive(0, { t: 'use', down: true });
+    // No tick in between: it is already up and blocking.
+    expect(a.raisingShield()).toBe(true);
+    expect(a.isBlocking()).toBe(true);
+  });
+});

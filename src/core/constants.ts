@@ -70,8 +70,17 @@ export const EXHAUSTION_MAX = 40;
 export const GOLDEN_APPLE_EAT_TICKS = 32;
 
 // ---- Shields (Java 1.9+)
-/** A raised shield only blocks once it has been held up this long (LivingEntity.isBlocking). */
-export const SHIELD_RAISE_TICKS = 5;
+/**
+ * How long a raised shield must be up before it blocks. Vanilla waits 5 ticks
+ * (LivingEntity.isBlocking), which let hits through right after raising it; a person's shield here
+ * blocks from the moment it is up, until it is lowered or an axe disables it.
+ */
+export const SHIELD_RAISE_TICKS = 0;
+/**
+ * Bots keep vanilla's 5 ticks: they hold a shield up with perfect timing, and two bots blocking
+ * instantly in SMP stall each other until the clock runs out.
+ */
+export const BOT_SHIELD_RAISE_TICKS = 5;
 /** An axe hit on a raised shield puts it on cooldown for 5 s. */
 export const SHIELD_DISABLE_TICKS = 100;
 /** Items with an open-ended use (shield, bow, loading crossbow) — vanilla's 72000. */

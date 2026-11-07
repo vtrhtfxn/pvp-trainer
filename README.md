@@ -589,7 +589,7 @@ ticks behind, its own read of the distance) and checks each one can be passed wi
 | --- | --- |
 | Sword basics | Full-charge hits · Sprint hits (W-tap) · Jump crits · Spacing (S-tap) · Crit chain · Combo (vs HT5) · Aim tracking |
 | Defense | Jump reset (same-tick jump; shows the knockback you took) · P-crit (NethPot kit: crit on the way down from their knockback) · Hit select (punish right after their swing) |
-| Axe & shield | Shield timing (raise ≥ 5 ticks before the hit) · Shield disable · Attribute swap (sword → axe on the click tick) · Disable → punish |
+| Axe & shield | Shield timing (raise before the hit) · Shield disable · Attribute swap (sword → axe on the click tick) · Disable → punish |
 | Pot | Potting (Diamond Pot, ≥ 80% strength) · Re-totem (NethPot: hotbar totem + F, under 1 s) |
 | Crystal | Crystal combo · Hit-crystal · Respawn anchor |
 | Mace | Wind charge smash |
@@ -810,8 +810,10 @@ nametag reads *Passive*.
 - **Off hand**: right click tries the main hand first and falls through to the off hand when the
   main-hand item has no use — a sword with a shield behind it blocks, with a golden apple behind it
   eats. **F** swaps the two hands.
-- **Shield**: blocks every melee hit and arrow from the front half once it has been raised for 5 ticks
-  (0.25 s). You move at 20% speed and cannot attack while it is up — clicks are swallowed, so you have to
+- **Shield**: your shield blocks every melee hit and arrow from the front half from the moment it is
+  raised until you lower it or an axe disables it (vanilla waits 5 ticks; here there is no gap, for
+  every person, offline and online). Online, the press goes to the host at once and the shield goes up
+  there as it arrives. Bots keep vanilla's 5-tick raise (with instant shields two SMP bots stall each other). You move at 20% speed and cannot attack while it is up — clicks are swallowed, so you have to
   lower it for a tick first. A blocked hit still gives the defender fresh i-frames with `lastHurt = 0`.
 - **Axe**: 9 damage, 1.0 attack speed (20-tick charge). Any axe hit on a raised shield disables every
   shield for 5 s (100 ticks), whatever the charge.

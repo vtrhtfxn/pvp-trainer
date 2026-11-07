@@ -25,7 +25,7 @@ interface Seen {
   onGround: boolean;
   /** Eating (a golden apple). */
   using: boolean;
-  /** Shield raised (visible from the first tick, blocking from the fifth). */
+  /** Shield raised (visible from the first tick; a bot's blocks from the fifth). */
   shield: boolean;
   held: ItemId | null;
 }
@@ -282,6 +282,7 @@ export class BotBrain {
     private readonly doAttack: () => AttackOutcome,
   ) {
     this.swingThreshold = rng.range(profile.chargeMin, profile.chargeMax);
+    bot.shieldRaiseTicks = C.BOT_SHIELD_RAISE_TICKS;
   }
 
   /** Who it is fighting right now. */
