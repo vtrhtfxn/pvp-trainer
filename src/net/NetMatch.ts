@@ -437,7 +437,11 @@ export class NetMatch {
   }
 
   queueUse() {
-    // The server treats the press itself as a click; nothing extra to send.
+    // Send the press at once rather than at the next tick (up to 50 ms later): a shield raised on
+    // your screen should be up on the server before the next hit arrives.
+    if (this.phase !== 'fight' || this.lastUseHeld || !this.net.connected) return;
+    this.lastUseHeld = this.useHeld = true;
+    this.net.send({ t: 'use', down: true });
   }
 
   queueSwapHands() {

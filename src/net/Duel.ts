@@ -339,6 +339,10 @@ export class Duel {
     // A press is also queued as a click, so a tap shorter than a tick still registers.
     if (down && !this.useHeld[i] && this.pendingUse[i] < 2) this.pendingUse[i]++;
     this.useHeld[i] = down;
+    // A shield goes up the moment the press arrives, not at the next tick: a hit resolved in
+    // between would land on someone who already had it up on their screen.
+    const f = this.fighters[i];
+    if (down && this.phase === 'fight' && !f.usingItem && !f.dead && shieldComesFirst(f)) f.startUsingItem(true);
   }
 
   setMining(i: number, down: boolean) {
@@ -974,4 +978,13 @@ export class Duel {
   resendInventories() {
     this.lastInv.fill('');
   }
+}
+
+/** Right-clicking now would raise a shield: one in the main hand, or in the off hand behind an item that has no use of its own (a sword, an axe). */
+function shieldComesFirst(f: Fighter): boolean {
+  const main = f.stackIn('main');
+  const off = f.stackIn('off');
+  if (main?.id === 'shield') return !f.cooldowns.has('shield');
+  if (off?.id !== 'shield' || f.cooldowns.has('shield')) return false;
+  return !main || ITEMS[main.id].use === 'none';
 }

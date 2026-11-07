@@ -530,10 +530,10 @@ export const DRILLS: DrillDef[] = [
     goal: 6,
     how: [
       'The bot walks in and swings every 2–3 seconds.',
-      'Raise your shield (hold right click) just before its swing — at least 5 ticks (0.25 s) before, but no more than about a second.',
+      'Raise your shield (hold right click) just before its swing — no more than about a second before.',
       'Lower it again to hit back. Block 6 hits.',
     ],
-    why: 'A shield blocks everything from the front, but only 5 ticks after you raise it — and while it is up you can not attack. Raising it on time and dropping it to punish is the core of Axe PvP.',
+    why: 'A shield blocks everything from the front the moment it is up — but while it is up you can not attack. Raising it on time and dropping it to punish is the core of Axe PvP.',
     bot: () => attacker({ interval: [45, 70], range: 2.8 }),
     check(run, pe) {
       if (pe.some((e) => e.type === 'shieldRaise')) run.s.raisedAt = run.t;
@@ -542,7 +542,7 @@ export const DRILLS: DrillDef[] = [
         if (up <= 25) run.success(`Blocked (raised ${up} ticks before)`);
         else run.fail(`Blocked, but you held it up for ${(up / 20).toFixed(1)} s — raise it just before the swing.`);
       } else if (hurtBy(pe, run.b)) {
-        if (run.p.raisingShield()) run.fail(`Raised too late — ${up} ticks. A shield needs 5 ticks before it blocks.`);
+        if (run.p.raisingShield()) run.fail('Raised too late — it has to be up before the swing lands.');
         else run.fail('Not blocked — hold right click as it swings.');
       }
     },

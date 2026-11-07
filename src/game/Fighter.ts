@@ -396,6 +396,8 @@ export class Fighter {
   rightClickDelay = 0;
   /** Ticks left before any shield can be raised again (after an axe disabled it). */
   shieldCooldown = 0;
+  /** Ticks a raised shield takes to block: none for people, vanilla's 5 for bots (BotBrain sets it). */
+  shieldRaiseTicks = C.SHIELD_RAISE_TICKS;
   /** Entity.remainingFireTicks: burning while > 0. */
   fireTicks = 0;
   /** Player.takeXpDelay: an orb can only be absorbed when this is 0. */
@@ -680,12 +682,12 @@ export class Fighter {
   useTicks(): number {
     return this.usingItem ? this.useItemDuration - this.useItemRemaining : 0;
   }
-  /** Shield held up — drawn from the first tick, but only blocks after SHIELD_RAISE_TICKS. */
+  /** Shield held up (it blocks after `shieldRaiseTicks`: at once for people). */
   raisingShield(): boolean {
     return this.useKind() === 'shield';
   }
   isBlocking(): boolean {
-    return this.useKind() === 'shield' && this.useTicks() >= C.SHIELD_RAISE_TICKS;
+    return this.useKind() === 'shield' && this.useTicks() >= this.shieldRaiseTicks;
   }
   /**
    * Player.hurtCurrentlyUsedShield: blocking a hit of 3 or more damage costs the shield

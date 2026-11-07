@@ -980,7 +980,7 @@ export class Menus {
       h('li', {}, 'Full hunger + saturation heals fast. Golden apples give Regen II + Absorption.'),
       h('li', {}, 'With hitboxes on, a box turns yellow while that fighter is inside the other one\u2019s 3-block reach.'),
       h('li', {}, 'Practice difficulty never swings back — use it to drill combos, W-taps and reach. In the Axe kit it keeps its shield up, so you can drill shield disables.'),
-      h('li', {}, 'Shield: blocks everything from the front half once it has been up for 0.25 s. You cannot attack while it is raised — lower it first.'),
+      h('li', {}, 'Shield: blocks everything from the front half the moment it is up. You cannot attack while it is raised — lower it first.'),
       h('li', {}, 'An axe hit on a raised shield disables it for 5 s, at any charge.'),
       h('li', {}, 'NethPot: look straight down to pot — a splash heals less the further from your feet it lands (nothing past 4 blocks). Healing II is 4 hearts at best.'),
       h('li', {}, 'NethPot: after a totem pops, re-totem fast — slot key + F with a hotbar totem, or E, hover a totem, F.'),
