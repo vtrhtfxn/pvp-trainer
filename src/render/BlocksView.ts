@@ -120,6 +120,11 @@ function stripTexture(name: string, frames: number): THREE.Texture | null {
 
 /** block/lava_still.png.mcmeta: 20 frames, 2 ticks each, played forward then back. */
 const LAVA_FRAMES = 20;
+/**
+ * block/lava_flow.png: 16 frames of 32×32, 2 ticks each. Flowing lava (and the sides of any lava)
+ * shows half of a frame per block, the way vanilla scales the flow texture.
+ */
+const LAVA_FLOW_FRAMES = 16;
 const FIRE_FRAMES = 32;
 
 /** The ender chest model (ChestModel): a 14×10×14 body, a 14×5×14 lid and the latch. */
@@ -155,6 +160,8 @@ export class BlocksView {
   private readonly waterMat: THREE.MeshBasicMaterial;
   private readonly lavaMat: THREE.MeshBasicMaterial;
   private readonly lavaTex: THREE.Texture | null;
+  private readonly lavaFlowMat: THREE.MeshBasicMaterial;
+  private readonly lavaFlowTex: THREE.Texture | null;
   private readonly fireMat: THREE.MeshBasicMaterial;
   private readonly fireTex: THREE.Texture | null;
   private readonly chestMat: THREE.MeshLambertMaterial;
@@ -171,6 +178,9 @@ export class BlocksView {
     this.waterMat = litMaterial(new THREE.MeshBasicMaterial({ map: waterTexture(), transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, vertexColors: true }));
     this.lavaTex = stripTexture('block/lava_still', LAVA_FRAMES);
     this.lavaMat = new THREE.MeshBasicMaterial({ map: this.lavaTex, side: THREE.DoubleSide });
+    this.lavaFlowTex = stripTexture('block/lava_flow', LAVA_FLOW_FRAMES);
+    if (this.lavaFlowTex) this.lavaFlowTex.repeat.set(0.5, 0.5 / LAVA_FLOW_FRAMES);
+    this.lavaFlowMat = new THREE.MeshBasicMaterial({ map: this.lavaFlowTex ?? this.lavaTex, side: THREE.DoubleSide });
     this.fireTex = stripTexture('block/fire_0', FIRE_FRAMES);
     this.fireMat = new THREE.MeshBasicMaterial({ map: this.fireTex, alphaTest: 0.1, side: THREE.DoubleSide, fog: false });
     this.chestMat = new THREE.MeshLambertMaterial({ map: packTexture('entity/chest/ender'), alphaTest: 0.1 });
@@ -237,6 +247,7 @@ export class BlocksView {
     const rails = buf();
     const water = buf();
     const lava = buf();
+    const lavaFlow = buf();
     const fire = buf();
     const chests: [number, number, number][] = [];
     const lootChests: [number, number, number][] = [];
@@ -289,7 +300,8 @@ export class BlocksView {
           } else if (id === B.COBWEB) this.cross(web, x, y, z, 0.15);
           else if (id === B.RAIL) this.rail(rails, x, y, z, blocks.railAxis(x, y, z));
           else if (id === B.FIRE) this.cross(fire, x, y, z, 0);
-          else if (isFluid(id)) this.fluid(id === B.WATER ? water : lava, blocks, x, y, z, id);
+          else if (id === B.WATER) this.fluid(water, water, blocks, x, y, z, id);
+          else if (isFluid(id)) this.fluid(lava, lavaFlow, blocks, x, y, z, id);
         }
     const group = new THREE.Group();
     const meshes: THREE.Mesh[] = [];
@@ -306,6 +318,7 @@ export class BlocksView {
     if (rails.idx.length) add(toGeo(rails), this.railMat);
     if (fire.idx.length) add(toGeo(fire), this.fireMat, 4);
     if (lava.idx.length) add(toGeo(lava), this.lavaMat);
+    if (lavaFlow.idx.length) add(toGeo(lavaFlow), this.lavaFlowMat);
     if (water.idx.length) add(toGeo(water), this.waterMat, 2);
     if (glass.idx.length) add(toGeo(glass), this.glassMat, 3);
     for (const [x, y, z] of lootChests) {
@@ -414,9 +427,12 @@ export class BlocksView {
   }
 
   /** A fluid cell: its surface at the level's height, sides wherever the neighbour is open. */
-  private fluid(b: Buf, blocks: Blocks, x: number, y: number, z: number, id: number) {
+  /** A fluid block's faces: the still texture on a source's top, the flowing one on the rest. */
+  private fluid(still: Buf, flow: Buf, blocks: Blocks, x: number, y: number, z: number, id: number) {
     const top = blocks.fluidHeight(x, y, z);
+    const source = blocks.isSource(x, y, z);
     for (const f of FACES) {
+      const b = f.n[1] === 0 || !source ? flow : still;
       const n = blocks.get(x + f.n[0], y + f.n[1], z + f.n[2]);
       if (n === id) {
         if (f.n[1] !== 0 || blocks.fluidHeight(x + f.n[0], y, z + f.n[2]) >= top) continue;
@@ -442,6 +458,11 @@ export class BlocksView {
       const t = Math.floor(tick / 2) % (LAVA_FRAMES * 2 - 2);
       const frame = t < LAVA_FRAMES ? t : LAVA_FRAMES * 2 - 2 - t;
       this.lavaTex.offset.y = 1 - (frame + 1) / LAVA_FRAMES;
+    }
+    if (this.lavaFlowTex) {
+      const frame = Math.floor(tick / 2) % LAVA_FLOW_FRAMES;
+      // Half of the frame per block, as vanilla draws flowing lava.
+      this.lavaFlowTex.offset.y = 1 - (frame + 0.5) / LAVA_FLOW_FRAMES;
     }
     if (this.fireTex) this.fireTex.offset.y = 1 - ((tick % FIRE_FRAMES) + 1) / FIRE_FRAMES;
 
