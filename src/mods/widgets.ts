@@ -448,7 +448,10 @@ export class ModHud {
       const st = slots[i];
       if (!st && !showEmpty) continue;
       const sx = i * 20;
-      if (bar) x.drawImage(bar, 0, 0, 22, 22, sx, 0, 22, 22);
+      if (bar) {
+        const k = bar.width / 182; // an HD pack's hotbar is drawn from the same part, scaled
+        x.drawImage(bar, 0, 0, 22 * k, 22 * k, sx, 0, 22, 22);
+      }
       else {
         x.fillStyle = 'rgba(0,0,0,0.55)';
         x.fillRect(sx, 0, 22, 22);

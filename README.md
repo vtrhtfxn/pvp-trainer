@@ -172,8 +172,21 @@ until nothing overlaps. The **Resource Packs** tab shows the active pack; more a
 
 ## Options
 
-**Options** has six tabs:
+**Options** has seven tabs:
 
+- **Resource Packs** — play with any Minecraft resource pack (PvP packs, 16× to 512×, made for
+  1.8 up to the newest versions). In the desktop app: **Open Pack Folder**, drop the pack's .zip
+  (or its unzipped folder) in, press **Refresh** and **Use** it. In the browser (or an app installed
+  before this), **Add Pack (.zip)…** keeps it in the browser's storage on that computer. Picking a
+  pack reloads the game with it, like Minecraft's resource reload. It replaces item, block, armor,
+  arrow, chest, crystal, shield, elytra, particle and effect textures, the HUD (hotbar, hearts,
+  armor, hunger, crosshair — cut from `gui/icons.png` / `gui/widgets.png` in old packs) and the
+  team leather armor (the pack's leather, dyed red and blue). Old names (`items/`, `blocks/`,
+  `apple_golden`, `web`, `gold_layer_1` …) and 1.21.2+ armor (`entity/equipment`) are mapped
+  for you; HD textures stay sharp in the world and the HUD is drawn at its normal size. Not used:
+  sounds, fonts, custom item models (JSON), OptiFine/CIT extras and the sky. Inventory icons are
+  drawn at 16×16. (`src/render/resourcePack.ts`, `zip.ts`, `packStore.ts`; tests:
+  `tests/resourcePack.test.ts`.)
 - **Video** — FOV, FOV effects, a separate **hand FOV**, third-person distance, brightness,
   GUI scale, damage tilt, view bobbing; **Max Framerate**, **Render Scale** (Auto lowers the
   resolution only while frames are slow), particles (All / Decreased / Minimal), smooth edges

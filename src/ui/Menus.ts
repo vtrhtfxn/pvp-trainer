@@ -1,4 +1,5 @@
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../ai/difficulty';
+import { renderResourcePacks } from './ResourcePacks';
 import type { FighterStats } from '../game/Fighter';
 import { KITS, customKitList, isCustomKit, kitById, type KitDef, type KitId } from '../game/kits';
 import { teamKit } from '../game/Match';
@@ -73,9 +74,10 @@ export interface MenuCallbacks {
 /** Title-screen card that stands for all custom kits. */
 const CUSTOM_CARD = 'custom';
 
-type SettingsTab = 'video' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
+type SettingsTab = 'video' | 'packs' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
 const TAB_LABELS: Record<SettingsTab, string> = {
   video: 'Video',
+  packs: 'Resource Packs',
   controls: 'Controls',
   keys: 'Key Binds',
   sound: 'Sound',
@@ -945,6 +947,9 @@ export class Menus {
         slider('Chat Width', 40, 320, 1, () => s.chatWidth, (v) => (s.chatWidth = v), (v) => `${v}px`);
         break;
       }
+      case 'packs':
+        renderResourcePacks(body, () => this.cb.onUiSound());
+        break;
     }
   }
 

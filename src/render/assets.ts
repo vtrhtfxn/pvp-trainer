@@ -2,7 +2,11 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import playerUrl from '../assets/models/player.glb?url';
 import { registerGoldenHead, registerSpearMace } from './itemIcons';
-import { loadPack } from './pack';
+import { applyResourcePack, loadPack, packKeys } from './pack';
+import { loadActivePack } from './packStore';
+
+/** The resource pack in use (null: the default textures), and how many textures it replaced. */
+export let resourcePackApplied: { name: string; textures: number } | null = null;
 
 export type PartName = 'head' | 'body' | 'rightArm' | 'leftArm' | 'rightLeg' | 'leftLeg';
 export const PART_NAMES: PartName[] = ['head', 'body', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'];
@@ -142,6 +146,13 @@ export async function loadAssets(): Promise<Assets> {
   // Items, armor, the shield, arrows, blocks and HUD sprites all come from the resource pack;
   // only the rigged player body is still a model file.
   const [player] = await Promise.all([load(playerUrl), loadPack()]);
+  // A resource pack replaces textures before anything is built from them.
+  try {
+    const active = await loadActivePack(packKeys());
+    if (active) resourcePackApplied = { name: active.ref.name, textures: await applyResourcePack(active.pack) };
+  } catch (e) {
+    console.warn('Resource pack not loaded:', e);
+  }
   const rig = buildRig(player);
   registerGoldenHead();
   registerSpearMace();

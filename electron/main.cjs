@@ -257,6 +257,57 @@ ipcMain.handle('pvp:open-download', (e) => {
   void shell.openExternal(RELEASES);
 });
 ipcMain.handle('pvp:build', (e) => (fromGame(e) ? GAME.build : 0));
+
+// ---- Resource packs: a resourcepacks folder in the app's data folder, like Minecraft's. The
+// game lists it, reads the pack the player picked (a .zip, or an unzipped folder), and can open
+// it in Finder / Explorer. Only names directly inside the folder are ever read.
+const PACKS = path.join(app.getPath('userData'), 'resourcepacks');
+const PACK_LIMIT = 300 * 1024 * 1024;
+function packsDir() {
+  fs.mkdirSync(PACKS, { recursive: true });
+  return PACKS;
+}
+function packPath(name) {
+  if (typeof name !== 'string' || !name || name !== path.basename(name) || name.startsWith('.')) return null;
+  const p = path.join(packsDir(), name);
+  return path.dirname(p) === PACKS ? p : null;
+}
+ipcMain.handle('pvp:packs-list', (e) => {
+  if (!fromGame(e)) return [];
+  return fs
+    .readdirSync(packsDir(), { withFileTypes: true })
+    .filter((d) => !d.name.startsWith('.') && ((d.isFile() && /\.zip$/i.test(d.name)) || d.isDirectory()))
+    .map((d) => d.name)
+    .sort((a, b) => a.localeCompare(b));
+});
+ipcMain.handle('pvp:packs-read', (e, name) => {
+  if (!fromGame(e)) return null;
+  const p = packPath(name);
+  if (!p || !fs.existsSync(p)) return null;
+  const st = fs.statSync(p);
+  if (st.isFile()) return st.size <= PACK_LIMIT ? { zip: fs.readFileSync(p) } : null;
+  // An unzipped pack: just the files the game can use (pack.mcmeta, pack.png, textures).
+  const files = [];
+  let total = 0;
+  const walk = (dir, rel) => {
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, d.name);
+      const r = rel ? `${rel}/${d.name}` : d.name;
+      if (d.isDirectory()) walk(full, r);
+      else if (d.isFile() && (/^(pack\.mcmeta|pack\.png)$/i.test(r) || (/\.png$/i.test(r) && /textures\//i.test(r)))) {
+        total += fs.statSync(full).size;
+        if (total > PACK_LIMIT) return;
+        files.push({ name: r, data: fs.readFileSync(full) });
+      }
+    }
+  };
+  walk(p, '');
+  return { files };
+});
+ipcMain.handle('pvp:packs-open', (e) => {
+  if (!fromGame(e)) return;
+  void shell.openPath(packsDir());
+});
 /** The refresh rate of the screen the window is on (60, 120 on ProMotion, …). */
 ipcMain.handle('pvp:display-hz', (e) => {
   if (!fromGame(e) || !win) return 0;

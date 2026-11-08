@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { lerp } from '../core/math';
 import type { Fighter } from '../game/Fighter';
 import { packTexture } from './itemMesh';
+import { stripFrames } from './pack';
 
-/** block/fire_0.png.mcmeta: 32 frames, played starting at frame 16, one per tick. */
-const FRAMES = 32;
-const FRAME_ORDER = Array.from({ length: FRAMES }, (_, i) => (i + 16) % FRAMES);
+/** block/fire_0.png.mcmeta: 32 frames (a resource pack's may differ), played from the middle, one per tick. */
+const FRAMES_DEFAULT = 32;
 
 /**
  * EntityRenderDispatcher.renderFlame: burning entities are wrapped in camera-facing sheets of
@@ -15,12 +15,13 @@ export class FireView {
   readonly group = new THREE.Group();
   private readonly tex: THREE.Texture | null;
   private readonly sheets: THREE.Mesh[] = [];
+  private readonly frames = stripFrames('block/fire_0', FRAMES_DEFAULT);
 
   constructor() {
     const base = packTexture('block/fire_0');
     this.tex = base ? base.clone() : null;
     if (this.tex) {
-      this.tex.repeat.set(1, 1 / FRAMES);
+      this.tex.repeat.set(1, 1 / this.frames);
       this.tex.needsUpdate = true;
     }
     const mat = new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, depthWrite: false, fog: false });
@@ -39,8 +40,9 @@ export class FireView {
     this.group.visible = visible && f.onFire && !f.dead;
     if (!this.group.visible) return;
     if (this.tex) {
-      const frame = FRAME_ORDER[Math.floor(time * 20) % FRAMES];
-      this.tex.offset.y = 1 - (frame + 1) / FRAMES;
+      const n = this.frames;
+      const frame = (Math.floor(time * 20) + Math.floor(n / 2)) % n;
+      this.tex.offset.y = 1 - (frame + 1) / n;
     }
     this.group.position.set(lerp(f.prevPos.x, f.pos.x, a), lerp(f.prevPos.y, f.pos.y, a), lerp(f.prevPos.z, f.pos.z, a));
     const dx = camera.position.x - this.group.position.x;

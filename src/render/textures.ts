@@ -202,16 +202,19 @@ const PACK_BLOCKS: Record<string, { tex: string; tint?: string; overlay?: string
 };
 
 /** Multiplies a grayscale texture by a biome colour, keeping its alpha. */
-function tinted(img: CanvasImageSource, tint: string): HTMLCanvasElement {
+function tinted(img: CanvasImageSource & { width: number }, tint: string): HTMLCanvasElement {
+  // At the texture's own resolution (an HD pack stays sharp); a strip keeps its first frame.
+  const n = Math.max(16, img.width);
   const c = document.createElement('canvas');
-  c.width = c.height = 16;
+  c.width = c.height = n;
   const ctx = c.getContext('2d')!;
-  ctx.drawImage(img, 0, 0, 16, 16);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 0, 0, img.width, img.width, 0, 0, n, n);
   ctx.globalCompositeOperation = 'multiply';
   ctx.fillStyle = tint;
-  ctx.fillRect(0, 0, 16, 16);
+  ctx.fillRect(0, 0, n, n);
   ctx.globalCompositeOperation = 'destination-in';
-  ctx.drawImage(img, 0, 0, 16, 16);
+  ctx.drawImage(img, 0, 0, img.width, img.width, 0, 0, n, n);
   return c;
 }
 
@@ -220,13 +223,15 @@ function packCanvas(name: string): HTMLCanvasElement | null {
   const img = spec && packImage(spec.tex);
   if (!spec || !img) return null;
   if (spec.tint) return tinted(img, spec.tint);
+  const n = Math.max(16, img.width);
   const c = document.createElement('canvas');
-  c.width = c.height = 16;
+  c.width = c.height = n;
   const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
   // Animated textures are vertical strips of square frames: take the first.
-  ctx.drawImage(img, 0, 0, img.width, img.width, 0, 0, 16, 16);
+  ctx.drawImage(img, 0, 0, img.width, img.width, 0, 0, n, n);
   const over = spec.overlay && packImage(spec.overlay);
-  if (over) ctx.drawImage(tinted(over, GRASS_TINT), 0, 0);
+  if (over) ctx.drawImage(tinted(over, GRASS_TINT), 0, 0, n, n);
   return c;
 }
 
