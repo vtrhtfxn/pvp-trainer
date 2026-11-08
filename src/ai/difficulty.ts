@@ -559,6 +559,16 @@ const TIERS: { id: TierId; name: string; tagline: string; color: string }[] = [
   { id: 'ht1', name: 'HT1', tagline: 'High Tier 1 — the best there is: quick reactions, full reach, few wasted clicks. Still beatable.', color: '#aa00aa' },
 ];
 
+/**
+ * Hand adjustments on top of the blend. LT2 and HT2 broke a raised shield too fast for their tier
+ * (about 0.55 s and 0.4 s in the Axe kit): they now take longer to notice it and to swing (about 0.75 s and 0.6 s).
+ */
+function tweak(id: TierId, p: BotProfile): BotProfile {
+  if (id === 'lt2') return { ...p, axe: { ...p.axe, shieldReact: 11, axeDelay: [10, 15] } };
+  if (id === 'ht2') return { ...p, axe: { ...p.axe, shieldReact: 10, axeDelay: [8, 12] } };
+  return p;
+}
+
 export const DIFFICULTIES = {
   // LT5's movement, aim and healing with every attack removed, so you can drill combos, reach
   // and W-taps against a target that still moves like a player.
@@ -579,7 +589,7 @@ export const DIFFICULTIES = {
     mace: { ...BASIC.mace, launch: 0 },
     legacy: { ...BASIC.legacy },
   },
-  ...Object.fromEntries(TIERS.map((t) => [t.id, { ...skillsAt(TIER_SKILL[t.id]), ...t, passive: false }])),
+  ...Object.fromEntries(TIERS.map((t) => [t.id, tweak(t.id, { ...skillsAt(TIER_SKILL[t.id]), ...t, passive: false })])),
 } as Record<DifficultyId, BotProfile>;
 
 export const DIFFICULTY_ORDER: DifficultyId[] = ['practice', ...TIERS.map((t) => t.id)];

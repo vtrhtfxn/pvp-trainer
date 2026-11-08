@@ -581,8 +581,15 @@ export class Blocks {
         this.set(x, y, z, B.AIR);
         return;
       }
-      if (next.amount !== this.fluidAmount(x, y, z) || next.source !== this.isSource(x, y, z) || next.falling !== this.isFalling(x, y, z)) {
+      const amount = this.fluidAmount(x, y, z);
+      const falling = this.isFalling(x, y, z);
+      if (next.amount !== amount || next.source !== this.isSource(x, y, z) || next.falling !== falling) {
         this.set(x, y, z, id, next.amount, next.source, next.falling);
+        // LavaFluid.getSpreadDelay: lava that rises (neither state falling) usually waits four
+        // times as long before its next step, which is what makes it creep out unevenly.
+        if (id === B.LAVA && !falling && !next.falling && next.amount > amount && this.rand(4) !== 0) {
+          this.scheduled.set(this.index(x, y, z), this.now + FLUID[B.LAVA].delay * 4);
+        }
       }
     }
     this.spread(x, y, z, id);
@@ -613,39 +620,60 @@ export class Blocks {
     return this.inside(x, y, z) && (id === B.AIR || id === B.COBWEB || id === B.FIRE || isFluid(id));
   }
 
-  /** FlowingFluid.spread: down first; sideways only for sources or when it cannot fall. */
-  private spread(x: number, y: number, z: number, fluid: number) {
-    const F = FLUID[fluid as FluidId];
-    const falling = this.isFalling(x, y, z);
-    const amount = this.fluidAmount(x, y, z);
-    let down = false;
-    if (this.canHold(x, y - 1, z)) {
-      down = this.spreadTo(x, y - 1, z, fluid, 8, true, true);
-    }
-    if (down && !this.isSource(x, y, z)) return;
-    const k = (falling ? 8 : amount) - F.drop;
-    if (k <= 0) return;
-    for (const [dx, dz] of this.spreadDirs(x, y, z, fluid)) this.spreadTo(x + dx, y, z + dz, fluid, k, false, false);
+  /** Neighbouring source blocks of this fluid (FlowingFluid.sourceNeighborCount). */
+  private sourceNeighbours(x: number, y: number, z: number, fluid: number): number {
+    let n = 0;
+    for (const [dx, dz] of DIRS) if (this.get(x + dx, y, z + dz) === fluid && this.isSource(x + dx, y, z + dz)) n++;
+    return n;
   }
 
-  /** Writes fluid into a neighbour if it raises it (and handles lava/water meeting). */
+  /**
+   * FlowingFluid.spread: if it can fall, it falls (and only spreads sideways too when three
+   * sources surround it). Otherwise it spreads sideways, unless it is a flowing block standing on
+   * a hole or on its own fluid.
+   */
+  private spread(x: number, y: number, z: number, fluid: number) {
+    const F = FLUID[fluid as FluidId];
+    const below = this.get(x, y - 1, z);
+    if (this.canHold(x, y - 1, z) && below !== fluid) {
+      if (this.spreadTo(x, y - 1, z, fluid, 8, true, true)) {
+        if (this.sourceNeighbours(x, y, z, fluid) >= 3) this.spreadToSides(x, y, z, fluid, F);
+        return;
+      }
+    }
+    const hole = this.canHold(x, y - 1, z);
+    if (this.isSource(x, y, z) || !hole) this.spreadToSides(x, y, z, fluid, F);
+  }
+
+  /** FlowingFluid.spreadToSides: each chosen side gets the level it would settle to itself. */
+  private spreadToSides(x: number, y: number, z: number, fluid: number, F: { drop: number }) {
+    const k = this.isFalling(x, y, z) ? 7 : this.fluidAmount(x, y, z) - F.drop;
+    if (k <= 0) return;
+    for (const [dx, dz] of this.spreadDirs(x, y, z, fluid)) {
+      const nx = x + dx;
+      const nz = z + dz;
+      const next = this.newLiquid(nx, y, nz, fluid);
+      if (next) this.spreadTo(nx, y, nz, fluid, next.amount, next.falling, false);
+    }
+  }
+
+  /**
+   * Writes fluid into a cell that can be replaced by it (air, a web, fire). The same fluid already
+   * there is left alone: it settles to its new level on its own tick. Lava pouring down into
+   * water turns it to stone.
+   */
   private spreadTo(x: number, y: number, z: number, fluid: number, amount: number, falling: boolean, downward: boolean): boolean {
     if (!this.canHold(x, y, z)) return false;
     const cur = this.get(x, y, z);
-    if (isFluid(cur) && cur !== fluid) {
+    if (cur === fluid) return false;
+    if (isFluid(cur)) {
       if (fluid === B.LAVA && cur === B.WATER && downward) {
-        // Lava pouring down into water turns it to stone.
         this.set(x, y, z, B.STONE);
         this.onChange?.(x, y, z, B.WATER, B.STONE);
         return true;
       }
       if (fluid === B.WATER && cur === B.LAVA) this.checkLavaMeetsWater(x, y, z);
       return false;
-    }
-    if (cur === fluid) {
-      if (this.isSource(x, y, z)) return false;
-      if (!falling && (this.isFalling(x, y, z) || this.fluidAmount(x, y, z) >= amount)) return false;
-      if (falling && this.isFalling(x, y, z)) return false;
     }
     if (cur === B.COBWEB) this.onChange?.(x, y, z, B.COBWEB, fluid);
     this.set(x, y, z, fluid, amount, false, falling);
@@ -654,7 +682,10 @@ export class Blocks {
     return true;
   }
 
-  /** FlowingFluid.getSpread: prefer the directions with the shortest way down (a hole). */
+  /**
+   * FlowingFluid.getSpread: of the sides it could flow into (not a source of its own), the ones
+   * with the shortest way down to a hole.
+   */
   private spreadDirs(x: number, y: number, z: number, fluid: number): [number, number][] {
     const F = FLUID[fluid as FluidId];
     let best = 1000;

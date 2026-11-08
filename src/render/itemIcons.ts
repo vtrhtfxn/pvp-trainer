@@ -1,5 +1,5 @@
 import type { ItemStack } from '../game/items';
-import { ITEMS, POTIONS, durabilityFraction, isEnchanted, type PotionId } from '../game/items';
+import { ITEMS, POTIONS, durabilityFraction, showsGlint, type PotionId } from '../game/items';
 import { packImage, registerPackImage } from './pack';
 
 /** Pack texture shown for a stack in the GUI (and meshed for the hand). */
@@ -153,8 +153,8 @@ function paintHead(rows: string[]): HTMLCanvasElement {
  * registered as the pack texture item/golden_head (icons, hand, dropped items all use it).
  */
 /**
- * Spear Mace: the purple shulker box (the red one's textures, shifted to purple). The spear's own
- * texture is a 32×32 file in the pack (item/netherite_spear.png).
+ * Spear Mace: the purple shulker box (the red one's textures, shifted to purple). The spear has a
+ * 32×32 texture in the hand (item/netherite_spear.png) and a 16×16 icon (item/netherite_spear_icon.png).
  */
 export function registerSpearMace() {
   for (const face of ['', '_top']) {
@@ -257,8 +257,9 @@ function glint(src: HTMLCanvasElement): HTMLCanvasElement {
 
 /** 16×16 icon for a stack, or undefined if its texture is missing. */
 export function itemIcon(s: ItemStack): HTMLCanvasElement | undefined {
-  const tex = s.id === 'shield' ? 'shield' : itemTextureName(s);
-  const ench = isEnchanted(s);
+  // The spear's inventory icon is its own 16×16 picture; the 32×32 one is the spear in the hand.
+  const tex = s.id === 'shield' ? 'shield' : s.id === 'netherite_spear' ? 'item/netherite_spear_icon' : itemTextureName(s);
+  const ench = showsGlint(s);
   const key = `${tex}${ench ? '+' : ''}`;
   let c = cache.get(key);
   if (c) return c;
