@@ -1,5 +1,5 @@
 import type { ItemStack } from '../game/items';
-import { ITEMS, POTIONS, durabilityFraction, isEnchanted, type PotionId } from '../game/items';
+import { ITEMS, POTIONS, durabilityFraction, showsGlint, type PotionId } from '../game/items';
 import { packImage, registerPackImage } from './pack';
 
 /** Pack texture shown for a stack in the GUI (and meshed for the hand). */
@@ -259,7 +259,7 @@ function glint(src: HTMLCanvasElement): HTMLCanvasElement {
 export function itemIcon(s: ItemStack): HTMLCanvasElement | undefined {
   // The spear's inventory icon is its own 16×16 picture; the 32×32 one is the spear in the hand.
   const tex = s.id === 'shield' ? 'shield' : s.id === 'netherite_spear' ? 'item/netherite_spear_icon' : itemTextureName(s);
-  const ench = isEnchanted(s);
+  const ench = showsGlint(s);
   const key = `${tex}${ench ? '+' : ''}`;
   let c = cache.get(key);
   if (c) return c;

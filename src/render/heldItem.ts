@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as C from '../core/constants';
 import type { Fighter, Hand } from '../game/Fighter';
-import { ITEMS, isEnchanted, type ItemStack } from '../game/items';
+import { ITEMS, showsGlint, type ItemStack } from '../game/items';
 import type { Glint } from './glint';
 import { isCubeItem, itemTextureName } from './itemIcons';
 import { cubeModel, shieldModel, spriteModel, type ItemModel } from './itemMesh';
@@ -20,7 +20,7 @@ export interface ItemVisual {
  */
 export function itemVisual(f: Fighter, stack: ItemStack, hand: Hand): ItemVisual {
   const using = f.usingItem && f.useHand === hand;
-  const glint = isEnchanted(stack);
+  const glint = showsGlint(stack);
   switch (stack.id) {
     case 'shield':
       return { model: 'shield', kind: using && f.useKind() === 'shield' ? 'shield_blocking' : 'shield', glint };

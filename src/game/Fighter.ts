@@ -380,6 +380,8 @@ export class Fighter {
   /** Head, chest, legs, feet. */
   armorSlots: (ItemStack | null)[] = [null, null, null, null];
   offhand: ItemStack | null = null;
+  /** The kit this fighter started the round with (what an ender chest refills to). */
+  loadout: Loadout | null = null;
   selected = 0;
   /**
    * The main-hand item whose attribute modifiers (attack damage, attack speed) are applied.
@@ -501,6 +503,7 @@ export class Fighter {
     this.swinging = false;
     this.swingTime = 0;
     this.attackAnim = this.oAttackAnim = 0;
+    this.loadout = kit;
     this.inventory = new Array(INV_SIZE).fill(null);
     kit.hotbar.forEach((s, i) => (this.inventory[i] = cloneStack(s)));
     kit.main?.forEach((s, i) => (this.inventory[9 + i] = cloneStack(s)));
@@ -1016,6 +1019,11 @@ export class Fighter {
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
       }
+      if (hit && hit.id === B.ENDER_CHEST && this.loadout) {
+        this.refillFromKit();
+        this.rightClickDelay = C.USE_ITEM_DELAY;
+        return true;
+      }
     }
     for (const hand of ['main', 'off'] as const) {
       const s = this.stackIn(hand);
@@ -1186,6 +1194,73 @@ export class Fighter {
     this.swing();
     this.events.push({ type: 'shulkerOpen', taken: moved });
     return moved;
+  }
+
+  /**
+   * Right-clicking a placed ender chest: everything the kit started with comes back, every time it
+   * is clicked. Used-up stacks are topped up in their kit slots (or the first free ones), and a
+   * broken armor piece is replaced. What you moved around stays where you put it.
+   */
+  refillFromKit(): number {
+    const kit = this.loadout;
+    if (!kit) return 0;
+    const slots: [number, ItemStack | null][] = [
+      ...kit.hotbar.map((s, i) => [i, s] as [number, ItemStack | null]),
+      ...(kit.main ?? []).map((s, i) => [9 + i, s] as [number, ItemStack | null]),
+      [SLOT_OFFHAND, kit.offhand],
+    ];
+    // How many of each item the kit has, against how many we carry now.
+    const wanted: { stack: ItemStack; need: number }[] = [];
+    for (const [, s] of slots) {
+      if (!s) continue;
+      const w = wanted.find((x) => sameItem(x.stack, s));
+      if (w) w.need += s.count;
+      else wanted.push({ stack: s, need: s.count });
+    }
+    for (const w of wanted) for (const s of [...this.inventory, this.offhand]) if (s && sameItem(s, w.stack)) w.need -= s.count;
+    let given = 0;
+    // Back into the kit's own slots first: topping up the same item, or filling an empty slot.
+    for (const [slot, s] of slots) {
+      if (!s) continue;
+      const w = wanted.find((x) => sameItem(x.stack, s))!;
+      if (w.need <= 0) continue;
+      const cur = this.getSlot(slot);
+      if (cur && sameItem(cur, s)) {
+        const n = Math.min(w.need, s.count - cur.count);
+        if (n > 0) {
+          cur.count += n;
+          w.need -= n;
+          given += n;
+        }
+      } else if (!cur) {
+        const n = Math.min(w.need, s.count);
+        this.setSlot(slot, { ...cloneStack(s)!, count: n });
+        w.need -= n;
+        given += n;
+      }
+    }
+    // Whatever is still missing goes wherever there is room.
+    for (const w of wanted) {
+      if (w.need <= 0) continue;
+      const max = ITEMS[w.stack.id].maxStack;
+      while (w.need > 0) {
+        const add = { ...cloneStack(w.stack)!, count: Math.min(w.need, max) };
+        const n = add.count;
+        this.addItem(add);
+        given += n - add.count;
+        w.need -= n;
+        if (add.count > 0) break; // full
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      if (!this.armorSlots[i] && kit.armor[i]) {
+        this.armorSlots[i] = cloneStack(kit.armor[i]);
+        given++;
+      }
+    }
+    this.swing();
+    this.events.push({ type: 'shulkerOpen', taken: given });
+    return given;
   }
 
   /**

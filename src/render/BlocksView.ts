@@ -427,18 +427,69 @@ export class BlocksView {
   }
 
   /** A fluid cell: its surface at the level's height, sides wherever the neighbour is open. */
-  /** A fluid block's faces: the still texture on a source's top, the flowing one on the rest. */
+  /**
+   * A fluid block's faces: the still texture on a source's top, the flowing one on the rest. The
+   * surface is smooth like vanilla's (LiquidBlockRenderer): each top corner is the weighted average
+   * of the four cells around it, so neighbouring levels join into slopes instead of steps.
+   */
   private fluid(still: Buf, flow: Buf, blocks: Blocks, x: number, y: number, z: number, id: number) {
-    const top = blocks.fluidHeight(x, y, z);
     const source = blocks.isSource(x, y, z);
+    const covered = blocks.get(x, y + 1, z) === id;
+    /** LiquidBlockRenderer.getHeight: this fluid's height, 0 for an open cell, -1 for a solid one. */
+    const cell = (px: number, pz: number): number => {
+      const n = blocks.get(px, y, pz);
+      if (n === id) return blocks.get(px, y + 1, pz) === id ? 1 : blocks.fluidHeight(px, y, pz);
+      return isSolid(n) ? -1 : 0;
+    };
+    const self = cell(x, z);
+    /** LiquidBlockRenderer.calculateAverageHeight for the corner toward (sx, sz). */
+    const corner = (sx: number, sz: number): number => {
+      if (covered) return 1;
+      const a = cell(x + sx, z);
+      const b = cell(x, z + sz);
+      if (a >= 1 || b >= 1) return 1;
+      let sum = 0;
+      let weight = 0;
+      const add = (h: number) => {
+        if (h >= 0.8) {
+          sum += h * 10;
+          weight += 10;
+        } else if (h >= 0) {
+          sum += h;
+          weight += 1;
+        }
+      };
+      if (a > 0 || b > 0) {
+        const d = cell(x + sx, z + sz);
+        if (d >= 1) return 1;
+        add(d);
+      }
+      add(self);
+      add(a);
+      add(b);
+      return weight ? sum / weight : self;
+    };
+    const h = [
+      [corner(-1, -1), corner(-1, 1)],
+      [corner(1, -1), corner(1, 1)],
+    ];
     for (const f of FACES) {
-      const b = f.n[1] === 0 || !source ? flow : still;
       const n = blocks.get(x + f.n[0], y + f.n[1], z + f.n[2]);
-      if (n === id) {
-        if (f.n[1] !== 0 || blocks.fluidHeight(x + f.n[0], y, z + f.n[2]) >= top) continue;
-      } else if (isSolid(n)) continue;
-      if (f.n[1] > 0 && top >= 1 && blocks.get(x, y + 1, z) === id) continue;
-      this.quad(b, x, y, z, f.c, f.shade, top);
+      // Between two cells of the same fluid there is no face (vanilla shouldRenderFace).
+      if (n === id || isSolid(n)) continue;
+      if (f.n[1] > 0 && covered) continue;
+      const b = f.n[1] === 0 || !source ? flow : still;
+      const base = b.pos.length / 3;
+      const l = lin(f.shade);
+      for (let i = 0; i < 4; i++) {
+        const [cx, cy, cz] = f.c[i];
+        const top = cy === 1 ? h[cx][cz] : 0;
+        b.pos.push(x + cx, y + top, z + cz);
+        // Sides show as much of the texture as they are tall.
+        b.uv.push(UV[i][0], f.n[1] === 0 && cy === 1 ? top : UV[i][1]);
+        b.col.push(l, l, l);
+      }
+      b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }
 

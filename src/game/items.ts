@@ -615,6 +615,19 @@ export function isEnchanted(stack: ItemStack | null | undefined): boolean {
   return false;
 }
 
+/** Weapons and tools that are not "handheld" models. */
+const NO_GLINT = new Set<string>(['bow', 'crossbow', 'mace', 'trident', 'netherite_spear', 'shield', 'fishing_rod']);
+
+/**
+ * Whether the enchantment glint is drawn on it. Weapons and tools (swords, axes, pickaxes, the
+ * mace, the spear, bows…) are drawn plain even when enchanted; armor and the rest still shimmer.
+ */
+export function showsGlint(stack: ItemStack | null | undefined): boolean {
+  if (!stack || !isEnchanted(stack)) return false;
+  const def = ITEMS[stack.id];
+  return !(def.handheld || def.tool || NO_GLINT.has(stack.id));
+}
+
 export function cloneStack(s: ItemStack | null | undefined): ItemStack | null {
   return s ? { ...s, ench: s.ench ? { ...s.ench } : undefined } : null;
 }
