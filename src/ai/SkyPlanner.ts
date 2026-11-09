@@ -64,6 +64,14 @@ export class SkyPlanner {
   private detourSide = 1;
   private lastPos = { x: 0, z: 0 };
   private throwCooldown = 0;
+  /**
+   * Progress watchdog for goTo: the closest it has got to the current goal, ticks since it last
+   * got a block closer, and ticks left of bridging along the other axis (to get round a corner
+   * where walking and bridging would undo each other).
+   */
+  private goal = { x: 0, z: 0, best: Infinity, idle: 0, swap: 0 };
+  /** Ticks spent going for each middle chest ("x,z"). */
+  private midTries = new Map<string, number>();
   label = '';
 
   constructor(
@@ -95,6 +103,7 @@ export class SkyPlanner {
     this.mineTarget = null;
     this.stuck = 0;
     this.throwCooldown = 0;
+    this.midTries.clear();
   }
 
   /** One tick. `fight` runs the sword game into `input` (BotBrain.legacyEngage). */
@@ -406,8 +415,11 @@ export class SkyPlanner {
     // 'go': the best players stop at the middle chests first while the other is still far off.
     this.organize();
     if (s > 0.5 && dist > 12) {
-      const mid = L.midChests.find((c) => !mode.opened[me].has(`${c.x},${c.y},${c.z}`) && mode.chestAt(c.x, c.y, c.z) && this.distTo(c) < 34);
+      // A chest it can't get to (no way across, blocks running out) is given up after 25 s.
+      const mid = L.midChests.find((c) => !mode.opened[me].has(`${c.x},${c.y},${c.z}`) && mode.chestAt(c.x, c.y, c.z) && this.distTo(c) < 34 && (this.midTries.get(`${c.x},${c.z}`) ?? 0) < 20 * 25);
       if (mid && this.blockItem()) {
+        const k = `${mid.x},${mid.z}`;
+        this.midTries.set(k, (this.midTries.get(k) ?? 0) + 1);
         this.label = 'Middle chests';
         this.lootChest(mode, mid, input);
         return;
@@ -575,6 +587,24 @@ export class SkyPlanner {
     this.lastPos = { x: b.pos.x, z: b.pos.z };
     if (d <= stopAt) {
       input.forward = input.strafe = 0;
+      return;
+    }
+    const g = this.goal;
+    if (Math.hypot(gx - g.x, gz - g.z) > 3) Object.assign(g, { x: gx, z: gz, best: d, idle: 0, swap: 0 });
+    if (d < g.best - 1) {
+      g.best = d;
+      g.idle = 0;
+    } else if (++g.idle > 80) {
+      // Four seconds without getting a block closer: bridge along the other axis for a while.
+      g.idle = 0;
+      g.best = d;
+      g.swap = 50;
+    }
+    if (g.swap > 0) {
+      g.swap--;
+      const sx = Math.abs(dx) >= Math.abs(dz) ? 0 : Math.sign(dx) || 1;
+      const sz = sx === 0 ? Math.sign(dz) || 1 : 0;
+      this.bridge(sx, sz, input);
       return;
     }
     // Stuck for a long time (a corner, a pillar in the way): sidestep for a moment.

@@ -10,6 +10,8 @@ import { Match, TEAM_KITS } from '../src/game/Match';
 /** A 2v2 with the player played by a bot too, run until a team is down (or the time is up). */
 function teamGame(kit: KitId, seed: number, maxTicks = 20 * 60 * 4) {
   const m = new Match(kitById(kit), DIFFICULTIES.ht3, seed, { allyProfile: DIFFICULTIES.ht3 });
+  // The player's side is a bot too: it digs through its brain, not the (unpressed) mouse.
+  m.externalMining = true;
   const pb: BotBrain = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.ht3, new Rng(seed + 99), () => performAttack(m.player, pb.opponent));
   if (m.mode) pb.attachSky(m);
   pb.resetRound();

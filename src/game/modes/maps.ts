@@ -99,8 +99,8 @@ export function buildBedwarsMap(b: Blocks): BedwarsLayout {
     [6, -7],
     [-6, 6],
     [6, 6],
-    [0, -4],
-    [0, 3],
+    [-2, -4],
+    [2, 3],
   ])
     fill(b, x, 0, z, x, 2, z, B.STONE);
   const emeralds: Spot[] = [];
