@@ -1,7 +1,9 @@
-import type { Fighter } from '../Fighter';
+import type { Rng } from '../../core/rng';
+import type { Fighter, MoveInput } from '../Fighter';
+import type { ItemId } from '../items';
 import type { World } from '../World';
 
-export type ModeId = 'bedwars' | 'skywars';
+export type ModeId = 'bedwars' | 'skywars' | 'sumo' | 'crumble' | 'hotpotato' | 'whodunit';
 
 /** One line of the mode's scoreboard (drawn on the right, like a server sidebar). */
 export interface ScoreLine {
@@ -49,6 +51,35 @@ export interface GameMode {
   title(m: Match, viewer: Fighter): { title: string; sub: string } | null;
   /** Announcements since the last call (bed destroyed, final kill…), for the chat. */
   takeAnnouncements(): ScoreLine[];
+  /**
+   * Minigames that play their bots themselves (Sumo, Crumble…): one tick of bot `f`. Return false
+   * to let the planner's edge guard stop it walking into the void (a mode where standing still
+   * loses returns true to skip it).
+   */
+  botTick?(m: Match, ctl: BotControl): boolean;
+  /** A nametag status for `viewer` to see over `f` ('' for nothing); hides roles in Whodunit. */
+  tagStatus?(m: Match, f: Fighter, viewer: Fighter): string | null;
+}
+
+/** What a minigame's bot logic can do with its bot (built by SkyPlanner from BotBrain). */
+export interface BotControl {
+  readonly bot: Fighter;
+  readonly input: MoveInput;
+  /** 0 (LT5) … 1 (HT1). */
+  readonly skill: number;
+  readonly rng: Rng;
+  /** The sword game against `target`: chase, aim, time the hits. */
+  fight(target: Fighter): void;
+  /** Walks (sprinting) toward (x, z) with no bridging; true once within `stop`. */
+  walkTo(x: number, z: number, stop: number, sprint?: boolean): boolean;
+  aimAt(x: number, y: number, z: number, gain?: number): void;
+  /** Puts `id` in hand (false if it has none). */
+  equip(id: ItemId): boolean;
+  /** Holds an empty hotbar slot (hides what it carries). */
+  emptyHand(): void;
+  setLabel(s: string): void;
+  /** Sneaks rather than walk off an edge. */
+  keepOffEdge(): void;
 }
 
 /** Team of a fighter in a two-team mode: red (0) or blue (1). */

@@ -6,7 +6,7 @@ import { ITEMS, type ItemId, type ItemStack } from '../game/items';
 import { Bedwars } from '../game/modes/Bedwars';
 import { Skywars, lootValue } from '../game/modes/Skywars';
 import type { Spot } from '../game/modes/maps';
-import type { SkyHost } from '../game/modes/GameMode';
+import type { BotControl, SkyHost } from '../game/modes/GameMode';
 import { SHOP, type ShopItem } from '../game/modes/shop';
 import type { World } from '../game/World';
 import type { BotProfile } from './difficulty';
@@ -22,6 +22,7 @@ export interface BrainHooks {
   facePoint(sx: number, sy: number, sz: number, nx: number, ny: number, nz: number): [number, number, number] | null;
   anyFacePoint(x: number, y: number, z: number): [number, number, number] | null;
   equip(id: ItemId): boolean;
+  setTarget(f: Fighter): void;
 }
 
 export interface Perceived {
@@ -64,6 +65,14 @@ export class SkyPlanner {
   private detourSide = 1;
   private lastPos = { x: 0, z: 0 };
   private throwCooldown = 0;
+  /**
+   * Progress watchdog for goTo: the closest it has got to the current goal, ticks since it last
+   * got a block closer, and ticks left of bridging along the other axis (to get round a corner
+   * where walking and bridging would undo each other).
+   */
+  private goal = { x: 0, z: 0, best: Infinity, idle: 0, swap: 0 };
+  /** Ticks spent going for each middle chest ("x,z"). */
+  private midTries = new Map<string, number>();
   label = '';
 
   constructor(
@@ -95,6 +104,7 @@ export class SkyPlanner {
     this.mineTarget = null;
     this.stuck = 0;
     this.throwCooldown = 0;
+    this.midTries.clear();
   }
 
   /** One tick. `fight` runs the sword game into `input` (BotBrain.legacyEngage). */
@@ -106,6 +116,12 @@ export class SkyPlanner {
     if (this.placeWait > 0) this.placeWait--;
     this.h.weapon = this.bestSword();
     const mode = this.match.mode;
+    // Party minigames (Sumo, Crumble, Hot Potato, Whodunit) play their own bots.
+    if (mode?.botTick) {
+      const free = mode.botTick(this.match, this.control(input, fight));
+      if (!free) this.edgeGuard(input);
+      return;
+    }
     const T = this.target;
     const dist = Math.hypot(per.x - b.pos.x, per.z - b.pos.z);
     const dy = Math.abs(per.y - b.pos.y);
@@ -114,6 +130,53 @@ export class SkyPlanner {
     if (mode instanceof Bedwars) this.bedwars(mode, per, dist, input, closeFight, fight);
     else if (mode instanceof Skywars) this.skywars(mode, per, dist, input, closeFight, fight);
     this.edgeGuard(input);
+  }
+
+  /** What a minigame's own bot logic may do with this bot. */
+  private control(input: MoveInput, fight: () => void): BotControl {
+    const b = this.bot;
+    return {
+      bot: b,
+      input,
+      skill: this.skill,
+      rng: this.rng,
+      fight: (t) => {
+        if (t !== this.target) this.h.setTarget(t);
+        fight();
+      },
+      walkTo: (x, z, stop, sprint = true) => this.walk(x, z, input, stop, sprint),
+      aimAt: (x, y, z, gain) => this.h.aimAt(x, y, z, gain),
+      equip: (id) => (b.slotOf(id) >= 0 ? this.h.equip(id) : false),
+      emptyHand: () => {
+        const i = b.inventory.slice(0, 9).findIndex((s) => !s);
+        if (i >= 0 && b.selected !== i) b.selectSlot(i);
+      },
+      setLabel: (s) => (this.label = s),
+      keepOffEdge: () => this.edgeGuard(input),
+    };
+  }
+
+  /** Plain walking (no bridging): turn toward (x, z) and go; hop when stuck. True once there. */
+  private walk(gx: number, gz: number, input: MoveInput, stopAt: number, sprint: boolean): boolean {
+    const b = this.bot;
+    const dx = gx - b.pos.x;
+    const dz = gz - b.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (Math.hypot(b.pos.x - this.lastPos.x, b.pos.z - this.lastPos.z) < 0.02 && d > stopAt) this.stuck++;
+    else this.stuck = 0;
+    this.lastPos = { x: b.pos.x, z: b.pos.z };
+    if (d <= stopAt) {
+      input.forward = input.strafe = 0;
+      return true;
+    }
+    this.h.turnTo(yawTowards(dx, dz), 0.1, 0.9);
+    input.forward = 1;
+    input.strafe = 0;
+    input.sprint = sprint && d > 2;
+    if (this.stuck > 6 && b.onGround) input.jump = true;
+    // Stuck on furniture for a while: slide sideways a moment.
+    if (this.stuck > 30) input.strafe = this.rng.chance(0.5) ? 1 : -1;
+    return false;
   }
 
   // ------------------------------------------------------------------ Bed Wars
@@ -140,7 +203,8 @@ export class SkyPlanner {
         const iron = b.countItem('iron_ingot');
         const gold = b.countItem('gold_ingot');
         const died = this.shopList.length === 0 && b.stats.hits + b.stats.damageDealt > 0;
-        const wantIron = died ? 12 : 18 + Math.round(s * 30);
+        // The bases are 80 blocks apart: enough wool to bridge most of the way (more for better bots).
+        const wantIron = died ? 16 : 28 + Math.round(s * 30);
         const wantGold = s > 0.6 ? 7 : 0;
         const maxWait = 20 * (died ? 12 : 25 + s * 35);
         if ((iron >= wantIron && gold >= wantGold) || this.timer > maxWait) this.enterBw('shop');
@@ -245,7 +309,7 @@ export class SkyPlanner {
     if (s > 0.25) want('armor1', 'iron', 24);
     if (s > 0.55) want('iron_sword', 'gold', 7);
     if (s > 0.4) want('pickaxe', 'iron', 10);
-    while (iron >= 4 && out.filter((k) => k === 'wool').length < 3 + Math.round(s * 3)) want('wool', 'iron', 4);
+    while (iron >= 4 && out.filter((k) => k === 'wool').length < 5 + Math.round(s * 3)) want('wool', 'iron', 4);
     if (s > 0.7) want('gapple', 'gold', 3);
     return out;
   }
@@ -405,8 +469,11 @@ export class SkyPlanner {
     // 'go': the best players stop at the middle chests first while the other is still far off.
     this.organize();
     if (s > 0.5 && dist > 12) {
-      const mid = L.midChests.find((c) => !mode.opened[me].has(`${c.x},${c.y},${c.z}`) && mode.chestAt(c.x, c.y, c.z) && this.distTo(c) < 26);
+      // A chest it can't get to (no way across, blocks running out) is given up after 25 s.
+      const mid = L.midChests.find((c) => !mode.opened[me].has(`${c.x},${c.y},${c.z}`) && mode.chestAt(c.x, c.y, c.z) && this.distTo(c) < 34 && (this.midTries.get(`${c.x},${c.z}`) ?? 0) < 20 * 25);
       if (mid && this.blockItem()) {
+        const k = `${mid.x},${mid.z}`;
+        this.midTries.set(k, (this.midTries.get(k) ?? 0) + 1);
         this.label = 'Middle chests';
         this.lootChest(mode, mid, input);
         return;
@@ -574,6 +641,24 @@ export class SkyPlanner {
     this.lastPos = { x: b.pos.x, z: b.pos.z };
     if (d <= stopAt) {
       input.forward = input.strafe = 0;
+      return;
+    }
+    const g = this.goal;
+    if (Math.hypot(gx - g.x, gz - g.z) > 3) Object.assign(g, { x: gx, z: gz, best: d, idle: 0, swap: 0 });
+    if (d < g.best - 1) {
+      g.best = d;
+      g.idle = 0;
+    } else if (++g.idle > 80) {
+      // Four seconds without getting a block closer: bridge along the other axis for a while.
+      g.idle = 0;
+      g.best = d;
+      g.swap = 50;
+    }
+    if (g.swap > 0) {
+      g.swap--;
+      const sx = Math.abs(dx) >= Math.abs(dz) ? 0 : Math.sign(dx) || 1;
+      const sz = sx === 0 ? Math.sign(dz) || 1 : 0;
+      this.bridge(sx, sz, input);
       return;
     }
     // Stuck for a long time (a corner, a pillar in the way): sidestep for a moment.

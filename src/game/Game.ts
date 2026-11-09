@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isChestMode } from './modes/containers';
 import { BotBrain } from '../ai/BotBrain';
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId, type TierId } from '../ai/difficulty';
 import { Sound, type HitKind } from '../audio/Sound';
@@ -82,7 +83,6 @@ import { JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT, OnlineHost, joinOnline, normalizeOn
 import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
 import type { ScoreLine } from './modes/GameMode';
 import { Bedwars } from './modes/Bedwars';
-import { Skywars } from './modes/Skywars';
 import { SpectatorHud } from '../ui/SpectatorHud';
 import { DrillHud } from '../ui/DrillHud';
 import { DRILLS, DrillRun, drillById, loadDrillProgress, loadDrillSpeed, recordDrill } from '../trainer/drills';
@@ -243,6 +243,10 @@ export class Game {
     kitIcons.bedwars = itemIcon({ id: 'red_wool', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.skywars = itemIcon({ id: 'ender_pearl', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.dia_smp = itemIcon({ id: 'diamond_chestplate', count: 1 }) ?? makeKitIcon('axe');
+    kitIcons.sumo = itemIcon({ id: 'stick', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.crumble = itemIcon({ id: 'tnt', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.hotpotato = itemIcon({ id: 'fire_charge', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.whodunit = itemIcon({ id: 'iron_sword', count: 1 }) ?? makeKitIcon('sword');
     this.hud = new HUD(uiRoot, this.mods);
     this.specHud = new SpectatorHud(
       uiRoot,
@@ -888,8 +892,8 @@ export class Game {
       }
       this.freeMouse();
       this.shopUi.show(p, mode.gear(m, p), (item) => m.act({ k: 'buy', key: item.key }) ?? null);
-    } else if (block === B.CHEST && mode instanceof Skywars) {
-      const items = mode.chestAt(x, y, z);
+    } else if ((block === B.CHEST || block === B.ENDER_CHEST) && isChestMode(mode)) {
+      const items = mode.storageFor(p, x, y, z);
       if (!items) return;
       m.act({ k: 'open', x, y, z });
       this.freeMouse();
@@ -898,6 +902,7 @@ export class Game {
         p,
         items,
         {
+          title: block === B.ENDER_CHEST ? 'Ender Chest' : 'Chest',
           take: (i) => void m.act({ k: 'take', x, y, z, i }),
           takeAll: () => void m.act({ k: 'takeAll', x, y, z }),
           put: (i) => void m.act({ k: 'put', x, y, z, i }),
@@ -992,7 +997,7 @@ export class Game {
         this.chestUi.show(
           p,
           c.items,
-          { take: (i) => m.chestAction(x, y, z, 'take', i), takeAll: () => m.chestAction(x, y, z, 'all'), put: (i) => m.chestAction(x, y, z, 'put', i) },
+          { title: m.world.blocks.get(x, y, z) === B.ENDER_CHEST ? 'Ender Chest' : 'Chest', take: (i) => m.chestAction(x, y, z, 'take', i), takeAll: () => m.chestAction(x, y, z, 'all'), put: (i) => m.chestAction(x, y, z, 'put', i) },
           () => this.sound.equip(),
         );
       }
@@ -2479,12 +2484,14 @@ export class Game {
       const watchAlly = !!ally && p.dead && m.phase === 'fight' && this.state === 'playing';
       const eye = watchAlly ? ally! : p;
       const theirFoe = watchAlly ? this.nearestEnemy(m, ally!) : foe;
+      // A minigame can say what nametags show (Hot Potato: who is lit; Whodunit: nothing).
+      const modeTag = (f: Fighter) => (m instanceof Match ? (m.mode?.tagStatus?.(m, f, p) ?? null) : null);
       this.view.extras.others = [p, ...others, m.bot]
         .filter((f) => f !== eye && f !== theirFoe && others.length > 0)
-        .map((f) => ({ f, name: f.name, color: f.team === p.team ? '#55ff55' : m.profile.color, status: '' }));
+        .map((f) => ({ f, name: f.name, color: f.team === p.team ? '#55ff55' : m.profile.color, status: modeTag(f) ?? '' }));
       tag.name = theirFoe.name;
       tag.color = theirFoe.team === p.team ? '#55ff55' : m.profile.color;
-      tag.status = this.state === 'menu' || theirFoe !== m.bot ? '' : m.brain.label;
+      tag.status = this.state === 'menu' ? '' : (modeTag(theirFoe) ?? (theirFoe !== m.bot ? '' : m.brain.label));
       this.view.crosshairOn = (this.state === 'playing' || this.state === 'paused') && this.hud.crosshairShown;
       this.view.crosshairGui = this.hud.guiScale;
       if (watchAlly !== this.watchingAlly) {

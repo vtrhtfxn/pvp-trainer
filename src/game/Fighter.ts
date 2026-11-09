@@ -1019,6 +1019,12 @@ export class Fighter {
         this.rightClickDelay = C.USE_ITEM_DELAY;
         return true;
       }
+      if (hit && hit.id === B.ENDER_CHEST && this.world.enderStorage) {
+        this.events.push({ type: 'openBlock', x: hit.x, y: hit.y, z: hit.z, block: hit.id });
+        this.world.onInteract?.(this, hit.x, hit.y, hit.z, hit.id);
+        this.rightClickDelay = C.USE_ITEM_DELAY;
+        return true;
+      }
       if (hit && hit.id === B.ENDER_CHEST && this.loadout) {
         this.refillFromKit();
         this.rightClickDelay = C.USE_ITEM_DELAY;
@@ -1069,6 +1075,7 @@ export class Fighter {
           const tz = hit.z + hit.nz;
           const cur = this.world.blocks.get(tx, ty, tz);
           if (cur !== B.AIR && !isFluid(cur)) return false;
+          if (!this.world.canPlace(this, tx, ty, tz)) return false;
           spawnPrimedTnt(this.world, this, tx + 0.5, ty, tz + 0.5);
           this.consume(s, hand);
           if (hand === 'main') this.swing();

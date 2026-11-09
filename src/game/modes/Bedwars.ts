@@ -1,7 +1,9 @@
 import { B } from '../Blocks';
 import { DroppedItem } from '../DroppedItem';
 import type { Fighter } from '../Fighter';
-import type { ItemId } from '../items';
+import type { World } from '../World';
+import type { ItemId, ItemStack } from '../items';
+import { CHEST_SLOTS, inReach, putInto, takeFrom, type ChestMode } from './containers';
 import { TEAM_COLORS, TEAM_NAMES, members, teamOf, teamSlot, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
 import { buildBedwarsMap, type BedwarsLayout, type Spot } from './maps';
 import { SHOP, applyTeamEnchants, buy, respawnLoadout, type Currency, type ShopItem, type TeamGear } from './shop';
@@ -49,14 +51,20 @@ interface LifeState {
  * While your bed stands you respawn 5 s after dying (losing what you carried to your killer);
  * once it is gone, the next death is final. The map is protected — only placed blocks break.
  */
-export class Bedwars implements GameMode {
+export class Bedwars implements GameMode, ChestMode {
   readonly id = 'bedwars' as const;
   layout!: BedwarsLayout;
+  private hostWorld: World | null = null;
   teams: [TeamState, TeamState] = [this.freshTeam(0), this.freshTeam(1)];
   private lives = new Map<Fighter, LifeState>();
   private timers = { iron: 0, gold: 0, diamond: 0, emerald: 0 };
   private announcements: ScoreLine[] = [];
   private bedsGoneAnnounced = false;
+  /**
+   * Each player's ender chest: 27 slots, the same in every ender chest on the map, and kept
+   * through deaths (what you store there is safe, like cloud storage).
+   */
+  private ender = new Map<Fighter, (ItemStack | null)[]>();
 
   private freshTeam(team: 0 | 1): TeamState {
     return { gear: newGear(team), bedAlive: true, eliminated: false, kills: 0, finalKills: 0, bedsBroken: 0 };
@@ -79,13 +87,16 @@ export class Bedwars implements GameMode {
 
   setup(m: Match) {
     const w = m.world;
+    this.hostWorld = w;
     this.layout = buildBedwarsMap(w.blocks);
     this.teams = [this.freshTeam(0), this.freshTeam(1)];
     this.lives = new Map();
     this.timers = { iron: 0, gold: 0, diamond: 0, emerald: 0 };
     this.announcements = [];
     this.bedsGoneAnnounced = false;
+    this.ender = new Map();
     w.protectMap = true;
+    w.enderStorage = true;
     w.voidY = -24;
     // Your own bed can't be broken; the shop can't be touched.
     w.breakRule = (f, x, y, z, id) => {
@@ -113,6 +124,39 @@ export class Bedwars implements GameMode {
     f.naturalRegen = true;
     f.food.locked = true;
     applyTeamEnchants(f, g);
+  }
+
+  // ---------------------------------------------------------------- ender chest
+
+  /** `f`'s ender chest slots (every ender chest opens these). */
+  enderChest(f: Fighter): (ItemStack | null)[] {
+    let s = this.ender.get(f);
+    if (!s) this.ender.set(f, (s = new Array<ItemStack | null>(CHEST_SLOTS).fill(null)));
+    return s;
+  }
+
+  storageFor(f: Fighter, x: number, y: number, z: number): (ItemStack | null)[] | null {
+    return this.hostWorld?.blocks.get(x, y, z) === B.ENDER_CHEST ? this.enderChest(f) : null;
+  }
+
+  canUse(f: Fighter, x: number, y: number, z: number): boolean {
+    return !!this.storageFor(f, x, y, z) && inReach(f, x, y, z);
+  }
+
+  open() {}
+
+  take(f: Fighter, x: number, y: number, z: number, i: number) {
+    const s = this.canUse(f, x, y, z) ? this.storageFor(f, x, y, z) : null;
+    if (s && i >= 0 && i < CHEST_SLOTS) takeFrom(s, f, i);
+  }
+
+  takeAll(f: Fighter, x: number, y: number, z: number) {
+    for (let i = 0; i < CHEST_SLOTS; i++) this.take(f, x, y, z, i);
+  }
+
+  put(f: Fighter, x: number, y: number, z: number, i: number) {
+    const s = this.canUse(f, x, y, z) ? this.storageFor(f, x, y, z) : null;
+    if (s && i >= 0 && i < 36) putInto(s, f, i);
   }
 
   /** Buys from the shop for `f` (the bots call this; the player's shop screen does too). */

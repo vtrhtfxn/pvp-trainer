@@ -189,6 +189,8 @@ export class ShopScreen {
 
 /** What the chest screen does with a click: offline straight on the mode, online via the server. */
 export interface ChestActions {
+  /** "Chest" or "Ender Chest". */
+  title?: string;
   take(i: number): void;
   takeAll(): void;
   put(i: number): void;
@@ -252,7 +254,7 @@ export class ChestScreen {
     if (!f) return;
     this.invKey = this.key();
     const panel = h('div', 'mode-panel chest');
-    panel.append(h('div', 'mode-title', 'Chest'));
+    panel.append(h('div', 'mode-title', this.actions?.title ?? 'Chest'));
     const slot = (s: ItemStack | null, onClick: () => void) => {
       const b = h('button', 'mode-slot');
       if (s) {
