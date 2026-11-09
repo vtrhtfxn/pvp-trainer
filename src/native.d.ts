@@ -16,6 +16,15 @@ interface PvpNative {
   /** News from the updater: a newer game is ready (restart), or a new app is needed (download). */
   onUpdate?(cb: (info: { kind: 'game' | 'app'; build: number }) => void): void;
   restart?(): Promise<void>;
+  /**
+   * The app's resourcepacks folder (newer app shells): list the packs in it (.zip files and
+   * unzipped folders), read one, open the folder in Finder / Explorer.
+   */
+  packs?: {
+    list(): Promise<string[]>;
+    read(name: string): Promise<{ zip?: Uint8Array; files?: { name: string; data: Uint8Array }[] } | null>;
+    openFolder(): Promise<void>;
+  };
   openDownload?(): Promise<void>;
 }
 

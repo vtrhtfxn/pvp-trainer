@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { stripFrames } from './pack';
 import { litMaterial } from './light';
 import { B, CHUNK, WOOL_COLORS, isFluid, isSolid, type Blocks } from '../game/Blocks';
 
@@ -119,13 +120,13 @@ function stripTexture(name: string, frames: number): THREE.Texture | null {
 }
 
 /** block/lava_still.png.mcmeta: 20 frames, 2 ticks each, played forward then back. */
-const LAVA_FRAMES = 20;
+const LAVA_FRAMES_DEFAULT = 20;
 /**
  * block/lava_flow.png: 16 frames of 32×32, 2 ticks each. Flowing lava (and the sides of any lava)
  * shows half of a frame per block, the way vanilla scales the flow texture.
  */
-const LAVA_FLOW_FRAMES = 16;
-const FIRE_FRAMES = 32;
+const LAVA_FLOW_FRAMES_DEFAULT = 16;
+const FIRE_FRAMES_DEFAULT = 32;
 
 /** The ender chest model (ChestModel): a 14×10×14 body, a 14×5×14 lid and the latch. */
 function enderChestGeometry(): THREE.BufferGeometry {
@@ -161,6 +162,9 @@ export class BlocksView {
   private readonly lavaMat: THREE.MeshBasicMaterial;
   private readonly lavaTex: THREE.Texture | null;
   private readonly lavaFlowMat: THREE.MeshBasicMaterial;
+  private readonly lavaFrames: number;
+  private readonly lavaFlowFrames: number;
+  private readonly fireFrames: number;
   private readonly lavaFlowTex: THREE.Texture | null;
   private readonly fireMat: THREE.MeshBasicMaterial;
   private readonly fireTex: THREE.Texture | null;
@@ -176,12 +180,16 @@ export class BlocksView {
     this.railMat = litMaterial(new THREE.MeshBasicMaterial({ map: packTexture('block/rail'), alphaTest: 0.1, side: THREE.DoubleSide, vertexColors: true }));
     this.webMat = litMaterial(new THREE.MeshBasicMaterial({ map: packTexture('block/cobweb'), alphaTest: 0.1, side: THREE.DoubleSide, vertexColors: true }));
     this.waterMat = litMaterial(new THREE.MeshBasicMaterial({ map: waterTexture(), transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, vertexColors: true }));
-    this.lavaTex = stripTexture('block/lava_still', LAVA_FRAMES);
+    // Frame counts come from the textures themselves (a resource pack's strips can differ).
+    this.lavaFrames = stripFrames('block/lava_still', LAVA_FRAMES_DEFAULT);
+    this.lavaFlowFrames = stripFrames('block/lava_flow', LAVA_FLOW_FRAMES_DEFAULT);
+    this.fireFrames = stripFrames('block/fire_0', FIRE_FRAMES_DEFAULT);
+    this.lavaTex = stripTexture('block/lava_still', this.lavaFrames);
     this.lavaMat = new THREE.MeshBasicMaterial({ map: this.lavaTex, side: THREE.DoubleSide });
-    this.lavaFlowTex = stripTexture('block/lava_flow', LAVA_FLOW_FRAMES);
-    if (this.lavaFlowTex) this.lavaFlowTex.repeat.set(0.5, 0.5 / LAVA_FLOW_FRAMES);
+    this.lavaFlowTex = stripTexture('block/lava_flow', this.lavaFlowFrames);
+    if (this.lavaFlowTex) this.lavaFlowTex.repeat.set(0.5, 0.5 / this.lavaFlowFrames);
     this.lavaFlowMat = new THREE.MeshBasicMaterial({ map: this.lavaFlowTex ?? this.lavaTex, side: THREE.DoubleSide });
-    this.fireTex = stripTexture('block/fire_0', FIRE_FRAMES);
+    this.fireTex = stripTexture('block/fire_0', this.fireFrames);
     this.fireMat = new THREE.MeshBasicMaterial({ map: this.fireTex, alphaTest: 0.1, side: THREE.DoubleSide, fog: false });
     this.chestMat = new THREE.MeshLambertMaterial({ map: packTexture('entity/chest/ender'), alphaTest: 0.1 });
     this.lootChestMat = new THREE.MeshLambertMaterial({ map: packTexture('entity/chest/normal'), alphaTest: 0.1 });
@@ -506,16 +514,17 @@ export class BlocksView {
     }
     const tick = Math.floor(time * 20);
     if (this.lavaTex) {
-      const t = Math.floor(tick / 2) % (LAVA_FRAMES * 2 - 2);
-      const frame = t < LAVA_FRAMES ? t : LAVA_FRAMES * 2 - 2 - t;
-      this.lavaTex.offset.y = 1 - (frame + 1) / LAVA_FRAMES;
+      const n = this.lavaFrames;
+      const t = Math.floor(tick / 2) % Math.max(1, n * 2 - 2);
+      const frame = t < n ? t : n * 2 - 2 - t;
+      this.lavaTex.offset.y = 1 - (frame + 1) / n;
     }
     if (this.lavaFlowTex) {
-      const frame = Math.floor(tick / 2) % LAVA_FLOW_FRAMES;
+      const frame = Math.floor(tick / 2) % this.lavaFlowFrames;
       // Half of the frame per block, as vanilla draws flowing lava.
-      this.lavaFlowTex.offset.y = 1 - (frame + 0.5) / LAVA_FLOW_FRAMES;
+      this.lavaFlowTex.offset.y = 1 - (frame + 0.5) / this.lavaFlowFrames;
     }
-    if (this.fireTex) this.fireTex.offset.y = 1 - ((tick % FIRE_FRAMES) + 1) / FIRE_FRAMES;
+    if (this.fireTex) this.fireTex.offset.y = 1 - ((tick % this.fireFrames) + 1) / this.fireFrames;
 
     // Mining cracks (one per fighter).
     while (this.cracks.length < fighters.length) {

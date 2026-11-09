@@ -5101,3 +5101,22 @@ body.broadcasting .hud .effects {
     text-shadow: 0 0 18px #ffcc33, 0 0 4px #fff;
   }
 }
+
+/* ---- Options → Resource Packs */
+.rp { display: flex; flex-direction: column; gap: 10px; }
+.rp-intro { color: #c8c8c8; font-size: 14px; line-height: 1.4; }
+.rp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rp-status { color: #ffff55; min-height: 1.2em; font-size: 14px; }
+.rp-list { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow-y: auto; }
+.rp-row { display: flex; align-items: center; gap: 10px; padding: 6px; background: rgba(0, 0, 0, 0.45); border: 2px solid transparent; }
+.rp-row.on { border-color: #ffffff; background: rgba(40, 40, 40, 0.75); }
+.rp-row.bad { opacity: 0.6; }
+.rp-icon { width: 48px; height: 48px; flex: none; display: flex; align-items: center; justify-content: center; background: #1b1b1b; color: #888; font-size: 22px; }
+.rp-icon img { width: 48px; height: 48px; image-rendering: pixelated; }
+.rp-text { flex: 1; min-width: 0; }
+.rp-name { color: #fff; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-desc { color: #a8a8a8; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-tag { color: #55ff55; font-size: 13px; padding: 0 6px; }
+.rp-empty { color: #a8a8a8; font-size: 14px; padding: 8px; }
+.rp-actions .mc-btn, .rp-row .mc-btn { width: auto; flex: none; padding-left: 14px; padding-right: 14px; margin: 0; }
+.rp-tag { white-space: nowrap; }

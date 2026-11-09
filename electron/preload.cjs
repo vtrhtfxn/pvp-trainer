@@ -22,4 +22,10 @@ contextBridge.exposeInMainWorld('pvpNative', {
   restart: () => ipcRenderer.invoke('pvp:restart'),
   /** Opens the download page in the browser. */
   openDownload: () => ipcRenderer.invoke('pvp:open-download'),
+  /** The resourcepacks folder: list it, read a pack, open it in Finder / Explorer. */
+  packs: {
+    list: () => ipcRenderer.invoke('pvp:packs-list'),
+    read: (name) => ipcRenderer.invoke('pvp:packs-read', String(name)),
+    openFolder: () => ipcRenderer.invoke('pvp:packs-open'),
+  },
 });

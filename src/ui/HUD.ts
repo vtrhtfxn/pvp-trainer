@@ -7,7 +7,7 @@ import { EFFECT_NAMES, ITEMS, formatTicks, type EffectId, type FoodProps, type I
 import { estimateRegen } from '../mods/appleskin';
 import type { ModManager } from '../mods/registry';
 import { drawDurabilityBar, itemIcon } from '../render/itemIcons';
-import { packImage, packUrl } from '../render/pack';
+import { drawSize, packImage, packUrl } from '../render/pack';
 import { faceUrl } from './faces';
 
 /** Which fluid the player's eyes are in, if any. */
@@ -525,7 +525,11 @@ export class HUD {
     c.imageSmoothingEnabled = false;
     c.clearRect(0, 0, HUD_W, HUD_H);
     const bottom = HUD_H;
-    const draw = (s: Sprite | HTMLImageElement, x: number, y: number) => c.drawImage(s, x, y);
+    // A resource pack's sprites are drawn at the default size (an HD pack: sharper, not bigger).
+    const draw = (s: Sprite | HTMLImageElement | HTMLCanvasElement, x: number, y: number) => {
+      const [w, h] = drawSize(s as HTMLCanvasElement);
+      c.drawImage(s, x, y, w, h);
+    };
     const pack = (name: string, fallback: Sprite) => packImage(`gui/sprites/hud/${name}`) ?? fallback;
     const rand = (seed: number) => {
       const x = Math.sin(seed * 12.9898) * 43758.5453;
@@ -537,15 +541,15 @@ export class HUD {
     const hx = PAD;
     const hy = bottom - 22;
     const hotbarImg = packImage('gui/sprites/hud/hotbar');
-    if (hotbarImg) c.drawImage(hotbarImg, hx, hy);
+    if (hotbarImg) draw(hotbarImg, hx, hy);
     else this.drawPlainHotbar(hx, hy);
     const selImg = packImage('gui/sprites/hud/hotbar_selection');
     const sx = hx - 1 + p.selected * 20;
-    if (selImg) c.drawImage(selImg, sx, hy - 1);
+    if (selImg) draw(selImg, sx, hy - 1);
     else this.drawPlainSelection(sx + 1, hy);
     if (p.offhand) {
       const offImg = packImage('gui/sprites/hud/hotbar_offhand_left');
-      if (offImg) c.drawImage(offImg, hx - 29, hy - 1);
+      if (offImg) draw(offImg, hx - 29, hy - 1);
       this.drawSlotItem(p, p.offhand, hx - 26, hy + 3);
     }
     for (let i = 0; i < 9; i++) {
