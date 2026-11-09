@@ -91,6 +91,9 @@ export class Match {
     /** 2v2: you and a bot ally against two bots (the ally plays at `allyProfile`). */
     teams?: { allyProfile?: BotProfile },
   ) {
+    // A four-player party minigame (Crumble, Hot Potato, Whodunit) is always four.
+    const party = kit.party?.players === 4;
+    if (party) teams = {};
     this.rng = new Rng(seed);
     this.mode = createMode(kit);
     this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
@@ -103,7 +106,7 @@ export class Match {
     this.bot = new Fighter('bot', teams ? `${profile.name} Bot 1` : `${profile.name} Bot`, this.world);
     this.fighters = [this.player, this.bot];
     if (teams) {
-      const ally = new Fighter('bot', `${(teams.allyProfile ?? profile).name} Ally`, this.world);
+      const ally = new Fighter('bot', party ? `${profile.name} Bot 3` : `${(teams.allyProfile ?? profile).name} Ally`, this.world);
       ally.team = 0;
       const bot2 = new Fighter('bot', `${profile.name} Bot 2`, this.world);
       this.ally = ally;

@@ -629,7 +629,8 @@ export class Lobby {
         // A new room takes the creator's kit; joining an existing room keeps its kit.
         if (room.players.length === 0) {
           const kit = String(msg.kit ?? 'sword');
-          room.kit = KITS.some((k) => k.id === kit && k.available) ? (kit as KitId) : 'sword';
+          // The party minigames are offline only.
+          room.kit = KITS.some((k) => k.id === kit && k.available && !k.party) ? (kit as KitId) : 'sword';
         }
         const seat = room.freeSeat();
         if (seat < 0) {

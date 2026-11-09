@@ -64,6 +64,8 @@ function faceTexture(id: number, kind: 'top' | 'bottom' | 'side', blocks: Blocks
       return `${WOOL_COLORS[blocks.data(x, y, z)] ?? 'white'}_wool`;
     case B.END_STONE:
       return 'end_stone';
+    case B.TNT:
+      return kind === 'side' ? 'tnt_side' : 'tnt_top';
     case B.SHOP:
       return kind === 'side' ? 'shop_side' : 'shop_top';
     case B.COBBLESTONE:

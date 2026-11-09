@@ -423,6 +423,30 @@ A 1v1 version of Hypixel's Solo Normal SkyWars on **Sky Archipelago**: each play
 
 Sources for rules and prices: [Hypixel Wiki — Bed Wars](https://hypixel.fandom.com/wiki/Bed_Wars), [Hypixel forums — Bed Wars price list](https://hypixel.net/threads/bed-wars-price-list.1335731/), [Hypixel forums — SkyWars chest guide](https://hypixel.net/threads/chest-guide-newest-hypixel-chest-guide.748358/), [Badlion — SkyWars guide](https://www.badlion.net/minecraft-blog/minecraft-skywars). The maps are original and simplified for 1v1.
 
+### Minigames (Subtiers → Minigames)
+
+Party games against bots at the tier you pick, every one for themselves (offline only). Each is
+our own take on a classic server minigame:
+
+- **Sumo** (1v1) — bare hands on a round platform over the void, 1.8 knockback and no damage:
+  knock them off the edge.
+- **Crumble** (you + 3 bots; the TNT-run kind) — three floors of TNT over the void. Every block
+  you step on drops away a moment later, so keep running; fall through a hole and you land on the
+  floor below. Drop out of the bottom floor and you're out. No fighting.
+- **Hot Potato** (you + 3 bots; the TNT-tag kind) — one player is lit, TNT in hand and Speed II.
+  Hit someone to pass it on (no tagging straight back for a second) before the fuse runs out
+  (25 s, then shorter each round); whoever holds it blows up. Last one standing wins.
+- **Whodunit** (you + 3 bots; a murder mystery) — in an old manor, one secret **murderer** (a
+  sword that kills in one hit), one **detective** (a bow whose arrow comes back after 5 s), the
+  rest **innocents**. Gold ingots appear around the house; ten buy a bow. Shoot an innocent and you
+  die too. Everyone else wins if the murderer is shot or anyone is still alive after 4 minutes.
+  The bots don't know who is who either: they suspect whoever they see with a sword out or see
+  killing, flee them, and shoot them if they have a bow; the murderer bot blends in for the first
+  half minute and then picks off whoever is alone.
+
+The modes are in `src/game/modes/` (`Sumo.ts`, `Crumble.ts`, `HotPotato.ts`, `Whodunit.ts`;
+tests: `tests/party.test.ts`); each plays its own bots through `GameMode.botTick`.
+
 ### Spear Mace and the spear
 
 The spear is 1.21.11's new weapon, with the netherite spear's numbers from the Minecraft Wiki:

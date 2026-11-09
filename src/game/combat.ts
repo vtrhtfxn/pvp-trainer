@@ -264,6 +264,11 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
   const miss: AttackOutcome = { hit: false, reach: -1, crit: false, sprint: false, scale: 0, damage: 0, blocked: false, disabled: false, swap: false };
   if (attacker.dead || attacker.usingItem || attacker.gameMode === 'spectator') return miss;
   if (target !== attacker && target.team === attacker.team) return miss;
+  // A minigame with no fighting (Crumble): a click is just a swing.
+  if (attacker.world.noPvp) {
+    attacker.swing();
+    return miss;
+  }
   if (attacker.world.legacyCombat) return performLegacyAttack(attacker, target, picked, miss);
   const spear = defOf(attacker.heldStack()).spear;
   if (spear) return performJab(attacker, target, spear, miss);

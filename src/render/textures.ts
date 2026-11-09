@@ -175,6 +175,8 @@ const PACK_BLOCKS: Record<string, { tex: string; tint?: string; overlay?: string
   blue_wool: { tex: 'block/blue_wool' },
   white_wool: { tex: 'block/white_wool' },
   end_stone: { tex: 'block/end_stone' },
+  tnt_side: { tex: 'block/tnt_side' },
+  tnt_top: { tex: 'block/tnt_top' },
   shop_side: { tex: 'block/shop_side' },
   shop_top: { tex: 'block/shop_top' },
   red_bed_foot: { tex: 'block/red_bed_foot' },

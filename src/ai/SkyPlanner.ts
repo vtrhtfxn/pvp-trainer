@@ -6,7 +6,7 @@ import { ITEMS, type ItemId, type ItemStack } from '../game/items';
 import { Bedwars } from '../game/modes/Bedwars';
 import { Skywars, lootValue } from '../game/modes/Skywars';
 import type { Spot } from '../game/modes/maps';
-import type { SkyHost } from '../game/modes/GameMode';
+import type { BotControl, SkyHost } from '../game/modes/GameMode';
 import { SHOP, type ShopItem } from '../game/modes/shop';
 import type { World } from '../game/World';
 import type { BotProfile } from './difficulty';
@@ -22,6 +22,7 @@ export interface BrainHooks {
   facePoint(sx: number, sy: number, sz: number, nx: number, ny: number, nz: number): [number, number, number] | null;
   anyFacePoint(x: number, y: number, z: number): [number, number, number] | null;
   equip(id: ItemId): boolean;
+  setTarget(f: Fighter): void;
 }
 
 export interface Perceived {
@@ -115,6 +116,12 @@ export class SkyPlanner {
     if (this.placeWait > 0) this.placeWait--;
     this.h.weapon = this.bestSword();
     const mode = this.match.mode;
+    // Party minigames (Sumo, Crumble, Hot Potato, Whodunit) play their own bots.
+    if (mode?.botTick) {
+      const free = mode.botTick(this.match, this.control(input, fight));
+      if (!free) this.edgeGuard(input);
+      return;
+    }
     const T = this.target;
     const dist = Math.hypot(per.x - b.pos.x, per.z - b.pos.z);
     const dy = Math.abs(per.y - b.pos.y);
@@ -123,6 +130,53 @@ export class SkyPlanner {
     if (mode instanceof Bedwars) this.bedwars(mode, per, dist, input, closeFight, fight);
     else if (mode instanceof Skywars) this.skywars(mode, per, dist, input, closeFight, fight);
     this.edgeGuard(input);
+  }
+
+  /** What a minigame's own bot logic may do with this bot. */
+  private control(input: MoveInput, fight: () => void): BotControl {
+    const b = this.bot;
+    return {
+      bot: b,
+      input,
+      skill: this.skill,
+      rng: this.rng,
+      fight: (t) => {
+        if (t !== this.target) this.h.setTarget(t);
+        fight();
+      },
+      walkTo: (x, z, stop, sprint = true) => this.walk(x, z, input, stop, sprint),
+      aimAt: (x, y, z, gain) => this.h.aimAt(x, y, z, gain),
+      equip: (id) => (b.slotOf(id) >= 0 ? this.h.equip(id) : false),
+      emptyHand: () => {
+        const i = b.inventory.slice(0, 9).findIndex((s) => !s);
+        if (i >= 0 && b.selected !== i) b.selectSlot(i);
+      },
+      setLabel: (s) => (this.label = s),
+      keepOffEdge: () => this.edgeGuard(input),
+    };
+  }
+
+  /** Plain walking (no bridging): turn toward (x, z) and go; hop when stuck. True once there. */
+  private walk(gx: number, gz: number, input: MoveInput, stopAt: number, sprint: boolean): boolean {
+    const b = this.bot;
+    const dx = gx - b.pos.x;
+    const dz = gz - b.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (Math.hypot(b.pos.x - this.lastPos.x, b.pos.z - this.lastPos.z) < 0.02 && d > stopAt) this.stuck++;
+    else this.stuck = 0;
+    this.lastPos = { x: b.pos.x, z: b.pos.z };
+    if (d <= stopAt) {
+      input.forward = input.strafe = 0;
+      return true;
+    }
+    this.h.turnTo(yawTowards(dx, dz), 0.1, 0.9);
+    input.forward = 1;
+    input.strafe = 0;
+    input.sprint = sprint && d > 2;
+    if (this.stuck > 6 && b.onGround) input.jump = true;
+    // Stuck on furniture for a while: slide sideways a moment.
+    if (this.stuck > 30) input.strafe = this.rng.chance(0.5) ? 1 : -1;
+    return false;
   }
 
   // ------------------------------------------------------------------ Bed Wars

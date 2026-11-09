@@ -1075,6 +1075,7 @@ export class Fighter {
           const tz = hit.z + hit.nz;
           const cur = this.world.blocks.get(tx, ty, tz);
           if (cur !== B.AIR && !isFluid(cur)) return false;
+          if (!this.world.canPlace(this, tx, ty, tz)) return false;
           spawnPrimedTnt(this.world, this, tx + 0.5, ty, tz + 0.5);
           this.consume(s, hand);
           if (hand === 'main') this.swing();

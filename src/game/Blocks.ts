@@ -41,6 +41,8 @@ export const B = {
   SHOP: 22,
   /** Purple shulker box (Spear Mace): `amount` is the splash potions still inside. */
   SHULKER_POTS: 23,
+  /** A TNT block (Crumble's floors): solid and inert here; it drops away under players. */
+  TNT: 24,
   /** Floor and walls: solid, unbreakable, never stored. */
   BEDROCK: 255,
 } as const;
@@ -69,7 +71,8 @@ export type BlockName =
   | 'glass'
   | 'bed'
   | 'chest'
-  | 'shop';
+  | 'shop'
+  | 'tnt';
 
 export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.PLANKS]: 'oak_planks',
@@ -95,6 +98,7 @@ export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.BED]: 'bed',
   [B.CHEST]: 'chest',
   [B.SHOP]: 'shop',
+  [B.TNT]: 'tnt',
 };
 
 /** Wool colours by `amount`: 0 red, 1 blue, 2 white. */
@@ -123,6 +127,7 @@ export function blastResistance(id: number): number {
       return 0;
     case B.GLOWSTONE:
     case B.BED:
+    case B.TNT:
       return 0.3;
     case B.WOOL:
       return 0.8;
@@ -186,6 +191,7 @@ export const BLOCK_PROPS: Record<number, BlockProps> = {
   [B.GLASS]: { hardness: 0.3, tool: null, needsTool: false, drop: 'glass' },
   [B.BED]: { hardness: 0.2, tool: null, needsTool: false, drop: null },
   [B.CHEST]: { hardness: 2.5, tool: 'axe', needsTool: false, drop: null },
+  [B.TNT]: { hardness: 0, tool: null, needsTool: false, drop: null },
 };
 
 export function isSolid(id: number): boolean {
@@ -200,6 +206,7 @@ export function isSolid(id: number): boolean {
     id === B.BED ||
     id === B.CHEST ||
     id === B.SHOP ||
+    id === B.TNT ||
     id === B.COBBLESTONE ||
     id === B.OBSIDIAN ||
     id === B.STONE ||

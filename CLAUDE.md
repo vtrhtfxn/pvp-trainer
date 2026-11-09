@@ -98,6 +98,8 @@ Done recently:
 - Windows ARM64 build (one installer picks x64 or ARM64)
 - online hosting retry fix
 - resource packs (Options → Resource Packs; desktop `resourcepacks` folder or a .zip kept in IndexedDB; old 1.8 layouts mapped)
+- bigger Bed Wars / SkyWars maps; Bed Wars ender chest (personal storage, `modes/containers.ts`)
+- party minigames (offline, free-for-all with up to 4 fighters): Sumo, Crumble, Hot Potato, Whodunit — each mode drives its own bots via `GameMode.botTick`
 
 Open:
 - **Mac stutter:** the owner reports freezes every few seconds in Sword vs HT4 on a MacBook Air M4 in build 85, and that the bot "teleports". Profiling on Linux and SwiftShader found no JS long tasks: game logic runs at about 0.015 ms per tick and Sword bot behaviour is unchanged since build 79. Suspect something Mac or GPU-specific. It needs profiling on a real Mac (`npm run app`, the FPS mod, Render Scale).

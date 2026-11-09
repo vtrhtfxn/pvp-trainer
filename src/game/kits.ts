@@ -1,4 +1,5 @@
 import { ITEMS, type ItemStack, type PotionId } from './items';
+import type { ModeId } from './modes/GameMode';
 
 export interface ArmorStats {
   points: number;
@@ -21,10 +22,10 @@ export interface ArmorStats {
   legacyFallEpf: number;
 }
 
-export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'spear_mace' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars';
+export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'spear_mace' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'sumo' | 'crumble' | 'hotpotato' | 'whodunit';
 /** Built-in kits, and kits players made in the kit editor (`custom:<id>`). */
 export type KitId = BuiltinKitId | `custom:${string}`;
-export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'spear_mace';
+export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'spear_mace' | 'sumo' | 'crumble' | 'hotpotato' | 'whodunit';
 
 /** Everything a fighter spawns with. */
 export interface Loadout {
@@ -70,8 +71,13 @@ export interface KitDef extends Loadout {
   custom?: boolean;
   /** A subtier (1.8 Sword, Spear Mace, Cart, Diamond SMP, Bed Wars, SkyWars): listed on the Subtiers page instead of the title screen. */
   subtier?: boolean;
-  /** A minigame (Bed Wars, SkyWars): its own map and rules; the loadout comes from the game. */
-  mode?: 'bedwars' | 'skywars';
+  /** A minigame (Bed Wars, SkyWars, …): its own map and rules; the loadout comes from the game. */
+  mode?: ModeId;
+  /**
+   * A party minigame (Sumo, Crumble, Hot Potato, Whodunit): every one for themselves against bots
+   * at the chosen tier, `players` in all (you included). Offline only.
+   */
+  party?: { players: 2 | 4 };
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
@@ -683,6 +689,76 @@ export const KITS: KitDef[] = [
     offhand: null,
     armorLabel: 'From chests',
     legacyCombat: true,
+    noHunger: true,
+  },
+  {
+    id: 'sumo',
+    name: 'Sumo',
+    icon: 'sumo',
+    available: true,
+    subtier: true,
+    mode: 'sumo',
+    party: { players: 2 },
+    summary: 'Bare hands on a round platform over the void. No damage — knock them off the edge.',
+    contents: ['No items: punches only, 1.8 knockback, nobody gets hurt', 'Fall off the platform and you lose', 'Bots fight at the tier you pick'],
+    hotbar: [],
+    armor: [null, null, null, null],
+    offhand: null,
+    armorLabel: 'None',
+    legacyCombat: true,
+    noHunger: true,
+  },
+  {
+    id: 'crumble',
+    name: 'Crumble',
+    icon: 'crumble',
+    available: true,
+    subtier: true,
+    mode: 'crumble',
+    party: { players: 4 },
+    summary: 'Three floors of TNT over the void: every block you step on drops away. Keep running — the last one standing wins.',
+    contents: ['You and three bots, no fighting', 'Blocks fall a moment after you step on them; fall through and you land on the floor below', 'Drop out of the bottom floor and you are out · jump over holes'],
+    hotbar: [],
+    armor: [null, null, null, null],
+    offhand: null,
+    armorLabel: 'None',
+    noHunger: true,
+  },
+  {
+    id: 'hotpotato',
+    name: 'Hot Potato',
+    icon: 'hotpotato',
+    available: true,
+    subtier: true,
+    mode: 'hotpotato',
+    party: { players: 4 },
+    summary: 'One player is lit with TNT. Hit someone to pass it on before the fuse runs out — whoever holds it blows up.',
+    contents: ['You and three bots in a walled yard', 'Rounds of 25 s, getting shorter; the lit player runs faster', 'No damage from hits · last one standing wins'],
+    hotbar: [],
+    armor: [null, null, null, null],
+    offhand: null,
+    armorLabel: 'None',
+    noHunger: true,
+  },
+  {
+    id: 'whodunit',
+    name: 'Whodunit',
+    icon: 'whodunit',
+    available: true,
+    subtier: true,
+    mode: 'whodunit',
+    party: { players: 4 },
+    summary: 'A murder mystery in an old manor: one murderer, one detective, the rest innocent — and nobody knows who is who.',
+    contents: [
+      'Murderer: a sword that kills in one hit — kill everyone',
+      'Detective: a bow, its arrow comes back after 5 s — shoot the murderer (shoot an innocent and you die too)',
+      'Innocents: survive; 10 gold ingots from around the house buy a bow',
+      'Everyone else wins if the murderer dies or anyone is alive after 4 minutes',
+    ],
+    hotbar: [],
+    armor: [null, null, null, null],
+    offhand: null,
+    armorLabel: 'None',
     noHunger: true,
   },
   {

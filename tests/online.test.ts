@@ -90,7 +90,7 @@ describe('online, every kit', () => {
   });
 
   it('every subtier starts and runs online too', () => {
-    for (const kit of KITS.filter((k) => k.subtier).map((k) => k.id)) {
+    for (const kit of KITS.filter((k) => k.subtier && !k.party).map((k) => k.id)) {
       const r = room(kit);
       r.toFight();
       expect(r.clients[0].kit.id).toBe(kit);
