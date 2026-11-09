@@ -3,6 +3,7 @@ import { MODS, MOD_BY_ID, type ModCategory, type ModDef, type ModId, type ModMan
 import { itemIcon } from '../render/itemIcons';
 import { packImage } from '../render/pack';
 import type { ItemId } from '../game/items';
+import { addSavedJar, applyJars, hasModFolder, listJars, openModFolder, removeSavedJar, type JarInfo } from '../mods/modStore';
 
 export interface MarketplaceCallbacks {
   onClose(): void;
@@ -128,7 +129,7 @@ function iconCanvas(src: CanvasImageSource | undefined, size = 16): HTMLCanvasEl
   return c;
 }
 
-type Tab = 'mods' | 'packs';
+type Tab = 'mods' | 'jars' | 'packs';
 
 /**
  * The Marketplace: Mods (install, switch on/off, settings, uninstall) and Resource Packs.
@@ -153,9 +154,10 @@ export class Marketplace {
     const head = h('div', { class: 'mk-head' }, h('div', { class: 'screen-title' }, 'Marketplace'));
     this.tabs = {
       mods: h('button', { class: 'mk-tab' }, 'Mods'),
+      jars: h('button', { class: 'mk-tab' }, 'Downloaded Mods'),
       packs: h('button', { class: 'mk-tab' }, 'Resource Packs'),
     };
-    for (const t of ['mods', 'packs'] as Tab[]) {
+    for (const t of ['mods', 'jars', 'packs'] as Tab[]) {
       this.tabs[t].addEventListener('click', () => {
         this.cb.onUiSound();
         this.tab = t;
@@ -163,7 +165,7 @@ export class Marketplace {
         this.render();
       });
     }
-    head.append(h('div', { class: 'mk-tabs' }, this.tabs.mods, this.tabs.packs));
+    head.append(h('div', { class: 'mk-tabs' }, this.tabs.mods, this.tabs.jars, this.tabs.packs));
     panel.append(head);
     this.body = h('div', { class: 'mk-body' });
     panel.append(this.body);
@@ -207,10 +209,12 @@ export class Marketplace {
 
   private render() {
     this.tabs.mods.classList.toggle('on', this.tab === 'mods');
+    this.tabs.jars.classList.toggle('on', this.tab === 'jars');
     this.tabs.packs.classList.toggle('on', this.tab === 'packs');
     this.tabs.mods.textContent = `Mods (${MODS.length})`;
     this.body.replaceChildren();
     if (this.tab === 'packs') this.renderPacks();
+    else if (this.tab === 'jars') this.renderJars();
     else if (this.detail) this.renderDetail(MOD_BY_ID[this.detail]);
     else this.renderMods();
   }
@@ -363,6 +367,106 @@ export class Marketplace {
         return wrap;
       }
     }
+  }
+
+  /** Mods downloaded from Modrinth / CurseForge: what each jar is and what it does here. */
+  private renderJars() {
+    const body = this.body;
+    const top = h('div', { class: 'mk-bar jar-bar' });
+    if (hasModFolder()) top.append(this.button('Open Mods Folder', () => openModFolder()));
+    const pick = h('input', { type: 'file', accept: '.jar', multiple: '' });
+    pick.style.display = 'none';
+    const status = h('span', { class: 'mk-note' });
+    pick.addEventListener('change', () => {
+      const files = [...(pick.files ?? [])];
+      pick.value = '';
+      void (async () => {
+        const bad: string[] = [];
+        for (const f of files) {
+          try {
+            await addSavedJar(f);
+          } catch (e) {
+            bad.push(`${f.name}: ${(e as Error).message}`);
+          }
+        }
+        if (this.tab === 'jars') {
+          this.render();
+          if (bad.length) this.body.querySelector('.jar-bar .mk-note')!.textContent = bad.join(' · ');
+        }
+      })();
+    });
+    top.append(this.button(hasModFolder() ? 'Add .jar…' : 'Add Mod (.jar)…', () => pick.click()), this.button('Refresh', () => this.render()), pick, status);
+    body.append(top);
+    body.append(
+      h(
+        'div',
+        { class: 'mk-desc jar-help' },
+        'Download a mod from Modrinth or CurseForge and ',
+        hasModFolder() ? 'drop the .jar in the mods folder (or use Add .jar…). ' : 'add the .jar here. ',
+        'Mods are Java programs made for Minecraft itself, so their code can’t run in PvP Trainer — but when PvP Trainer has its own version of a mod (AppleSkin, Zoomify, Freelook, Keystrokes, Toggle Sprint, armor and potion HUDs…), adding the jar switches that on.',
+      ),
+    );
+    const list = h('div', { class: 'mk-list' }, h('div', { class: 'mk-empty' }, 'Reading mods…'));
+    body.append(list);
+    void listJars().then((jars) => {
+      if (this.tab !== 'jars' || !list.isConnected) return;
+      const on = applyJars(jars, this.mods);
+      if (on.length) status.textContent = `Switched on: ${on.map((id) => MOD_BY_ID[id].name).join(', ')}`;
+      list.replaceChildren();
+      if (!jars.length) list.append(h('div', { class: 'mk-empty' }, 'No downloaded mods yet.'));
+      for (const j of jars) list.append(this.jarCard(j));
+    });
+  }
+
+  private jarCard(j: JarInfo): HTMLDivElement {
+    const name = j.mod?.name || j.file;
+    const meta = j.mod ? [j.mod.loader, j.mod.version, j.source === 'folder' ? 'mods folder' : 'added in game'].filter(Boolean).join(' · ') : j.file;
+    let badge: HTMLElement;
+    let note: string;
+    let cls = '';
+    if (j.error) {
+      badge = h('span', { class: 'mk-cat jar-bad' }, 'Unreadable');
+      note = j.error;
+    } else if (j.match.kind === 'builtin') {
+      const ids = j.match.mods;
+      const allOn = ids.every((id) => this.mods.on(id));
+      badge = h('span', { class: 'mk-cat jar-ok' }, allOn ? 'Works' : 'Works (off)');
+      note = `Uses PvP Trainer’s ${ids.map((id) => MOD_BY_ID[id].name).join(' + ')}.`;
+      cls = ' installed';
+    } else if (j.match.kind === 'notNeeded') {
+      badge = h('span', { class: 'mk-cat jar-skip' }, 'Not needed');
+      note = `${j.match.why}.`;
+    } else {
+      badge = h('span', { class: 'mk-cat jar-bad' }, 'Can’t run');
+      note = 'A Java mod for Minecraft itself; PvP Trainer has no version of it yet.';
+    }
+    const actions = h('div', { class: 'mk-actions' });
+    if (j.match.kind === 'builtin') {
+      const ids = j.match.mods;
+      const allOn = ids.every((id) => this.mods.on(id));
+      actions.append(
+        this.button(allOn ? 'Turn Off' : 'Turn On', () => {
+          for (const id of ids) {
+            if (allOn) this.mods.setEnabled(id, false);
+            else if (!this.mods.states[id].installed) this.mods.install(id);
+            else this.mods.setEnabled(id, true);
+          }
+        }),
+      );
+    }
+    if (j.source === 'saved') actions.append(this.button('Remove', () => void removeSavedJar(j.file).then(() => this.render())));
+    return h(
+      'div',
+      { class: `mk-card${cls}` },
+      h(
+        'div',
+        { class: 'mk-text' },
+        h('div', { class: 'mk-name' }, name, badge),
+        h('div', { class: 'mk-desc' }, note),
+        h('div', { class: 'mk-desc jar-meta' }, meta),
+      ),
+      actions,
+    );
   }
 
   private renderPacks() {

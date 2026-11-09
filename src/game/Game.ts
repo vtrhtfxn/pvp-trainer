@@ -12,6 +12,7 @@ import { Rng } from '../core/rng';
 import { Input } from '../input/Input';
 import { keyName } from '../input/keybinds';
 import { DamageIndicators } from '../mods/damage';
+import { applyJars, listJars } from '../mods/modStore';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
 import type { Assets } from '../render/assets';
@@ -388,6 +389,8 @@ export class Game {
     });
     this.hudEditor = this.buildHudEditor(uiRoot);
     this.mods.onChange(() => this.applyModVisuals());
+    // Mods dropped in the mods folder (or added before): switch on PvP Trainer's version of each new one.
+    void listJars().then((jars) => applyJars(jars, this.mods)).catch(() => undefined);
     this.input = new Input(canvas, {
       onClick: () => {
         if (this.state !== 'playing') return;

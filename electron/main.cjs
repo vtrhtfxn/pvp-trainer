@@ -308,6 +308,35 @@ ipcMain.handle('pvp:packs-open', (e) => {
   if (!fromGame(e)) return;
   void shell.openPath(packsDir());
 });
+// ---- Mods: a mods folder in the app's data folder, like Minecraft's. Players drop .jar files
+// from Modrinth or CurseForge in; the game only reads which mod each jar is (its Java code never
+// runs). Only .jar names directly inside the folder are ever read.
+const MODS = path.join(app.getPath('userData'), 'mods');
+const JAR_LIMIT = 100 * 1024 * 1024;
+function modsDir() {
+  fs.mkdirSync(MODS, { recursive: true });
+  return MODS;
+}
+ipcMain.handle('pvp:mods-list', (e) => {
+  if (!fromGame(e)) return [];
+  return fs
+    .readdirSync(modsDir(), { withFileTypes: true })
+    .filter((d) => d.isFile() && !d.name.startsWith('.') && /\.jar$/i.test(d.name))
+    .map((d) => d.name)
+    .sort((a, b) => a.localeCompare(b));
+});
+ipcMain.handle('pvp:mods-read', (e, name) => {
+  if (!fromGame(e)) return null;
+  if (typeof name !== 'string' || !name || name !== path.basename(name) || name.startsWith('.') || !/\.jar$/i.test(name)) return null;
+  const p = path.join(modsDir(), name);
+  if (path.dirname(p) !== MODS || !fs.existsSync(p)) return null;
+  const st = fs.statSync(p);
+  return st.isFile() && st.size <= JAR_LIMIT ? fs.readFileSync(p) : null;
+});
+ipcMain.handle('pvp:mods-open', (e) => {
+  if (!fromGame(e)) return;
+  void shell.openPath(modsDir());
+});
 /** The refresh rate of the screen the window is on (60, 120 on ProMotion, …). */
 ipcMain.handle('pvp:display-hz', (e) => {
   if (!fromGame(e) || !win) return 0;
