@@ -5,6 +5,7 @@
  */
 
 import { Duel } from '../net/Duel';
+import { SHIELD_RAISE_TICKS } from '../core/constants';
 import { PREP_TICKS, teamKit } from '../game/Match';
 import { DIFFICULTIES, type DifficultyId } from '../ai/difficulty';
 import { KITS, type KitId } from '../game/kits';
@@ -50,6 +51,10 @@ export class LobbyClient {
   name = 'Player';
   /** Their skin, if they have one (checked: a PNG data URL of sensible size). */
   skin: Skin | null = null;
+  /** FastXP mod on their side: their held right click throws bottles every tick. */
+  fastXp = false;
+  /** Voice Chat mod: their call address ('' = no voice). */
+  voiceId = '';
   ping = 0;
   pingId = 0;
   private pingSentAt = 0;
@@ -201,6 +206,7 @@ class Room {
     duel.countdownTicks = PREP_TICKS;
     this.seats.length = 0;
     this.seats.push(...seats);
+    this.prepDuel(duel);
     seats.forEach((c, i) => {
       if (c) c.seat = i;
     });
@@ -277,6 +283,7 @@ class Room {
     this.kit = kit;
     this.duel = new Duel([a.name, b.name], kit);
     this.duel.countdownTicks = PREP_TICKS;
+    this.prepDuel(this.duel);
     a.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 0 });
     b.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 1 });
     for (const c of this.watchers) c.send({ t: 'watch', countdown: this.duel.countdownSeconds, kit });
@@ -311,6 +318,16 @@ class Room {
   }
 
 
+  /** The room's people in a new duel: the host's shield rule and each one's FastXP. */
+  prepDuel(duel: Duel) {
+    this.seats.forEach((c, i) => {
+      const f = duel.fighters[i];
+      if (!c || !f) return;
+      f.shieldRaiseTicks = this.lobby.shieldRaiseTicks;
+      f.fastXp = c.fastXp;
+    });
+  }
+
   /**
    * Someone joined: they get everyone else's skin, and everyone else gets theirs. One skin per
    * message, so a full tournament room never sends one message too big for a WebRTC channel.
@@ -322,7 +339,15 @@ class Room {
       if (c === joined) continue;
       if (c.skin) joined.sendRaw(msg(c));
       if (mine) c.sendRaw(mine);
+      // And who can be called for voice.
+      if (c.voiceId) joined.send({ t: 'voice', name: c.name, id: c.voiceId });
     }
+  }
+
+  /** Voice Chat: tells everyone else in the room where `c` can be called now. */
+  shareVoice(c: LobbyClient) {
+    const text = JSON.stringify({ t: 'voice', name: c.name, id: c.voiceId } satisfies ServerMsg);
+    for (const o of this.everyone) if (o !== c) o.sendRaw(text);
   }
 
   get players(): LobbyClient[] {
@@ -362,6 +387,7 @@ class Room {
     this.duel = new Duel(names, this.kit);
     // 10 s to sort inventories before the 3-2-1, like an offline duel.
     this.duel.countdownTicks = PREP_TICKS;
+    this.prepDuel(this.duel);
     this.rematchVotes.clear();
     this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
     this.startClock();
@@ -466,6 +492,11 @@ class Room {
   }
 
   leave(client: LobbyClient) {
+    // Their voice goes quiet for everyone left.
+    if (client.voiceId) {
+      client.voiceId = '';
+      this.shareVoice(client);
+    }
     if (this.squad) {
       const i = this.members.indexOf(client);
       if (i >= 0) this.members.splice(i, 1);
@@ -523,6 +554,11 @@ export class Lobby {
   readonly rooms = new Map<string, Room>();
   readonly clients = new Set<LobbyClient>();
   readonly log: (line: string) => void;
+  /**
+   * How long a person's raised shield takes to block, in ticks. Like the server-side Responsive
+   * Shields mod, the host decides it for everyone (instant unless the host turned the mod off).
+   */
+  shieldRaiseTicks = SHIELD_RAISE_TICKS;
   private readonly maxClients: number;
   private readonly maxRooms: number;
 
@@ -591,6 +627,7 @@ export class Lobby {
         if (client.room) return;
         client.name = cleanName(msg.name);
         client.skin = cleanSkin(msg.skin);
+        client.fastXp = !!msg.opts?.fastXp;
         let code = normalizeRoom(String(msg.room || ''));
         let room: Room;
         const existing = code ? this.rooms.get(code) : undefined;
@@ -669,6 +706,20 @@ export class Lobby {
         room.shareSkins(client);
         room.startIfReady();
         this.log(`${client.name} joined room ${room.code} as seat ${seat}`);
+        return;
+      }
+      case 'voice': {
+        const id = typeof msg.id === 'string' && /^[A-Za-z0-9-]{0,64}$/.test(msg.id) ? msg.id : '';
+        if (!client.room || id === client.voiceId) return;
+        client.voiceId = id;
+        client.room.shareVoice(client);
+        return;
+      }
+      case 'opts': {
+        client.fastXp = !!msg.fastXp;
+        const room = client.room;
+        const f = room?.duel && client.seat >= 0 ? room.duel.fighters[client.seat] : null;
+        if (f) f.fastXp = client.fastXp;
         return;
       }
       case 'move':

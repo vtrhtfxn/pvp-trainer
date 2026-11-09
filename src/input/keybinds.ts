@@ -29,7 +29,8 @@ export type Action =
   | 'perspective'
   | 'rematch'
   | 'zoom'
-  | 'freelook';
+  | 'freelook'
+  | 'voice';
 
 export type KeyBinds = Record<Action, string>;
 
@@ -60,6 +61,7 @@ export const DEFAULT_KEYS: KeyBinds = {
   rematch: 'KeyR',
   zoom: 'KeyC',
   freelook: 'AltLeft',
+  voice: 'KeyB',
 };
 
 export const ACTION_LABELS: Record<Action, string> = {
@@ -89,6 +91,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   rematch: 'Rematch (after a duel)',
   zoom: 'Zoom (Zoom mod)',
   freelook: 'Free Look (Freelook mod)',
+  voice: 'Push to Talk (Voice Chat mod)',
 };
 
 export const ACTION_GROUPS: { title: string; actions: Action[] }[] = [
@@ -96,7 +99,7 @@ export const ACTION_GROUPS: { title: string; actions: Action[] }[] = [
   { title: 'Gameplay', actions: ['attack', 'use', 'swapHands', 'rematch'] },
   { title: 'Inventory', actions: ['inventory', 'hotbar1', 'hotbar2', 'hotbar3', 'hotbar4', 'hotbar5', 'hotbar6', 'hotbar7', 'hotbar8', 'hotbar9'] },
   { title: 'Multiplayer & Misc', actions: ['chat', 'command', 'perspective'] },
-  { title: 'Mods', actions: ['zoom', 'freelook'] },
+  { title: 'Mods', actions: ['zoom', 'freelook', 'voice'] },
 ];
 
 export const HOTBAR_ACTIONS: Action[] = ['hotbar1', 'hotbar2', 'hotbar3', 'hotbar4', 'hotbar5', 'hotbar6', 'hotbar7', 'hotbar8', 'hotbar9'];

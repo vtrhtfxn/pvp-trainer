@@ -26,7 +26,7 @@ export function setSignalling(opts: Partial<PeerOptions>) {
   signalling = opts;
 }
 
-function peerOptions(): PeerOptions {
+export function peerOptions(): PeerOptions {
   // Read each time: a relay the player just set applies to the next game.
   return { config: iceConfig(), debug: 0, ...signalling };
 }

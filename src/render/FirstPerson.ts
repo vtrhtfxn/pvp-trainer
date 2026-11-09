@@ -8,7 +8,11 @@ import type { Glint } from './glint';
 import { HeldItemSlot, itemVisual } from './heldItem';
 import { firstPersonItemMatrix } from './itemTransforms';
 import { skinGeometry } from './PlayerModel';
+import { shieldStatusColor, type ShieldStatusOpts } from './shieldStatus';
 import { skinTexture, type Skin } from './skins';
+
+const WHITE = new THREE.Color(1, 1, 1);
+const statusTmp = new THREE.Color();
 
 const DEG = Math.PI / 180;
 const tmp = new THREE.Matrix4();
@@ -26,6 +30,8 @@ export interface HandOptions {
   scale: number;
   /** How far down (0..1) the Low Shield mod draws a shield. */
   lowShield: number;
+  /** BactroMod: each item's size in first person (null: all 1). */
+  itemScale: ((s: ItemStack) => number) | null;
 }
 
 /**
@@ -56,7 +62,9 @@ export class FirstPersonView {
   private readonly defaultArm: THREE.BufferGeometry;
   private readonly defaultMap: THREE.Texture;
   private skinKey = '';
-  readonly opts: HandOptions = { fov: 70, x: 0, y: 0, z: 0, scale: 1, lowShield: 0 };
+  readonly opts: HandOptions = { fov: 70, x: 0, y: 0, z: 0, scale: 1, lowShield: 0, itemScale: null };
+  /** Shield Statuses mod (null: off). */
+  shieldStatus: ShieldStatusOpts | null = null;
 
   private readonly ambient: THREE.AmbientLight;
   private readonly key: THREE.DirectionalLight;
@@ -180,8 +188,13 @@ export class FirstPersonView {
   private renderHand(hand: Hand, stack: ItemStack | null, p: Fighter, a: number, equip: number) {
     const slot = hand === 'main' ? this.main : this.off;
     const v = stack && !p.dead ? itemVisual(p, stack, hand) : null;
-    slot.show(v);
+    const mat = slot.show(v);
     if (!v || !stack) return;
+    if (mat) mat.color.setRGB(1, 1, 1);
+    if (v.model === 'shield') {
+      const o = this.shieldStatus;
+      slot.paintShield(WHITE, o ? shieldStatusColor(p, o, statusTmp) : null, o?.picture ?? null);
+    }
     const using = p.usingItem && p.useHand === hand;
     const kind = using ? p.useKind() : 'none';
     const m = slot.group.matrix.identity();
@@ -199,7 +212,8 @@ export class FirstPersonView {
       crossbowCharged: stack.id === 'crossbow' && !!stack.charged,
       swordBlock: kind === 'sword_block',
     });
-    if (this.opts.scale !== 1) m.multiply(tmp.makeScale(this.opts.scale, this.opts.scale, this.opts.scale));
+    const k = this.opts.scale * (this.opts.itemScale?.(stack) ?? 1);
+    if (k !== 1) m.multiply(tmp.makeScale(k, k, k));
   }
 
   /** The hand offset options, in view space (x mirrored for the left hand). */

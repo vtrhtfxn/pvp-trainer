@@ -412,7 +412,11 @@ export class ModHud {
     );
   }
 
-  /** uku's Armor HUD: the four armor slots beside the hotbar, in hotbar style. */
+  /**
+   * uku's Armor HUD: the four armor pieces beside the hotbar — hotbar-style slots, or a column
+   * with text — with their durability as a line, real numbers (left, or left / max) and/or a
+   * percentage.
+   */
   private drawArmor(f: WidgetFrame | null) {
     const c = this.armor;
     if (!f) {
@@ -420,18 +424,60 @@ export class ModHud {
       return;
     }
     const p = f.player;
-    const mode = String(this.mods.cfg('armorhud', 'durability'));
-    const showEmpty = !!this.mods.cfg('armorhud', 'showEmpty');
-    const side = this.mods.cfg('armorhud', 'side');
+    const cfg = (k: string) => this.mods.cfg('armorhud', k);
+    const bar = !!cfg('bar');
+    const numbers = !!cfg('numbers');
+    const fullNumbers = numbers && cfg('numberStyle') === 'leftmax';
+    const percent = !!cfg('percent');
+    const column = cfg('layout') === 'column';
+    const showEmpty = !!cfg('showEmpty');
+    const side = cfg('side');
+    // Slot 0 is the helmet: at the top of a column and first in a row, like the inventory.
     const slots = [0, 1, 2, 3].map((i) => p.armorSlots[i]);
-    const key = `${f.gui}|${mode}|${showEmpty}|${side}|${slots.map((s) => (s ? `${s.id}:${s.damage ?? 0}` : '-')).join(',')}`;
+    const key = `${f.gui}|${bar}|${numbers}|${fullNumbers}|${percent}|${column}|${showEmpty}|${side}|${slots.map((s) => (s ? `${s.id}:${s.damage ?? 0}` : '-')).join(',')}`;
     if (c.style.display === 'none') c.style.display = '';
     if (key === this.armorKey) return;
     this.armorKey = key;
+
+    const texts = (st: NonNullable<(typeof slots)[number]>): { text: string; frac: number } | null => {
+      const max = ITEMS[st.id].maxDamage ?? 0;
+      if (!max) return null;
+      const left = max - (st.damage ?? 0);
+      const parts: string[] = [];
+      if (numbers) parts.push(fullNumbers ? `${left}/${max}` : String(left));
+      if (percent) parts.push(`${Math.round((left / max) * 100)}%`);
+      return parts.length ? { text: parts.join(' '), frac: left / max } : null;
+    };
+    const font = '8px Minecraft, "Pixelify Sans", monospace';
     const k = f.gui;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = 4 * 20 + 2;
-    const h = 22;
+    const x = this.armorCtx;
+    const textW = (t: string) => {
+      x.font = font;
+      return Math.ceil(x.measureText(t).width);
+    };
+    const shadowText = (t: string, tx: number, ty: number, frac: number) => {
+      x.font = font;
+      x.fillStyle = '#3f3f3f';
+      x.fillText(t, tx + 1, ty + 1);
+      x.fillStyle = frac < 0.25 ? '#ff5555' : frac < 0.5 ? '#ffff55' : '#ffffff';
+      x.fillText(t, tx, ty);
+    };
+    const rows = [0, 1, 2, 3];
+    const shown = rows.filter((i) => slots[i] || showEmpty);
+    const labels = rows.map((i) => (slots[i] ? texts(slots[i]!) : null));
+
+    let w: number;
+    let h: number;
+    if (column) {
+      const longest = Math.max(0, ...labels.map((l) => (l ? textW(l.text) : 0)));
+      w = 18 + (longest ? longest + 3 : 0);
+      h = Math.max(1, shown.length) * 18;
+    } else {
+      const cell = Math.max(20, ...labels.map((l) => (l ? textW(l.text) + 4 : 0)));
+      w = 4 * cell + 2;
+      h = 22 + (labels.some((l) => l) ? 10 : 0);
+    }
     c.width = w * k * dpr;
     c.height = h * k * dpr;
     c.style.width = `${w * k}px`;
@@ -439,39 +485,55 @@ export class ModHud {
     // Beside the hotbar (182 px wide, centred, 1 px above the bottom), past the off-hand slot.
     const offset = (91 + 6) * k;
     c.style.left = side === 'left' ? `calc(50% - ${offset + w * k}px)` : `calc(50% + ${offset}px)`;
-    const x = this.armorCtx;
     x.setTransform(k * dpr, 0, 0, k * dpr, 0, 0);
     x.imageSmoothingEnabled = false;
     x.clearRect(0, 0, w, h);
-    const bar = packImage('gui/sprites/hud/hotbar');
-    for (let i = 0; i < 4; i++) {
+    x.textBaseline = 'alphabetic';
+
+    if (column) {
+      let row = 0;
+      rows.forEach((i, n) => {
+        const st = slots[i];
+        if (!st && !showEmpty) return;
+        const y = row++ * 18;
+        x.fillStyle = 'rgba(0,0,0,0.35)';
+        x.fillRect(0, y, 18, 18);
+        if (!st) return;
+        const icon = itemIcon(st);
+        if (icon) x.drawImage(icon, 1, y + 1, 16, 16);
+        if (bar) drawDurabilityBar(x, st, 0, y + 1);
+        const l = labels[n];
+        if (l) {
+          x.textAlign = 'left';
+          shadowText(l.text, 21, y + 12, l.frac);
+        }
+      });
+      return;
+    }
+
+    const cell = (w - 2) / 4;
+    const hotbar = packImage('gui/sprites/hud/hotbar');
+    rows.forEach((i, n) => {
       const st = slots[i];
-      if (!st && !showEmpty) continue;
-      const sx = i * 20;
-      if (bar) {
-        const k = bar.width / 182; // an HD pack's hotbar is drawn from the same part, scaled
-        x.drawImage(bar, 0, 0, 22 * k, 22 * k, sx, 0, 22, 22);
-      }
-      else {
+      if (!st && !showEmpty) return;
+      const sx = n * cell + (cell - 20) / 2;
+      if (hotbar) {
+        const s = hotbar.width / 182; // an HD pack's hotbar is drawn from the same part, scaled
+        x.drawImage(hotbar, 0, 0, 22 * s, 22 * s, sx, 0, 22, 22);
+      } else {
         x.fillStyle = 'rgba(0,0,0,0.55)';
         x.fillRect(sx, 0, 22, 22);
       }
-      if (!st) continue;
+      if (!st) return;
       const icon = itemIcon(st);
       if (icon) x.drawImage(icon, sx + 3, 3, 16, 16);
-      const max = ITEMS[st.id].maxDamage ?? 0;
-      if (mode === 'bar') drawDurabilityBar(x, st, sx + 2, 3);
-      else if (mode !== 'none' && max) {
-        const left = max - (st.damage ?? 0);
-        const text = mode === 'percent' ? `${Math.round((left / max) * 100)}%` : String(left);
-        x.font = '8px Minecraft, "Pixelify Sans", monospace';
+      if (bar) drawDurabilityBar(x, st, sx + 2, 3);
+      const l = labels[n];
+      if (l) {
         x.textAlign = 'center';
-        x.fillStyle = '#3f3f3f';
-        x.fillText(text, sx + 12, 21);
-        x.fillStyle = left / max < 0.25 ? '#ff5555' : '#ffffff';
-        x.fillText(text, sx + 11, 20);
+        shadowText(l.text, sx + 11, 30, l.frac);
       }
-    }
+    });
   }
 
   /** Custom Crosshair: drawn on a canvas at the screen centre (the vanilla one is hidden). */

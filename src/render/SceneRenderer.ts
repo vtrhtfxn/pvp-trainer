@@ -21,6 +21,7 @@ import { GlowOutline, Hitboxes } from './Hitboxes';
 import { Nametag } from './Nametag';
 import { Particles } from './Particles';
 import { PlayerModel } from './PlayerModel';
+import type { ShieldStatusOpts } from './shieldStatus';
 import type { Skin } from './skins';
 import { setWorldLight } from './light';
 import { Crosshair } from './Crosshair';
@@ -85,6 +86,13 @@ export interface ViewExtras {
   freeCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null;
   /** 2v2: everyone besides the two main fighters, each with their nametag. */
   others: OtherFighter[];
+  /** Shield Statuses mod (null: off). */
+  shieldStatus: ShieldStatusOpts | null;
+  /**
+   * BactroMod: extra brightness (0..1, 1 = fullbright), night vision not brightening the world,
+   * and fogs switched off (null: off).
+   */
+  clarity: { brightness: number; noNightVision: boolean; noFog: boolean; noBlindFog: boolean; noDarkFog: boolean } | null;
 }
 
 /** A fighter drawn besides `player` and `bot` (a 2v2 ally or second opponent). */
@@ -185,6 +193,8 @@ export class SceneRenderer {
     cinematic: false,
     freeCam: null,
     others: [],
+    shieldStatus: null,
+    clarity: null,
   };
   /** Smoothed look of the followed fighter (spectating): reset when the camera moves to another. */
   private readonly look = new LookSmoother();
@@ -568,18 +578,20 @@ export class SceneRenderer {
   private applyEnvironment(p: Fighter | null, view: ViewSettings, clouds: boolean) {
     const sky = this.extras.sky;
     this.arena.setSky(sky);
-    const nightVision = !!p?.effects.has('night_vision');
+    const clear = this.extras.clarity;
+    const nightVision = !!p?.effects.has('night_vision') && !clear?.noNightVision;
     // Blocks never go fully dark (vanilla's minimum light plus the gamma slider).
     let light = 0.22 + 0.78 * this.arena.daylight;
     light += (1 - light) * view.brightness * 0.55;
+    if (clear) light += (1 - light) * clear.brightness;
     if (nightVision) light = 1;
     setWorldLight(light);
     this.ambient.intensity = 0.5 * Math.PI * light;
     for (const l of this.lights) l.intensity = 0.45 * Math.PI * light;
     this.firstPerson.setLight(light);
 
-    const blind = p?.effects.get('blindness');
-    const dark = p?.effects.get('darkness');
+    const blind = clear?.noBlindFog ? undefined : p?.effects.get('blindness');
+    const dark = clear?.noDarkFog ? undefined : p?.effects.get('darkness');
     if (blind || dark) {
       // FogRenderer: blindness squeezes the fog to 5 blocks (fading in over the first second);
       // darkness pulses between near and far.
@@ -602,7 +614,7 @@ export class SceneRenderer {
     // Rain brings the fog in a little, like vanilla's weather fog.
     this.fog.near = 75 - sky.rain * 35;
     this.fog.far = 175 - sky.rain * 65;
-    this.scene.fog = view.fog ? this.fog : null;
+    this.scene.fog = view.fog && !clear?.noFog ? this.fog : null;
     this.arena.clouds.visible = clouds;
   }
 
@@ -629,6 +641,8 @@ export class SceneRenderer {
       const f = o.f;
       v.model.shadowsOn = view.entityShadows;
       v.model.setSkin(this.skinOf(f));
+      v.model.shieldStatus = this.extras.shieldStatus;
+      v.model.shieldStatusShown = !!this.extras.shieldStatus?.others;
       v.model.update(f, alpha, time);
       v.fire.group.visible = true;
       v.fire.update(f, alpha, this.camera, time, true);
@@ -674,6 +688,11 @@ export class SceneRenderer {
     const firstPerson = this.cameraMode === 'first' && !this.extras.freelook;
     this.playerModel.shadowsOn = this.botModel.shadowsOn = view.entityShadows;
     this.playerModel.setVisible(!firstPerson);
+    const shields = this.extras.shieldStatus;
+    this.firstPerson.shieldStatus = shields;
+    this.playerModel.shieldStatus = this.botModel.shieldStatus = shields;
+    this.playerModel.shieldStatusShown = true;
+    this.botModel.shieldStatusShown = !!shields?.others;
     this.playerModel.setSkin(this.skinOf(player));
     this.playerModel.update(player, alpha, time);
     this.firstPerson.setSkin(this.skinOf(player));

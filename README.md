@@ -146,7 +146,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | --- | --- |
 | AppleSkin | Saturation and exhaustion on the hunger bar; hunger and health you'll get back while holding food; food values in tooltips |
 | FPS Display | FPS, frame time, your screen's refresh rate (desktop app) and (online) your ping |
-| uku's Armor HUD | Your armor beside the hotbar with durability bars, percent or points left |
+| uku's Armor HUD | Your armor beside the hotbar (slots, or a column with text) with its durability as a line, real numbers (left, or left / max), a percentage — any mix |
 | BetterHurtCam | Hurt-camera strength 0–200% and the classic one-way tilt |
 | Pot Counter · Totem Counter · Item Counter | Healing pots, totems, gapples, pearls, arrows, crystals, obsidian, wind charges… |
 | Damage Indicator | Damage numbers (hearts or points, gold for crits) floating off whoever got hit |
@@ -165,6 +165,11 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | **New:** Scoreboard | Resize, restyle or hide the Bed Wars / SkyWars sidebar |
 | **New:** Time Changer | Always see morning, noon, sunset or night (visual only) |
 | **New:** Auto GG | Says gg (or gg wp, gf, GG…) when a duel ends — to your opponent online |
+| **New:** Responsive Shields | Based on Shield Fix / Responsive Shields: a raised shield blocks at once instead of after vanilla's hidden 5 ticks (raise time 0–5 settable). **Installed from the start** (it's how shields have worked here); uninstall it for vanilla timing offline. Online the **host's** setting applies to every person, like the server-side mod; bots always keep 5 |
+| **New:** Shield Statuses | Every shield coloured by its state: ready colour, disabled colour after an axe hit, optionally fading back as it recovers; strength setting; other players' shields too (switchable). Upload a picture (PNG/JPG; a GIF's first frame) for the front of every shield — the rim, handle and back keep the status colour |
+| **New:** FastXP | Holding right click throws a Bottle o' Enchanting every tick instead of every 4 (about 20 a second instead of 5). Online your FastXP is sent to the host, which throws them just as fast |
+| **New:** BactroMod | Brightness boost up to fullbright; night vision no longer brightens the world; no distance / blindness / darkness fog; no water / lava overlay; low fire and low shield; first-person sizes for totems, potions, food, weapons and tools, blocks and other items. (Its boat-map, riptide and gamemode-switcher parts have nothing to do here) |
+| **New:** Voice Chat | Based on Simple Voice Chat: talk to the people in your online room. Push to talk (**B**, rebind in Key Binds → Mods), voice activation (with a level slider) or muted; microphone and voices volume; proximity (voices fade out over a set range); "who is talking" in the top left. Audio goes straight between players (WebRTC calls through PeerJS); the room only passes around call addresses. Everyone you hear needs the mod on. The desktop app needs its newest version for the microphone |
 
 **Edit HUD Layout** lets you drag the HUD widgets anywhere (they snap to edges and the
 centre). In a duel, widgets that land on the practice panel or on each other are pushed down
@@ -183,7 +188,8 @@ shown as one of:
 
 - **Works**: PvP Trainer has its own version (AppleSkin, Zoomify / Ok Zoomer / WI Zoom, Freelook /
   Perspective, Keystrokes, Toggle Sprint, Armor HUD, potion and totem counters, ToroHealth / Neat,
-  Better F3, Low Fire, Lowered Shield, Auto GG, Custom Crosshair…). The first time the jar shows up
+  Better F3, Low Fire, Lowered Shield, Auto GG, Custom Crosshair, Shield Fix / Responsive Shields,
+  Shield Statuses, FastXP+, BactroMod, Simple Voice Chat…). The first time the jar shows up
   that mod is installed and switched on; switching it off or uninstalling it afterwards sticks.
 - **Not needed**: performance mods and libraries for Minecraft (Sodium, Lithium, Iris, OptiFine,
   Fabric API, Cloth Config…).

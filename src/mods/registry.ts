@@ -33,7 +33,12 @@ export type ModId =
   | 'blockoverlay'
   | 'scoreboard'
   | 'timechanger'
-  | 'autogg';
+  | 'autogg'
+  | 'responsiveshields'
+  | 'shieldstatus'
+  | 'fastxp'
+  | 'bactromod'
+  | 'voicechat';
 
 export type ModCategory = 'HUD' | 'Visual' | 'Utility';
 export type OptValue = number | string | boolean;
@@ -42,7 +47,9 @@ export type ModOption =
   | { key: string; label: string; type: 'toggle' }
   | { key: string; label: string; type: 'slider'; min: number; max: number; step: number; unit?: 'x' | '%' | 'px' | '' }
   | { key: string; label: string; type: 'select'; options: [string, string][] }
-  | { key: string; label: string; type: 'color' };
+  | { key: string; label: string; type: 'color' }
+  /** A picture the player uploads (kept as a small PNG data URL; '' = none). */
+  | { key: string; label: string; type: 'image'; width: number; height: number };
 
 export interface ModDef {
   id: ModId;
@@ -61,7 +68,9 @@ export interface ModDef {
    */
   widget?: { x: number; y: number; right?: boolean };
   /** Needs a key (Options → Key Binds → Mods). */
-  key?: 'zoom' | 'freelook';
+  key?: 'zoom' | 'freelook' | 'voice';
+  /** Installed (and on) for a new player: the game's own default behaviour lives in this mod. */
+  defaultInstalled?: boolean;
   /** Shows a NEW badge in the Marketplace. */
   isNew?: boolean;
 }
@@ -107,10 +116,10 @@ export const MODS: ModDef[] = [
     id: 'armorhud',
     name: "uku's Armor HUD",
     basedOn: "uku's Armor HUD",
-    description: 'Your armor in hotbar-style slots next to the hotbar, with durability bars — see a piece about to break without opening your inventory.',
+    description: 'Your armor next to the hotbar with its durability — as a line, as real numbers (left, or left / max), as a percentage, or any mix — so you see a piece about to break without opening your inventory.',
     category: 'HUD',
     icon: 'item:netherite_chestplate',
-    defaults: { side: 'right', durability: 'bar', showEmpty: true },
+    defaults: { side: 'right', layout: 'slots', bar: true, numbers: false, numberStyle: 'left', percent: false, showEmpty: true },
     options: [
       {
         key: 'side',
@@ -122,16 +131,26 @@ export const MODS: ModDef[] = [
         ],
       },
       {
-        key: 'durability',
-        label: 'Durability',
+        key: 'layout',
+        label: 'Layout',
         type: 'select',
         options: [
-          ['bar', 'Bar'],
-          ['percent', 'Percent'],
-          ['number', 'Points left'],
-          ['none', 'Hidden'],
+          ['slots', 'Slots beside the hotbar'],
+          ['column', 'Column with text'],
         ],
       },
+      { key: 'bar', label: 'Durability line', type: 'toggle' },
+      { key: 'numbers', label: 'Durability numbers', type: 'toggle' },
+      {
+        key: 'numberStyle',
+        label: 'Numbers show',
+        type: 'select',
+        options: [
+          ['left', 'Points left (312)'],
+          ['leftmax', 'Left / max (312/407)'],
+        ],
+      },
+      { key: 'percent', label: 'Durability percentage', type: 'toggle' },
       { key: 'showEmpty', label: 'Show empty slots', type: 'toggle' },
     ],
   },
@@ -582,6 +601,122 @@ export const MODS: ModDef[] = [
     ],
     isNew: true,
   },
+  {
+    id: 'responsiveshields',
+    name: 'Responsive Shields',
+    basedOn: 'Shield Fix (Responsive Shields)',
+    description:
+      'Minecraft has a hidden 5-tick wait after you raise a shield before it blocks anything — the animation doesn’t show it. This removes (or sets) that wait, so a shield blocks the moment you raise it. Offline it applies to you; online the host’s setting applies to every player, like the server-side mod. On from the start; uninstall it for vanilla shields.',
+    category: 'Utility',
+    icon: 'item:shield',
+    defaults: { raise: 0 },
+    options: [{ key: 'raise', label: 'Raise time in ticks (5 = vanilla)', type: 'slider', min: 0, max: 5, step: 1, unit: '' }],
+    defaultInstalled: true,
+    isNew: true,
+  },
+  {
+    id: 'shieldstatus',
+    name: 'Shield Statuses',
+    basedOn: 'the Shield Statuses mod',
+    description:
+      'Colours every shield by its state: one colour while it can block, another while an axe has disabled it — fading back as it recovers, so you can tell when it will work again. Put your own picture on the front of your shields.',
+    category: 'Visual',
+    icon: 'item:shield',
+    defaults: { enabledColor: '#55ff55', disabledColor: '#ff5555', interpolate: true, strength: 0.6, others: true, banner: '' },
+    options: [
+      { key: 'enabledColor', label: 'Ready colour', type: 'color' },
+      { key: 'disabledColor', label: 'Disabled colour', type: 'color' },
+      { key: 'interpolate', label: 'Fade from disabled to ready', type: 'toggle' },
+      { key: 'strength', label: 'Colour strength', type: 'slider', min: 0.1, max: 1, step: 0.05, unit: '%' },
+      { key: 'others', label: 'Show on other players’ shields', type: 'toggle' },
+      { key: 'banner', label: 'Picture on the front (PNG/JPG; a GIF shows its first frame)', type: 'image', width: 48, height: 88 },
+    ],
+    isNew: true,
+  },
+  {
+    id: 'fastxp',
+    name: 'FastXP',
+    basedOn: 'the FastXP+ mod',
+    description:
+      'Holding right click throws a Bottle o’ Enchanting every tick instead of every 4 ticks — mend your armor in a quarter of the time. Online, the host lets your bottles fly just as fast.',
+    category: 'Utility',
+    icon: 'item:experience_bottle',
+    defaults: {},
+    options: [],
+    isNew: true,
+  },
+  {
+    id: 'bactromod',
+    name: 'BactroMod',
+    basedOn: 'BactroMod',
+    description:
+      'Visual clarity in one mod: brightness up to fullbright, no night-vision glare, fog switches (distance, blindness, darkness, the water/lava overlay), low fire and low shield, and per-item sizes in first person (totems, potions, food, weapons, blocks).',
+    category: 'Visual',
+    icon: 'draw:bactro',
+    defaults: {
+      brightness: 0,
+      noNightVision: false,
+      noFog: false,
+      noBlindFog: false,
+      noDarkFog: false,
+      noLiquid: false,
+      fireLower: 0,
+      shieldLower: 0,
+      sizeTotem: 1,
+      sizePotion: 1,
+      sizeFood: 1,
+      sizeWeapon: 1,
+      sizeBlock: 1,
+      sizeOther: 1,
+    },
+    options: [
+      { key: 'brightness', label: 'Brightness boost (100% = fullbright)', type: 'slider', min: 0, max: 1, step: 0.05, unit: '%' },
+      { key: 'noNightVision', label: 'Night vision doesn’t brighten the world', type: 'toggle' },
+      { key: 'noFog', label: 'No distance fog', type: 'toggle' },
+      { key: 'noBlindFog', label: 'No blindness fog', type: 'toggle' },
+      { key: 'noDarkFog', label: 'No darkness fog', type: 'toggle' },
+      { key: 'noLiquid', label: 'No water / lava overlay', type: 'toggle' },
+      { key: 'fireLower', label: 'Lower fire overlay by', type: 'slider', min: 0, max: 1, step: 0.05, unit: '%' },
+      { key: 'shieldLower', label: 'Lower shield by', type: 'slider', min: 0, max: 1, step: 0.05, unit: '%' },
+      { key: 'sizeTotem', label: 'Totem size', type: 'slider', min: 0.3, max: 1.5, step: 0.05, unit: 'x' },
+      { key: 'sizePotion', label: 'Potion size', type: 'slider', min: 0.3, max: 1.5, step: 0.05, unit: 'x' },
+      { key: 'sizeFood', label: 'Food size', type: 'slider', min: 0.3, max: 1.5, step: 0.05, unit: 'x' },
+      { key: 'sizeWeapon', label: 'Weapon and tool size', type: 'slider', min: 0.3, max: 1.5, step: 0.05, unit: 'x' },
+      { key: 'sizeBlock', label: 'Block size', type: 'slider', min: 0.3, max: 1.5, step: 0.05, unit: 'x' },
+      { key: 'sizeOther', label: 'Other items size', type: 'slider', min: 0.3, max: 1.5, step: 0.05, unit: 'x' },
+    ],
+    isNew: true,
+  },
+  {
+    id: 'voicechat',
+    name: 'Voice Chat',
+    basedOn: 'Simple Voice Chat',
+    description:
+      'Talk to the people in your online game. Hold the push-to-talk key (B; Options → Key Binds → Mods) or leave the mic open with voice activation. Optional proximity: voices get quieter with distance. The people you hear need the mod too.',
+    category: 'Utility',
+    icon: 'draw:voice',
+    defaults: { mode: 'ptt', threshold: 0.12, volume: 1, micGain: 1, proximity: false, range: 32, speakers: true },
+    options: [
+      {
+        key: 'mode',
+        label: 'Microphone',
+        type: 'select',
+        options: [
+          ['ptt', 'Push to talk'],
+          ['voice', 'Voice activation'],
+          ['muted', 'Muted'],
+        ],
+      },
+      { key: 'threshold', label: 'Voice activation level', type: 'slider', min: 0.02, max: 0.5, step: 0.01, unit: '%' },
+      { key: 'micGain', label: 'Microphone volume', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'volume', label: 'Voices volume', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'proximity', label: 'Proximity (quieter far away)', type: 'toggle' },
+      { key: 'range', label: 'Proximity range', type: 'slider', min: 8, max: 96, step: 4, unit: '' },
+      { key: 'speakers', label: 'Show who is talking', type: 'toggle' },
+    ],
+    key: 'voice',
+    isNew: true,
+  },
 ];
 
 export const MOD_BY_ID = Object.fromEntries(MODS.map((m) => [m.id, m])) as Record<ModId, ModDef>;
@@ -612,11 +747,19 @@ export class ModManager {
     for (const m of MODS) {
       const s = saved[m.id];
       this.states[m.id] = {
-        installed: !!s?.installed,
+        installed: s?.installed ?? !!m.defaultInstalled,
         enabled: s?.enabled ?? true,
         config: { ...m.defaults, ...(s?.config && typeof s.config === 'object' ? s.config : {}) },
         pos: s?.pos && Number.isFinite(s.pos.x) && Number.isFinite(s.pos.y) ? s.pos : undefined,
       };
+    }
+    // Armor HUD used to have one "durability" choice; it's three switches now.
+    const armor = this.states.armorhud.config;
+    const old = (saved.armorhud?.config as Record<string, OptValue> | undefined)?.durability;
+    if (typeof old === 'string' && saved.armorhud?.config && !('bar' in saved.armorhud.config)) {
+      armor.bar = old === 'bar';
+      armor.numbers = old === 'number';
+      armor.percent = old === 'percent';
     }
   }
 

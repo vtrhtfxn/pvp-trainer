@@ -78,6 +78,8 @@ const paths = await packager({
   extendInfo: {
     NSHumanReadableCopyright: 'Not affiliated with Mojang or Microsoft.',
     LSMinimumSystemVersion: '11.0',
+    // macOS asks before the Voice Chat mod can use the microphone, with this reason.
+    NSMicrophoneUsageDescription: 'PvP Trainer uses the microphone for the Voice Chat mod, so you can talk to the people you play online.',
   },
 });
 

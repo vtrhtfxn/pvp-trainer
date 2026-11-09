@@ -8,10 +8,12 @@ import type { Glint } from './glint';
 import { HeldItemSlot, itemVisual } from './heldItem';
 import { mcBox, packTexture, toGeometry, type Vec3 } from './itemMesh';
 import { thirdPersonItemMatrix, type HandSide, type ItemKind } from './itemTransforms';
+import { shieldStatusColor, type ShieldStatusOpts } from './shieldStatus';
 import { skinTexture, type Skin } from './skins';
 import { blockTexture } from './textures';
 
 const PX_TO_BLOCKS = 0.9375 / 16;
+const statusTmp = new THREE.Color();
 
 interface PartPose {
   x: number;
@@ -158,6 +160,9 @@ export class PlayerModel {
   /** The red flash when hurt (the Hit Color mod changes it): colour and strength 0..1. */
   readonly hurtColor = new THREE.Color(1, 0, 0);
   hurtStrength = 0.45;
+  /** Shield Statuses mod (null: off), and whether this fighter's shield shows its status. */
+  shieldStatus: ShieldStatusOpts | null = null;
+  shieldStatusShown = true;
   /** Blob shadow under the feet (Options → Entity Shadows). */
   shadowsOn = true;
 
@@ -281,6 +286,10 @@ export class PlayerModel {
       const mat = slot.show(v);
       if (v) slot.group.matrix.copy(socketMatrix(v.kind, hand === 'main' ? 'right' : 'left'));
       if (mat) mat.color.copy(tint);
+      if (v?.model === 'shield') {
+        const o = this.shieldStatus;
+        slot.paintShield(tint, o && this.shieldStatusShown ? shieldStatusColor(f, o, statusTmp) : null, o?.picture ?? null);
+      }
     }
   }
 

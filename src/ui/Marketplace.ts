@@ -108,6 +108,20 @@ function drawIcon(name: string): HTMLCanvasElement {
       px('#55ff55', [[1, 4, 5, 1], [1, 5, 1, 6], [1, 10, 5, 1], [5, 7, 1, 3], [3, 7, 2, 1], [9, 4, 5, 1], [9, 5, 1, 6], [9, 10, 5, 1], [13, 7, 1, 3], [11, 7, 2, 1]]);
       px('#ffffff', [[7, 13, 2, 2]]);
       break;
+    case 'voice':
+      // A microphone with sound waves.
+      px('#d0d0d0', [[6, 1, 4, 8]]);
+      px('#9a9a9a', [[7, 2, 2, 6]]);
+      px('#d0d0d0', [[4, 6, 1, 3], [11, 6, 1, 3], [5, 9, 6, 1], [7, 10, 2, 3], [5, 13, 6, 1]]);
+      px('#55ffff', [[1, 4, 1, 4], [14, 4, 1, 4], [2, 2, 1, 1], [13, 2, 1, 1], [2, 9, 1, 1], [13, 9, 1, 1]]);
+      break;
+    case 'bactro':
+      // An eye: clarity.
+      px('#ffffff', [[3, 6, 10, 4], [5, 5, 6, 6], [1, 7, 14, 2]]);
+      px('#2fa84f', [[6, 5, 4, 6], [5, 6, 6, 4]]);
+      px('#0b2e15', [[7, 7, 2, 2]]);
+      px('#ffff55', [[2, 1, 1, 2], [7, 0, 2, 2], [13, 1, 1, 2], [2, 13, 1, 2], [13, 13, 1, 2], [7, 14, 2, 2]]);
+      break;
     default:
       px('#888', [[2, 2, 12, 12]]);
   }
@@ -364,6 +378,39 @@ export class Marketplace {
           paint(Number(input.value));
           this.mods.set(m.id, o.key, Number(input.value));
         });
+        return wrap;
+      }
+      case 'image': {
+        // A picture made small (it's kept with the mod's settings) — the first frame of a GIF.
+        const file = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+        file.style.display = 'none';
+        file.addEventListener('change', () => {
+          const f = file.files?.[0];
+          file.value = '';
+          if (!f) return;
+          const url = URL.createObjectURL(f);
+          const img = new Image();
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            const c = document.createElement('canvas');
+            c.width = o.width;
+            c.height = o.height;
+            const x = c.getContext('2d')!;
+            // Cover the area, cropping what sticks out.
+            const k = Math.max(o.width / img.width, o.height / img.height);
+            x.imageSmoothingEnabled = img.width > o.width * 2;
+            x.drawImage(img, (o.width - img.width * k) / 2, (o.height - img.height * k) / 2, img.width * k, img.height * k);
+            this.mods.set(m.id, o.key, c.toDataURL('image/png'));
+          };
+          img.onerror = () => URL.revokeObjectURL(url);
+          img.src = url;
+        });
+        const wrap = h('div', { class: 'mk-image-opt' });
+        if (v) {
+          const prev = h('img', { class: 'mk-image-prev', src: String(v), alt: '' });
+          wrap.append(prev, this.button('Remove picture', () => this.mods.set(m.id, o.key, '')));
+        }
+        wrap.prepend(this.button(`${o.label}…`, () => file.click()), file);
         return wrap;
       }
     }

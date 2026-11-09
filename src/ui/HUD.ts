@@ -379,11 +379,13 @@ export class HUD {
     const burning = info.firstPerson && player.onFire && !player.dead && !player.effects.has('fire_resistance');
     this.fire.style.display = burning ? '' : 'none';
     if (burning) {
-      const lower = this.mods?.on('lowfire') ? Number(this.mods.cfg('lowfire', 'lower')) : 0;
+      const m = this.mods;
+      const lower = Math.max(m?.on('lowfire') ? Number(m.cfg('lowfire', 'lower')) : 0, m?.on('bactromod') ? Number(m.cfg('bactromod', 'fireLower')) : 0);
       const v = lower.toFixed(2);
       if (this.fire.style.getPropertyValue('--fire-lower') !== v) this.fire.style.setProperty('--fire-lower', v);
     }
-    const eye = eyeFluid(player);
+    // BactroMod can switch the water / lava overlay off.
+    const eye = this.mods?.on('bactromod') && this.mods.cfg('bactromod', 'noLiquid') ? null : eyeFluid(player);
     this.fluidTint.className = `fluid-tint${info.firstPerson && eye ? ` ${eye}` : ''}`;
 
     // ---- crosshair + attack indicator (Gui.renderCrosshair)
