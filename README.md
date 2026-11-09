@@ -146,7 +146,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | --- | --- |
 | AppleSkin | Saturation and exhaustion on the hunger bar; hunger and health you'll get back while holding food; food values in tooltips |
 | FPS Display | FPS, frame time, your screen's refresh rate (desktop app) and (online) your ping |
-| uku's Armor HUD | Your armor beside the hotbar (slots, or a column with text) with its durability as a line, real numbers (left, or left / max), a percentage — any mix |
+| uku's Armor HUD | Your armor in hotbar-style slots beside the hotbar (past the off-hand slot), with its durability as a line, real numbers (left, or left / max) and/or a percentage just above each slot — any mix. On a narrow window long numbers draw the row a little smaller instead of off the screen |
 | BetterHurtCam | Hurt-camera strength 0–200% and the classic one-way tilt |
 | Pot Counter · Totem Counter · Item Counter | Healing pots, totems, gapples, pearls, arrows, crystals, obsidian, wind charges… |
 | Damage Indicator | Damage numbers (hearts or points, gold for crits) floating off whoever got hit |
@@ -167,7 +167,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | **New:** Auto GG | Says gg (or gg wp, gf, GG…) when a duel ends — to your opponent online |
 | **New:** Responsive Shields | Based on Shield Fix / Responsive Shields: a raised shield blocks at once instead of after vanilla's hidden 5 ticks (raise time 0–5 settable). **Installed from the start** (it's how shields have worked here); uninstall it for vanilla timing offline. Online the **host's** setting applies to every person, like the server-side mod; bots always keep 5 |
 | **New:** Shield Statuses | Every shield coloured by its state: ready colour, disabled colour after an axe hit, optionally fading back as it recovers; strength setting; other players' shields too (switchable). Upload a picture (PNG/JPG; a GIF's first frame) for the front of every shield — the rim, handle and back keep the status colour |
-| **New:** FastXP | Holding right click throws a Bottle o' Enchanting every tick instead of every 4 (about 20 a second instead of 5). Online your FastXP is sent to the host, which throws them just as fast |
+| **New:** FastXP | Holding right click throws Bottles o' Enchanting faster than vanilla's 5 a second: choose 20 (every tick), 10 or 7 a second. Online your setting is sent to the host, which throws them just as fast |
 | **New:** BactroMod | Brightness boost up to fullbright; night vision no longer brightens the world; no distance / blindness / darkness fog; no water / lava overlay; low fire and low shield; first-person sizes for totems, potions, food, weapons and tools, blocks and other items. (Its boat-map, riptide and gamemode-switcher parts have nothing to do here) |
 | **New:** Voice Chat | Based on Simple Voice Chat: talk to the people in your online room. Push to talk (**B**, rebind in Key Binds → Mods), voice activation (with a level slider) or muted; microphone and voices volume; proximity (voices fade out over a set range); "who is talking" in the top left. Audio goes straight between players (WebRTC calls through PeerJS); the room only passes around call addresses. Everyone you hear needs the mod on. The desktop app needs its newest version for the microphone |
 
@@ -199,7 +199,10 @@ shown as one of:
 
 **Options** has eight tabs:
 
-- **Skin** — wear any Minecraft skin instead of the default player. **Upload Skin (.png)…** takes a
+- **Skin** — **Main Hand: Right / Left** (Minecraft's Skin Customization setting): with Left, your
+  selected item is in your left hand and the off hand on the right — in first person, on your model
+  (others see it online) and in the hotbar, where the off-hand slot moves to the right. It only
+  changes how things are drawn: hits, reach and timing are the same. And wear any Minecraft skin instead of the default player. **Upload Skin (.png)…** takes a
   skin file from any skin site (64×64, or the old 64×32 layout, which is converted the way Minecraft
   does; HD skins are scaled down), or type a **Minecraft username** and **Get Skin** to wear that
   player's current skin. Classic (Steve, 4 px) or slim (Alex, 3 px) arms are detected and can be

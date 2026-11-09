@@ -414,16 +414,12 @@ export class Game {
       binds: () => this.settings.keys,
     });
     this.hudEditor = this.buildHudEditor(uiRoot);
-    this.net.opts = { fastXp: this.mods.on('fastxp') };
+    this.net.opts = this.netOpts();
     this.mods.onChange(() => {
       this.applyModVisuals();
       // Online: the host's Responsive Shields setting, and your FastXP, reach the game.
       if (this.onlineHost) this.onlineHost.lobby.shieldRaiseTicks = this.shieldRaiseTicks();
-      const fastXp = this.mods.on('fastxp');
-      if (this.net.opts.fastXp !== fastXp) {
-        this.net.opts = { fastXp };
-        this.net.send({ t: 'opts', fastXp });
-      }
+      this.sendNetOpts();
     });
     // Mods dropped in the mods folder (or added before): switch on PvP Trainer's version of each new one.
     void listJars().then((jars) => applyJars(jars, this.mods)).catch(() => undefined);
@@ -581,6 +577,7 @@ export class Game {
   }
 
   private applySettings() {
+    this.sendNetOpts();
     const s = this.settings;
     const inp = this.input;
     inp.sensitivity = s.sensitivity;
@@ -675,7 +672,26 @@ export class Game {
    */
   private applyPlayerMods(p: Fighter) {
     p.shieldRaiseTicks = this.shieldRaiseTicks();
-    p.fastXp = this.mods.on('fastxp');
+    p.fastXp = this.fastXpTicks();
+    p.leftHanded = this.settings.mainHand === 'left';
+  }
+
+  /** FastXP: ticks between bottles (0 = mod off). */
+  private fastXpTicks(): number {
+    return this.mods.on('fastxp') ? Math.max(1, Number(this.mods.cfg('fastxp', 'speed')) || 1) : 0;
+  }
+
+  /** What the host needs to know about your side: FastXP and your main hand. */
+  private netOpts(): { fastXp: number; leftHanded: boolean } {
+    return { fastXp: this.fastXpTicks(), leftHanded: this.settings.mainHand === 'left' };
+  }
+
+  /** Tells the host when FastXP or your main hand changed. */
+  private sendNetOpts() {
+    const o = this.netOpts();
+    if (this.net.opts.fastXp === o.fastXp && this.net.opts.leftHanded === o.leftHanded) return;
+    this.net.opts = o;
+    this.net.send({ t: 'opts', ...o });
   }
 
   /** Responsive Shields: the raise delay for people (host's rule online). */
@@ -2926,7 +2942,8 @@ export class Game {
   private tickOnline(m: NetMatch) {
     const prevPhase = m.phase;
     // Your own fighter is predicted here; the host applies the same rules to it.
-    m.player.fastXp = this.mods.on('fastxp');
+    m.player.fastXp = this.fastXpTicks();
+    m.player.leftHanded = this.settings.mainHand === 'left';
     m.tick();
     this.view.firstPerson.tick(m.player);
     this.hud.tick(m.player);

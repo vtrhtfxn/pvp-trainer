@@ -957,6 +957,16 @@ export class Menus {
         renderResourcePacks(body, () => this.cb.onUiSound());
         break;
       case 'skin':
+        cycle<'right' | 'left'>(
+          'Main Hand',
+          [
+            ['right', 'Right'],
+            ['left', 'Left'],
+          ],
+          () => s.mainHand,
+          (v) => (s.mainHand = v),
+          'Which hand holds the selected item, like Minecraft’s Skin Customization. Only how it looks: hits, reach and timing are the same.',
+        );
         renderSkinPicker(body, () => this.cb.onUiSound(), () => this.cb.skin(), (sk) => this.cb.onSkin(sk));
         break;
     }

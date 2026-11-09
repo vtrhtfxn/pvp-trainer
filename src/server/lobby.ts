@@ -40,6 +40,13 @@ const MSG_RATE = 150;
 const MAX_MSG_CHARS = 64 * 1024;
 const MSG_BURST = 300;
 
+/** A client's FastXP setting: ticks between bottles, 1–3 (an older client's `true` is 1); 0 = off. */
+function fastXpTicks(v: unknown): number {
+  if (v === true) return 1;
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 1 ? Math.min(3, n) : 0;
+}
+
 let nextClientId = 1;
 
 export class LobbyClient {
@@ -51,8 +58,10 @@ export class LobbyClient {
   name = 'Player';
   /** Their skin, if they have one (checked: a PNG data URL of sensible size). */
   skin: Skin | null = null;
-  /** FastXP mod on their side: their held right click throws bottles every tick. */
-  fastXp = false;
+  /** FastXP mod on their side: ticks between their bottles (0 = off). */
+  fastXp = 0;
+  /** Main Hand: Left on their side (others see their model that way). */
+  leftHanded = false;
   /** Voice Chat mod: their call address ('' = no voice). */
   voiceId = '';
   ping = 0;
@@ -325,6 +334,7 @@ class Room {
       if (!c || !f) return;
       f.shieldRaiseTicks = this.lobby.shieldRaiseTicks;
       f.fastXp = c.fastXp;
+      f.leftHanded = c.leftHanded;
     });
   }
 
@@ -627,7 +637,8 @@ export class Lobby {
         if (client.room) return;
         client.name = cleanName(msg.name);
         client.skin = cleanSkin(msg.skin);
-        client.fastXp = !!msg.opts?.fastXp;
+        client.fastXp = fastXpTicks(msg.opts?.fastXp);
+        client.leftHanded = !!msg.opts?.leftHanded;
         let code = normalizeRoom(String(msg.room || ''));
         let room: Room;
         const existing = code ? this.rooms.get(code) : undefined;
@@ -716,10 +727,14 @@ export class Lobby {
         return;
       }
       case 'opts': {
-        client.fastXp = !!msg.fastXp;
+        client.fastXp = fastXpTicks(msg.fastXp);
+        client.leftHanded = !!msg.leftHanded;
         const room = client.room;
         const f = room?.duel && client.seat >= 0 ? room.duel.fighters[client.seat] : null;
-        if (f) f.fastXp = client.fastXp;
+        if (f) {
+          f.fastXp = client.fastXp;
+          f.leftHanded = client.leftHanded;
+        }
         return;
       }
       case 'move':

@@ -400,8 +400,13 @@ export class Fighter {
   shieldCooldown = 0;
   /** Ticks a raised shield takes to block: none for people, vanilla's 5 for bots (BotBrain sets it). */
   shieldRaiseTicks = C.SHIELD_RAISE_TICKS;
-  /** FastXP mod: holding right click throws a Bottle o' Enchanting every tick, not every 4. */
-  fastXp = false;
+  /**
+   * FastXP mod: ticks between Bottles o' Enchanting while right click is held (1 = every tick,
+   * 20 a second); 0 = off (vanilla's 4).
+   */
+  fastXp = 0;
+  /** Main Hand: Left (Options → Skin). Only how the hands are drawn; the game is the same. */
+  leftHanded = false;
   /** Entity.remainingFireTicks: burning while > 0. */
   fireTicks = 0;
   /** Player.takeXpDelay: an orb can only be absorbed when this is 0. */
@@ -1102,7 +1107,7 @@ export class Fighter {
       else if (def.use === 'equip') ok = this.equipFromHand(s, hand);
       else ok = this.tryUse(s, hand);
       if (ok) {
-        this.rightClickDelay = this.fastXp && s.id === 'experience_bottle' ? 0 : C.USE_ITEM_DELAY;
+        this.rightClickDelay = this.fastXp > 0 && s.id === 'experience_bottle' ? Math.min(this.fastXp, C.USE_ITEM_DELAY) : C.USE_ITEM_DELAY;
         return true;
       }
     }

@@ -497,7 +497,7 @@ export class HUD {
     // AppleSkin's flashing preview: alpha pulses 0.1..0.9 (stepped so the canvas isn't redrawn every frame).
     const flash = food ? Math.round((0.5 + 0.4 * Math.sin(this.tickCount * 0.3)) * 8) / 8 : 0;
     const slotKey = (st: ItemStack | null) => (st ? `${st.id}${st.count}${st.charged ? 'c' : ''}${st.potion ?? ''}${st.damage ?? ''}` : '-');
-    let bar = slotKey(p.offhand);
+    let bar = (p.leftHanded ? 'L' : 'R') + slotKey(p.offhand);
     for (let i = 0; i < 9; i++) bar += `,${slotKey(p.inventory[i])}`;
     const key = [
       hp,
@@ -550,9 +550,23 @@ export class HUD {
     if (selImg) draw(selImg, sx, hy - 1);
     else this.drawPlainSelection(sx + 1, hy);
     if (p.offhand) {
+      // Gui.renderHotbar: the off-hand slot is on the side away from the main hand.
       const offImg = packImage('gui/sprites/hud/hotbar_offhand_left');
-      if (offImg) draw(offImg, hx - 29, hy - 1);
-      this.drawSlotItem(p, p.offhand, hx - 26, hy + 3);
+      if (p.leftHanded) {
+        if (offImg) {
+          // hotbar_offhand_right is the left one mirrored.
+          const x0 = hx + 182;
+          c.save();
+          c.translate(2 * x0 + 29, 0);
+          c.scale(-1, 1);
+          draw(offImg, x0, hy - 1);
+          c.restore();
+        }
+        this.drawSlotItem(p, p.offhand, hx + 182 + 10, hy + 3);
+      } else {
+        if (offImg) draw(offImg, hx - 29, hy - 1);
+        this.drawSlotItem(p, p.offhand, hx - 26, hy + 3);
+      }
     }
     for (let i = 0; i < 9; i++) {
       const st = p.inventory[i];

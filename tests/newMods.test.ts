@@ -16,7 +16,7 @@ function fightMatch() {
 }
 
 /** Bottles thrown in one second of holding right click. */
-function throwsPerSecond(fastXp: boolean): number {
+function throwsPerSecond(fastXp: number): number {
   const m = fightMatch();
   const p = m.player;
   p.fastXp = fastXp;
@@ -29,11 +29,16 @@ function throwsPerSecond(fastXp: boolean): number {
 
 describe('FastXP', () => {
   it('throws a bottle every tick instead of every 4', () => {
-    const slow = throwsPerSecond(false);
-    const fast = throwsPerSecond(true);
+    const slow = throwsPerSecond(0);
     expect(slow).toBeGreaterThanOrEqual(4);
     expect(slow).toBeLessThanOrEqual(6);
-    expect(fast).toBeGreaterThanOrEqual(18);
+    expect(throwsPerSecond(1)).toBeGreaterThanOrEqual(18);
+    const ten = throwsPerSecond(2);
+    expect(ten).toBeGreaterThanOrEqual(9);
+    expect(ten).toBeLessThanOrEqual(11);
+    const seven = throwsPerSecond(3);
+    expect(seven).toBeGreaterThanOrEqual(6);
+    expect(seven).toBeLessThanOrEqual(8);
   });
 });
 
@@ -112,13 +117,15 @@ describe('online: host rules and FastXP', () => {
     const b = conn();
     lobby.connect(a);
     lobby.connect(b);
-    a.say({ t: 'join', room: 'RULES', name: 'A', v: PROTOCOL_VERSION, kit: 'sword', opts: { fastXp: true } });
+    a.say({ t: 'join', room: 'RULES', name: 'A', v: PROTOCOL_VERSION, kit: 'sword', opts: { fastXp: 2, leftHanded: true } });
     b.say({ t: 'join', room: 'RULES', name: 'B', v: PROTOCOL_VERSION, kit: 'sword' });
     const duel = lobby.rooms.get('RULES')!.duel!;
     expect(duel.fighters.map((f) => f.shieldRaiseTicks)).toEqual([5, 5]);
-    expect(duel.fighters.map((f) => f.fastXp)).toEqual([true, false]);
-    b.say({ t: 'opts', fastXp: true });
-    expect(duel.fighters[1].fastXp).toBe(true);
+    expect(duel.fighters.map((f) => f.fastXp)).toEqual([2, 0]);
+    expect(duel.fighters.map((f) => f.leftHanded)).toEqual([true, false]);
+    b.say({ t: 'opts', fastXp: 99, leftHanded: true });
+    expect(duel.fighters[1].fastXp).toBe(3);
+    expect(duel.fighters[1].leftHanded).toBe(true);
     lobby.closeAll();
     vi.useRealTimers();
   });

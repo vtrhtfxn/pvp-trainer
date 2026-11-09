@@ -65,7 +65,7 @@ export class NetClient {
   /** Your skin, sent with the join so the others in the room see it. */
   skin: Skin | null = null;
   /** Client-side mods the host applies to you (FastXP). */
-  opts: { fastXp?: boolean } = {};
+  opts: { fastXp?: number; leftHanded?: boolean } = {};
   joinExtra: { tour?: { size: number; field: string }; rating?: number; squad?: { tier: string } } = {};
 
   connect(address: string, room: string, name: string, kit = 'sword') {

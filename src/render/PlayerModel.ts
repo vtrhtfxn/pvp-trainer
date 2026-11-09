@@ -163,6 +163,8 @@ export class PlayerModel {
   /** Shield Statuses mod (null: off), and whether this fighter's shield shows its status. */
   shieldStatus: ShieldStatusOpts | null = null;
   shieldStatusShown = true;
+  /** The held-item slots are in the arms of a left-handed player. */
+  private lefty = false;
   /** Blob shadow under the feet (Options → Entity Shadows). */
   shadowsOn = true;
 
@@ -279,12 +281,18 @@ export class PlayerModel {
   }
 
   private showHands(f: Fighter, tint: THREE.Color) {
+    // Main Hand: Left — the main-hand item goes in the left arm.
+    if (f.leftHanded !== this.lefty) {
+      this.lefty = f.leftHanded;
+      (this.lefty ? this.pivots.leftArm : this.pivots.rightArm).add(this.mainHand.group);
+      (this.lefty ? this.pivots.rightArm : this.pivots.leftArm).add(this.offHand.group);
+    }
     for (const hand of ['main', 'off'] as const) {
       const slot = hand === 'main' ? this.mainHand : this.offHand;
       const s = f.stackIn(hand);
       const v = s && !f.dead ? itemVisual(f, s, hand) : null;
       const mat = slot.show(v);
-      if (v) slot.group.matrix.copy(socketMatrix(v.kind, hand === 'main' ? 'right' : 'left'));
+      if (v) slot.group.matrix.copy(socketMatrix(v.kind, (hand === 'main') !== f.leftHanded ? 'right' : 'left'));
       if (mat) mat.color.copy(tint);
       if (v?.model === 'shield') {
         const o = this.shieldStatus;
@@ -366,55 +374,61 @@ export class PlayerModel {
     P.rightLeg.xRot = Math.cos(k) * 1.4 * limbAmount;
     P.leftLeg.xRot = Math.cos(k + Math.PI) * 1.4 * limbAmount;
 
-    // Arm poses (poseRightArm / poseLeftArm). A two-handed main-hand pose owns both arms.
-    const right = this.armPose(f, 'main');
-    const left = this.armPose(f, 'off');
+    // Arm poses (poseRightArm / poseLeftArm). With Main Hand: Left the main hand is the left
+    // arm and every pose is mirrored, like HumanoidModel does for a left-handed player.
+    const lefty = f.leftHanded;
+    const rightPose = this.armPose(f, lefty ? 'off' : 'main');
+    const leftPose = this.armPose(f, lefty ? 'main' : 'off');
     const H = P.head;
     const R = P.rightArm;
     const L = P.leftArm;
-    const twoHanded = right === 'bow' || right === 'crossbow_charge' || right === 'crossbow_hold';
-    if (!twoHanded) {
-      if (left === 'item') L.xRot = L.xRot * 0.5 - Math.PI / 10;
-      else if (left === 'block') {
-        L.xRot = L.xRot * 0.5 - 0.9424779;
-        L.yRot = 0.5235988;
+    const twoHanded = (p: ArmPose) => p === 'bow' || p === 'crossbow_charge' || p === 'crossbow_hold';
+    /** One arm's pose; `s` is 1 for the right arm, -1 for the left (mirrored). */
+    const pose = (arm: PartPose, other: PartPose, p: ArmPose, s: number) => {
+      switch (p) {
+        case 'item':
+          arm.xRot = arm.xRot * 0.5 - Math.PI / 10;
+          break;
+        case 'block':
+          arm.xRot = arm.xRot * 0.5 - 0.9424779;
+          arm.yRot = -0.5235988 * s;
+          break;
+        case 'bow':
+          arm.yRot = -0.1 * s + H.yRot;
+          other.yRot = (0.1 + 0.4) * s + H.yRot;
+          arm.xRot = -Math.PI / 2 + H.xRot;
+          other.xRot = -Math.PI / 2 + H.xRot;
+          break;
+        case 'crossbow_charge': {
+          arm.yRot = -0.8 * s;
+          arm.xRot = -0.97079635;
+          const t = Math.min(1, f.useTicks() / C.CROSSBOW_CHARGE_TICKS);
+          other.yRot = lerp(0.4, 0.85, t) * s;
+          other.xRot = lerp(arm.xRot, -Math.PI / 2, t);
+          break;
+        }
+        case 'crossbow_hold':
+          arm.yRot = -0.3 * s + H.yRot;
+          other.yRot = 0.6 * s + H.yRot;
+          arm.xRot = -Math.PI / 2 + H.xRot + 0.1;
+          other.xRot = -1.5 + H.xRot;
+          break;
+        default:
+          break;
       }
-    }
-    switch (right) {
-      case 'item':
-        R.xRot = R.xRot * 0.5 - Math.PI / 10;
-        break;
-      case 'block':
-        R.xRot = R.xRot * 0.5 - 0.9424779;
-        R.yRot = -0.5235988;
-        break;
-      case 'bow':
-        R.yRot = -0.1 + H.yRot;
-        L.yRot = 0.1 + H.yRot + 0.4;
-        R.xRot = -Math.PI / 2 + H.xRot;
-        L.xRot = -Math.PI / 2 + H.xRot;
-        break;
-      case 'crossbow_charge': {
-        R.yRot = -0.8;
-        R.xRot = -0.97079635;
-        const t = Math.min(1, f.useTicks() / C.CROSSBOW_CHARGE_TICKS);
-        L.yRot = lerp(0.4, 0.85, t);
-        L.xRot = lerp(R.xRot, -Math.PI / 2, t);
-        break;
-      }
-      case 'crossbow_hold':
-        R.yRot = -0.3 + H.yRot;
-        L.yRot = 0.6 + H.yRot;
-        R.xRot = -Math.PI / 2 + H.xRot + 0.1;
-        L.xRot = -1.5 + H.xRot;
-        break;
-      default:
-        break;
-    }
+    };
+    // A two-handed pose in either hand owns both arms (the main hand's goes last).
+    const mainFirst = lefty ? [[L, R, leftPose, -1], [R, L, rightPose, 1]] : [[R, L, rightPose, 1], [L, R, leftPose, -1]];
+    const [mainArm, offArm] = mainFirst as [PartPose, PartPose, ArmPose, number][];
+    if (!twoHanded(mainArm[2])) pose(offArm[0], offArm[1], offArm[2], offArm[3]);
+    pose(mainArm[0], mainArm[1], mainArm[2], mainArm[3]);
 
     if (attack > 0) {
+      // HumanoidModel.setupAttackAnimation on the main arm (mirrored for a left-handed player).
+      const s = lefty ? -1 : 1;
+      const A = lefty ? L : R;
       const body = P.body;
-      body.yRot = Math.sin(Math.sqrt(attack) * Math.PI * 2) * 0.2;
+      body.yRot = Math.sin(Math.sqrt(attack) * Math.PI * 2) * 0.2 * s;
       R.z = Math.sin(body.yRot) * 5;
       R.x = -Math.cos(body.yRot) * 5;
       L.z = -Math.sin(body.yRot) * 5;
@@ -428,15 +442,16 @@ export class PlayerModel {
       f1 = 1 - f1;
       const f2 = Math.sin(f1 * Math.PI);
       const f3 = Math.sin(attack * Math.PI) * -(H.xRot - 0.7) * 0.75;
-      R.xRot -= f2 * 1.2 + f3;
-      R.yRot += body.yRot * 2;
-      R.zRot += Math.sin(attack * Math.PI) * -0.4;
+      A.xRot -= f2 * 1.2 + f3;
+      A.yRot += body.yRot * 2;
+      A.zRot += Math.sin(attack * Math.PI) * -0.4;
     }
     if (f.usingItem && f.useKind() === 'food') {
-      // Bring the food up to the mouth (whichever hand holds it)
-      const arm = f.useHand === 'main' ? R : L;
+      // Bring the food up to the mouth (whichever arm holds it)
+      const rightArm = (f.useHand === 'main') !== lefty;
+      const arm = rightArm ? R : L;
       arm.xRot = -1.35 + Math.sin(age * 0.9) * 0.08;
-      arm.yRot = f.useHand === 'main' ? -0.45 : 0.45;
+      arm.yRot = rightArm ? -0.45 : 0.45;
       H.xRot += Math.abs(Math.sin(age * 0.9)) * 0.08;
     }
     if (f.sneaking && !f.dead) {

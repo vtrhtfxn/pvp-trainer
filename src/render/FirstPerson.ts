@@ -60,6 +60,10 @@ export class FirstPersonView {
   private armMaterial: THREE.MeshLambertMaterial;
   private readonly armMesh: THREE.Mesh;
   private readonly defaultArm: THREE.BufferGeometry;
+  private readonly defaultLeftArm: THREE.BufferGeometry;
+  private skin: Skin | null = null;
+  /** The bare arm drawn is the left one (Main Hand: Left). */
+  private leftArm = false;
   private readonly defaultMap: THREE.Texture;
   private skinKey = '';
   readonly opts: HandOptions = { fov: 70, x: 0, y: 0, z: 0, scale: 1, lowShield: 0, itemScale: null };
@@ -84,6 +88,7 @@ export class FirstPersonView {
     this.armMaterial = new THREE.MeshLambertMaterial({ map: assets.rig.texture, alphaTest: 0.1, side: THREE.DoubleSide });
     this.armMesh = new THREE.Mesh(assets.rig.parts.rightArm, this.armMaterial);
     this.defaultArm = assets.rig.parts.rightArm;
+    this.defaultLeftArm = assets.rig.parts.leftArm;
     this.defaultMap = assets.rig.texture;
     this.arm.add(this.armMesh);
     this.arm.matrixAutoUpdate = false;
@@ -95,8 +100,14 @@ export class FirstPersonView {
     const key = s ? `${s.slim ? 1 : 0}${s.png}` : '';
     if (key === this.skinKey) return;
     this.skinKey = key;
-    this.armMesh.geometry = s ? skinGeometry('rightArm', s.slim) : this.defaultArm;
+    this.skin = s;
     this.armMaterial.map = s ? skinTexture(s.png) : this.defaultMap;
+    this.pickArm();
+  }
+
+  private pickArm() {
+    const part = this.leftArm ? 'leftArm' : 'rightArm';
+    this.armMesh.geometry = this.skin ? skinGeometry(part, this.skin.slim) : this.leftArm ? this.defaultLeftArm : this.defaultArm;
   }
 
   /** Dims the hands with the world at night. */
@@ -179,9 +190,14 @@ export class FirstPersonView {
     this.renderHand('off', showOff ? offStack : null, p, a, 1 - lerp(this.oOffHandHeight, this.offHandHeight, a));
     this.arm.visible = showMain && !mainStack && !p.dead;
     if (this.arm.visible) {
+      if (p.leftHanded !== this.leftArm) {
+        this.leftArm = p.leftHanded;
+        this.pickArm();
+      }
+      const side = p.leftHanded ? -1 : 1;
       const am = this.arm.matrix.identity();
-      this.offset(am, 1);
-      this.armMatrix(am, 1 - lerp(this.oMainHandHeight, this.mainHandHeight, a), p.getAttackAnim(a));
+      this.offset(am, side);
+      this.armMatrix(am, 1 - lerp(this.oMainHandHeight, this.mainHandHeight, a), p.getAttackAnim(a), side);
     }
   }
 
@@ -198,11 +214,13 @@ export class FirstPersonView {
     const using = p.usingItem && p.useHand === hand;
     const kind = using ? p.useKind() : 'none';
     const m = slot.group.matrix.identity();
-    this.offset(m, hand === 'main' ? 1 : -1);
+    // Main Hand: Left swaps the sides: the main-hand item is drawn on the left.
+    const right = (hand === 'main') !== p.leftHanded;
+    this.offset(m, right ? 1 : -1);
     if (this.opts.lowShield > 0 && (v.kind === 'shield' || v.kind === 'shield_blocking')) m.multiply(tmp.makeTranslation(0, -this.opts.lowShield * 0.4, 0));
     firstPersonItemMatrix(m, {
       kind: v.kind,
-      hand: hand === 'main' ? 'right' : 'left',
+      hand: right ? 'right' : 'left',
       equipProgress: using ? 0 : equip,
       swingProgress: hand === 'main' ? p.getAttackAnim(a) : 0,
       eatRemaining: kind === 'food' ? p.useItemRemaining - a : null,
@@ -222,9 +240,8 @@ export class FirstPersonView {
     if (o.x || o.y || o.z) m.multiply(tmp.makeTranslation(o.x * side, o.y, o.z));
   }
 
-  /** ItemInHandRenderer.renderPlayerArm for the right arm. */
-  private armMatrix(m: THREE.Matrix4, equip: number, swing: number) {
-    const f = 1;
+  /** ItemInHandRenderer.renderPlayerArm: `f` 1 for the right arm, -1 for the left. */
+  private armMatrix(m: THREE.Matrix4, equip: number, swing: number, f: number) {
     const f1 = Math.sqrt(swing);
     const f2 = -0.3 * Math.sin(f1 * Math.PI);
     const f3 = 0.4 * Math.sin(f1 * Math.PI * 2);
@@ -240,8 +257,8 @@ export class FirstPersonView {
     m.multiply(tmp.makeRotationX(200 * DEG));
     m.multiply(tmp.makeRotationY(f * -135 * DEG));
     m.multiply(tmp.makeTranslation(f * 5.6, 0, 0));
-    // ModelPart.translateAndRotate for the arm (pivot -5, 2, 0 px), then our Y-up geometry
-    m.multiply(tmp.makeTranslation(-5 / 16, 2 / 16, 0));
+    // ModelPart.translateAndRotate for the arm (pivot ∓5, 2, 0 px), then our Y-up geometry
+    m.multiply(tmp.makeTranslation((f * -5) / 16, 2 / 16, 0));
     m.multiply(tmp.makeScale(1 / 16, -1 / 16, -1 / 16));
   }
 }

@@ -21,6 +21,8 @@ export interface Settings {
   keys: KeyBinds;
   /** Fullscreen while playing, so Ctrl+W (sprint + forward) cannot close the tab. */
   fullscreenLock: boolean;
+  /** Main Hand (Minecraft's Skin Customization): which hand holds the selected item. */
+  mainHand: 'right' | 'left';
   // ---- video
   fov: number;
   fovEffects: number;
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   invertScroll: false,
   keys: { ...DEFAULT_KEYS },
   fullscreenLock: true,
+  mainHand: 'right',
   fov: 85,
   fovEffects: 0.5,
   handFov: 70,

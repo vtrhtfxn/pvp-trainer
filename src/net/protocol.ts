@@ -162,6 +162,8 @@ export interface NetFighter {
   ast: number;
   /** Swing counter; the client replays the animation whenever it changes. */
   sw: number;
+  /** Left-handed (Main Hand: Left): how their model holds things. */
+  lh?: boolean;
   /** Gliding with an elytra, and for how long (the pose eases in). */
   ff: boolean;
   fft: number;
@@ -209,10 +211,10 @@ export type ClientMsg =
       /** Your skin (a 64×64 PNG data URL), shown to the others in the room. */
       skin?: { png: string; slim: boolean };
       /** Your client-side mods the host needs to know about. */
-      opts?: { fastXp?: boolean };
+      opts?: { fastXp?: number; leftHanded?: boolean };
     }
   /** Your client-side mods changed (FastXP switched on or off). */
-  | { t: 'opts'; fastXp: boolean }
+  | { t: 'opts'; fastXp: number; leftHanded?: boolean }
   /** Voice Chat mod: where others can call you ('' = voice off). */
   | { t: 'voice'; id: string }
   /** 2v2 room: move to a team (0 red, 1 blue) before the game. */

@@ -116,10 +116,10 @@ export const MODS: ModDef[] = [
     id: 'armorhud',
     name: "uku's Armor HUD",
     basedOn: "uku's Armor HUD",
-    description: 'Your armor next to the hotbar with its durability — as a line, as real numbers (left, or left / max), as a percentage, or any mix — so you see a piece about to break without opening your inventory.',
+    description: 'Your armor in hotbar-style slots beside the hotbar, with its durability as a line, real numbers (left, or left / max), a percentage, or any mix — see a piece about to break without opening your inventory.',
     category: 'HUD',
     icon: 'item:netherite_chestplate',
-    defaults: { side: 'right', layout: 'slots', bar: true, numbers: false, numberStyle: 'left', percent: false, showEmpty: true },
+    defaults: { side: 'right', bar: true, numbers: false, numberStyle: 'left', percent: false, showEmpty: true },
     options: [
       {
         key: 'side',
@@ -128,15 +128,6 @@ export const MODS: ModDef[] = [
         options: [
           ['right', 'Right'],
           ['left', 'Left'],
-        ],
-      },
-      {
-        key: 'layout',
-        label: 'Layout',
-        type: 'select',
-        options: [
-          ['slots', 'Slots beside the hotbar'],
-          ['column', 'Column with text'],
         ],
       },
       { key: 'bar', label: 'Durability line', type: 'toggle' },
@@ -638,11 +629,22 @@ export const MODS: ModDef[] = [
     name: 'FastXP',
     basedOn: 'the FastXP+ mod',
     description:
-      'Holding right click throws a Bottle o’ Enchanting every tick instead of every 4 ticks — mend your armor in a quarter of the time. Online, the host lets your bottles fly just as fast.',
+      'Holding right click throws Bottles o’ Enchanting faster than vanilla’s 5 a second — up to one every tick (20 a second). Online, the host lets your bottles fly just as fast.',
     category: 'Utility',
     icon: 'item:experience_bottle',
-    defaults: {},
-    options: [],
+    defaults: { speed: '1' },
+    options: [
+      {
+        key: 'speed',
+        label: 'Throw speed',
+        type: 'select',
+        options: [
+          ['1', '20 a second (every tick)'],
+          ['2', '10 a second'],
+          ['3', '7 a second'],
+        ],
+      },
+    ],
     isNew: true,
   },
   {

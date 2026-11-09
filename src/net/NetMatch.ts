@@ -689,6 +689,7 @@ export class NetMatch {
     f.mining = s.mn ? { x: s.mn[0], y: s.mn[1], z: s.mn[2], block: this.world.blocks.get(s.mn[0], s.mn[1], s.mn[2]) } : null;
     f.mineProgress = s.mn ? s.mn[3] : 0;
     if (!mine) {
+      f.leftHanded = !!s.lh;
       f.fallFlying = !!s.ff;
       f.fallFlyTicks = s.fft ?? 0;
     }
