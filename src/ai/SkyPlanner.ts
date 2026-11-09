@@ -140,7 +140,8 @@ export class SkyPlanner {
         const iron = b.countItem('iron_ingot');
         const gold = b.countItem('gold_ingot');
         const died = this.shopList.length === 0 && b.stats.hits + b.stats.damageDealt > 0;
-        const wantIron = died ? 12 : 18 + Math.round(s * 30);
+        // The bases are 80 blocks apart: enough wool to bridge most of the way (more for better bots).
+        const wantIron = died ? 16 : 28 + Math.round(s * 30);
         const wantGold = s > 0.6 ? 7 : 0;
         const maxWait = 20 * (died ? 12 : 25 + s * 35);
         if ((iron >= wantIron && gold >= wantGold) || this.timer > maxWait) this.enterBw('shop');
@@ -245,7 +246,7 @@ export class SkyPlanner {
     if (s > 0.25) want('armor1', 'iron', 24);
     if (s > 0.55) want('iron_sword', 'gold', 7);
     if (s > 0.4) want('pickaxe', 'iron', 10);
-    while (iron >= 4 && out.filter((k) => k === 'wool').length < 3 + Math.round(s * 3)) want('wool', 'iron', 4);
+    while (iron >= 4 && out.filter((k) => k === 'wool').length < 5 + Math.round(s * 3)) want('wool', 'iron', 4);
     if (s > 0.7) want('gapple', 'gold', 3);
     return out;
   }
@@ -405,7 +406,7 @@ export class SkyPlanner {
     // 'go': the best players stop at the middle chests first while the other is still far off.
     this.organize();
     if (s > 0.5 && dist > 12) {
-      const mid = L.midChests.find((c) => !mode.opened[me].has(`${c.x},${c.y},${c.z}`) && mode.chestAt(c.x, c.y, c.z) && this.distTo(c) < 26);
+      const mid = L.midChests.find((c) => !mode.opened[me].has(`${c.x},${c.y},${c.z}`) && mode.chestAt(c.x, c.y, c.z) && this.distTo(c) < 34);
       if (mid && this.blockItem()) {
         this.label = 'Middle chests';
         this.lootChest(mode, mid, input);

@@ -1,11 +1,11 @@
 import type { Fighter, MoveInput } from './Fighter';
+import { isChestMode } from './modes/containers';
 import type { ItemStack } from './items';
 import type { KitDef } from './kits';
 import type { GameRules } from './World';
 import { Bedwars } from './modes/Bedwars';
 import type { GameMode, ModeHost } from './modes/GameMode';
 import { SHOP } from './modes/shop';
-import { Skywars } from './modes/Skywars';
 
 /**
  * Replays. The simulation is deterministic (every random number comes from the match seed), so a
@@ -232,16 +232,16 @@ export function runAction(m: ReplayTarget, a: ReplayAction): string | null | und
       return item && mode instanceof Bedwars ? mode.buy(m, p, item) : 'No shop';
     }
     case 'open':
-      if (mode instanceof Skywars) mode.open(m, p, a.x, a.y, a.z);
+      if (isChestMode(mode)) mode.open(m, p, a.x, a.y, a.z);
       return undefined;
     case 'take':
-      if (mode instanceof Skywars) mode.take(p, a.x, a.y, a.z, a.i);
+      if (isChestMode(mode)) mode.take(p, a.x, a.y, a.z, a.i);
       return undefined;
     case 'takeAll':
-      if (mode instanceof Skywars) mode.takeAll(p, a.x, a.y, a.z);
+      if (isChestMode(mode)) mode.takeAll(p, a.x, a.y, a.z);
       return undefined;
     case 'put':
-      if (mode instanceof Skywars) mode.put(p, a.x, a.y, a.z, a.i);
+      if (isChestMode(mode)) mode.put(p, a.x, a.y, a.z, a.i);
       return undefined;
   }
 }

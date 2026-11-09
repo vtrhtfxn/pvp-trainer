@@ -406,7 +406,7 @@ hand. The last 3 seconds are the usual 3-2-1. Offline, press Jump (Space) to ski
 
 ### Bed Wars
 
-A 1v1 version of Hypixel's Bed Wars (one player per team) on **Twin Isles**: two base islands with a bed, a forge and a shop, a middle island with an emerald generator, and two diamond islands on the sides — all floating over the void. 1.8 combat, hunger off.
+A 1v1 version of Hypixel's Bed Wars (one player per team) on **Far Shores**: two 13 × 13 base islands 80 blocks apart, each with the bed tucked in at the back behind the spawn, the forge at the front, the shop and an **ender chest** beside the spawn; a big middle island with two emerald generators and pillars to fight around; and four diamond islands out to the sides — all floating over the void. The **ender chest** is your own storage: whatever you put in it is there in every ender chest on the map and survives your deaths (like cloud storage); nobody else can take it. 1.8 combat, hunger off.
 
 - **Resources:** your forge drops iron (every second) and gold (every 6 s); diamonds (30 s) and emeralds (60 s) spawn on the outer islands. Generators speed up after 5 minutes. Walk over drops to pick them up.
 - **Shop** (right-click the shop block at your base; Hypixel prices): Wool ×16 for 4 iron, End Stone ×12 for 24 iron, Blast-Proof Glass ×4 for 12 iron, Oak Planks ×16 for 4 gold, Obsidian ×4 for 4 emeralds; stone/iron/diamond swords for 10 iron / 7 gold / 4 emeralds, Knockback Stick 5 gold; permanent chainmail/iron/diamond armor for 24 iron / 12 gold / 6 emeralds; pickaxe and axe upgrades (they drop a tier when you die), permanent shears; arrows, bow, Power bow; Speed II, Jump V and Invisibility potions; golden apple, fireball (40 iron), TNT, ender pearl, water bucket. **Upgrades:** Sharpened Swords (4 diamonds), Reinforced Armor I–IV (2/4/8/16 diamonds).
@@ -415,7 +415,7 @@ A 1v1 version of Hypixel's Bed Wars (one player per team) on **Twin Isles**: two
 
 ### SkyWars
 
-A 1v1 version of Hypixel's Solo Normal SkyWars on **Floating Pair**: each player starts in a glass cage over their own island with three chests; a bigger middle island has four better chests and there is a small side island with one chest each side. The cages open when the countdown ends. No respawns — last one standing wins. 1.8 combat, natural regeneration on.
+A 1v1 version of Hypixel's Solo Normal SkyWars on **Sky Archipelago**: each player starts in a glass cage over their own island (64 blocks apart) with three chests; a big middle island has four better chests, and six small islands (two beside the middle, four on the corners) have one chest each. The cages open when the countdown ends. No respawns — last one standing wins. 1.8 combat, natural regeneration on.
 
 - **Chests:** island chests always give a sword, 2–4 armor pieces and blocks, then some of: bow and arrows, snowballs/eggs, golden apples, an ender pearl, water/lava buckets, a tool, food. Middle chests give enchanted diamond/iron gear, Power bows, pearls, apples and splash potions. All chests refill at 4:00. Break a chest and it spills its contents.
 - **Chest screen:** right-click a chest; click an item to take it (armor goes straight on if that slot is empty) or *Take all*; click your own items to put them in.

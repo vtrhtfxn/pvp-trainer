@@ -290,6 +290,26 @@ describe('online Bed Wars and SkyWars', () => {
     expect(have).toBe(n);
   });
 
+  it('Bed Wars: the ender chest opens your own storage through the server', () => {
+    const r = room('bedwars');
+    const mode = r.duel.mode as Bedwars;
+    r.toFight();
+    const ec = mode.layout.teams[0].enderChest;
+    const me = r.clients[0].player;
+    me.pos.set(ec.x + 0.5, 0, ec.z + 2.5);
+    for (let t = 0; t < 30 && !me.onGround; t++) r.tick();
+    r.look(0, ec.x + 0.5, ec.y + 0.5, ec.z + 0.5);
+    r.use(0, 0);
+    expect(r.clients[0].chestMsg?.open).toBe(true);
+    expect(r.clients[0].chestMsg?.items?.every((s) => !s)).toBe(true);
+    // Store what is in hotbar slot 0 (the sword), and it shows in the chest.
+    r.clients[0].chestAction(ec.x, ec.y, ec.z, 'put', 0);
+    r.tick();
+    r.tick();
+    expect(r.clients[0].chestMsg?.items?.filter(Boolean)).toHaveLength(1);
+    expect(r.duel.fighters[0].inventory[0]).toBeNull();
+  });
+
   it('SkyWars: knock the other player into the void and you win', () => {
     const r = room('skywars');
     r.toFight();

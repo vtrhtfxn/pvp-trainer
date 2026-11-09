@@ -1,4 +1,5 @@
 import { clamp, lerp, lerpAngle } from '../core/math';
+import { MODE_WORLD_HALF } from '../game/modes/maps';
 import { Rng } from '../core/rng';
 import { Arrow } from '../game/Arrow';
 import { pushApart } from '../game/combat';
@@ -319,7 +320,7 @@ export class NetMatch {
   ) {
     this.kit = kitById(kitId);
     this.mode = createMode(this.kit);
-    this.world = new World(undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
+    this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
     if (this.mode) {
       this.world.blocks.voidWorld = true;
       this.world.blocks.clear();

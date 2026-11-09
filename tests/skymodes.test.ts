@@ -174,3 +174,44 @@ describe('sky mode bots', () => {
     expect(play('bedwars', 'ht1', 'lt3', 2)?.winner).toBe('a');
   }, 240000);
 });
+
+describe('Bed Wars ender chest', () => {
+  it('stores your items; every ender chest opens the same storage, kept through a death', () => {
+    const m = match('bedwars');
+    toFight(m);
+    const mode = m.mode as Bedwars;
+    const p = m.player;
+    const ec = mode.layout.teams[0].enderChest;
+    expect(m.world.blocks.get(ec.x, ec.y, ec.z)).toBe(B.ENDER_CHEST);
+    // Stand by it and right-click it: it opens (no kit refill in Bed Wars).
+    p.pos.set(ec.x + 0.5, 0, ec.z + 2.5);
+    p.yaw = Math.atan2(-(ec.x + 0.5 - p.pos.x), -(ec.z + 0.5 - p.pos.z));
+    p.pitch = -0.6;
+    expect(p.crosshairBlock()?.id).toBe(B.ENDER_CHEST);
+    p.events.length = 0;
+    expect(p.startUsingItem(true)).toBe(true);
+    expect(p.events.some((e) => e.type === 'openBlock' && e.block === B.ENDER_CHEST)).toBe(true);
+    // Put something in.
+    p.inventory[5] = { id: 'diamond', count: 3 };
+    m.act({ k: 'put', x: ec.x, y: ec.y, z: ec.z, i: 5 });
+    expect(p.inventory[5]).toBeNull();
+    expect(mode.storageFor(p, ec.x, ec.y, ec.z)!.some((s) => s?.id === 'diamond' && s.count === 3)).toBe(true);
+    // The bot's storage is its own.
+    expect(mode.storageFor(m.bot, ec.x, ec.y, ec.z)!.every((s) => !s)).toBe(true);
+    // Die and come back: still there, and the other base's ender chest opens the same storage.
+    p.health = 0;
+    p.die();
+    run(m, RESPAWN_TICKS + 5);
+    expect(p.dead).toBe(false);
+    const far = mode.layout.teams[1].enderChest;
+    p.pos.set(far.x + 0.5, 0, far.z - 1.5);
+    run(m, 1);
+    m.act({ k: 'takeAll', x: far.x, y: far.y, z: far.z });
+    expect(p.countItem('diamond')).toBe(3);
+    // Out of reach: nothing moves.
+    p.inventory[6] = { id: 'emerald', count: 1 };
+    p.pos.set(0.5, 0, 0.5);
+    m.act({ k: 'put', x: far.x, y: far.y, z: far.z, i: 6 });
+    expect(p.inventory[6]?.id).toBe('emerald');
+  });
+});

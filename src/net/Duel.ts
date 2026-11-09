@@ -1,4 +1,6 @@
 import { BotBrain } from '../ai/BotBrain';
+import { isChestMode } from '../game/modes/containers';
+import { MODE_WORLD_HALF } from '../game/modes/maps';
 import type { BotProfile } from '../ai/difficulty';
 import { performAttack, pushApart, rayDistanceToTarget, type AttackOutcome } from '../game/combat';
 import { hitNearerEntity } from '../game/crystals';
@@ -13,7 +15,6 @@ import { createMode } from '../game/modes';
 import { Bedwars } from '../game/modes/Bedwars';
 import type { GameMode } from '../game/modes/GameMode';
 import { SHOP } from '../game/modes/shop';
-import { Skywars } from '../game/modes/Skywars';
 import { INTERP_TICKS, MAX_REWIND_MS, MAX_REWIND_TICKS, NET_TPS, fromSlot, itemTotals, toSlot, type NetEntities, type NetEvent, type NetFighter, type NetPhase, type ClientMsg, type ServerMsg, type Slot } from './protocol';
 
 /** Where a fighter was on one past tick, for lag compensation. */
@@ -130,7 +131,7 @@ export class Duel {
   constructor(names: string[], kitId: KitId = 'sword') {
     this.kit = kitById(kitId);
     this.mode = createMode(this.kit);
-    this.world = new World(undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
+    this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
     if (this.mode) {
       // The same floating map every client builds for itself (see NetMatch).
       this.world.blocks.voidWorld = true;
@@ -523,7 +524,7 @@ export class Duel {
       if (this.brains[i]) continue;
       const f = this.fighters[i];
       for (const e of f.events) {
-        if (e.type !== 'openBlock' || e.block !== B.CHEST || !(mode instanceof Skywars) || this.phase !== 'fight') continue;
+        if (e.type !== 'openBlock' || (e.block !== B.CHEST && e.block !== B.ENDER_CHEST) || !isChestMode(mode) || this.phase !== 'fight') continue;
         if (!mode.canUse(f, e.x, e.y, e.z)) continue;
         mode.open(this, f, e.x, e.y, e.z);
         this.openChest[i] = { x: e.x, y: e.y, z: e.z, sent: '' };
@@ -548,8 +549,8 @@ export class Duel {
   /** Sends seat `i` the chest they have open, if it changed (or `force`, when it opens). */
   private sendChest(i: number, open: boolean) {
     const c = this.openChest[i];
-    if (!c || !(this.mode instanceof Skywars)) return;
-    const items = this.mode.chestAt(c.x, c.y, c.z);
+    if (!c || !isChestMode(this.mode)) return;
+    const items = this.mode.storageFor(this.fighters[i], c.x, c.y, c.z);
     const slots = items ? items.map((s) => toSlot(s)) : null;
     const json = JSON.stringify(slots);
     if (!open && json === c.sent) return;
@@ -585,7 +586,7 @@ export class Duel {
   private chestOp(i: number, m: Extract<ClientMsg, { t: 'chest' }>) {
     const mode = this.mode;
     const f = this.fighters[i];
-    if (!(mode instanceof Skywars) || this.phase !== 'fight') return;
+    if (!isChestMode(mode) || this.phase !== 'fight') return;
     const [x, y, z] = [m.x, m.y, m.z].map((v) => Number(v) | 0);
     // Only the chest this player actually opened (a right click the server saw), and still in reach.
     const open = this.openChest[i];

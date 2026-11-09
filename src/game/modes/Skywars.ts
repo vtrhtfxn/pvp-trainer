@@ -152,6 +152,11 @@ export class Skywars implements GameMode {
     this.chests.set(k, cur);
   }
 
+  /** ChestMode: a loot chest is the same for everyone. */
+  storageFor(_f: Fighter, x: number, y: number, z: number): (ItemStack | null)[] | null {
+    return this.chestAt(x, y, z);
+  }
+
   /** The contents of the chest at (x, y, z), or null if there is none. */
   chestAt(x: number, y: number, z: number): (ItemStack | null)[] | null {
     return this.chests.get(`${x},${y},${z}`) ?? null;

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isChestMode } from './modes/containers';
 import { BotBrain } from '../ai/BotBrain';
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId, type TierId } from '../ai/difficulty';
 import { Sound, type HitKind } from '../audio/Sound';
@@ -82,7 +83,6 @@ import { JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT, OnlineHost, joinOnline, normalizeOn
 import { ChestScreen, ScoreboardHud, ShopScreen } from '../ui/ModeScreens';
 import type { ScoreLine } from './modes/GameMode';
 import { Bedwars } from './modes/Bedwars';
-import { Skywars } from './modes/Skywars';
 import { SpectatorHud } from '../ui/SpectatorHud';
 import { DrillHud } from '../ui/DrillHud';
 import { DRILLS, DrillRun, drillById, loadDrillProgress, loadDrillSpeed, recordDrill } from '../trainer/drills';
@@ -888,8 +888,8 @@ export class Game {
       }
       this.freeMouse();
       this.shopUi.show(p, mode.gear(m, p), (item) => m.act({ k: 'buy', key: item.key }) ?? null);
-    } else if (block === B.CHEST && mode instanceof Skywars) {
-      const items = mode.chestAt(x, y, z);
+    } else if ((block === B.CHEST || block === B.ENDER_CHEST) && isChestMode(mode)) {
+      const items = mode.storageFor(p, x, y, z);
       if (!items) return;
       m.act({ k: 'open', x, y, z });
       this.freeMouse();
@@ -898,6 +898,7 @@ export class Game {
         p,
         items,
         {
+          title: block === B.ENDER_CHEST ? 'Ender Chest' : 'Chest',
           take: (i) => void m.act({ k: 'take', x, y, z, i }),
           takeAll: () => void m.act({ k: 'takeAll', x, y, z }),
           put: (i) => void m.act({ k: 'put', x, y, z, i }),
@@ -992,7 +993,7 @@ export class Game {
         this.chestUi.show(
           p,
           c.items,
-          { take: (i) => m.chestAction(x, y, z, 'take', i), takeAll: () => m.chestAction(x, y, z, 'all'), put: (i) => m.chestAction(x, y, z, 'put', i) },
+          { title: m.world.blocks.get(x, y, z) === B.ENDER_CHEST ? 'Ender Chest' : 'Chest', take: (i) => m.chestAction(x, y, z, 'take', i), takeAll: () => m.chestAction(x, y, z, 'all'), put: (i) => m.chestAction(x, y, z, 'put', i) },
           () => this.sound.equip(),
         );
       }

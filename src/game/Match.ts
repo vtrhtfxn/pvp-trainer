@@ -1,4 +1,5 @@
 import { BotBrain } from '../ai/BotBrain';
+import { MODE_WORLD_HALF } from './modes/maps';
 import type { BotProfile } from '../ai/difficulty';
 import { Rng } from '../core/rng';
 import { performAttack, pushApart, rayDistanceToTarget, type AttackOutcome } from './combat';
@@ -92,7 +93,7 @@ export class Match {
   ) {
     this.rng = new Rng(seed);
     this.mode = createMode(kit);
-    this.world = new World(undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
+    this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
     if (this.mode) {
       // A floating map over the void: no floor, no walls.
       this.world.blocks.voidWorld = true;

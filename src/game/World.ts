@@ -92,6 +92,8 @@ export class World {
   rules: GameRules = defaultGameRules();
   /** Bed Wars: the map itself can't be broken, only what players placed (and beds). */
   protectMap = false;
+  /** Bed Wars: right-clicking an ender chest opens your own storage (instead of refilling a kit). */
+  enderStorage = false;
   /** Game-mode rules for breaking a block (e.g. not your own bed). */
   breakRule: ((f: Fighter, x: number, y: number, z: number, id: number) => boolean) | null = null;
   /** Game-mode rules for placing a block (e.g. not inside a base's protected area). */
