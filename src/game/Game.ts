@@ -13,6 +13,7 @@ import { Input } from '../input/Input';
 import { keyName } from '../input/keybinds';
 import { DamageIndicators } from '../mods/damage';
 import { applyJars, listJars } from '../mods/modStore';
+import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
 import type { Assets } from '../render/assets';
@@ -176,6 +177,9 @@ export class Game {
   private lobbyNames: string[] = [];
   // ---- mods
   private readonly mods = new ModManager();
+  /** Your skin (null: the default player), and online players' skins by name. */
+  private mySkin: Skin | null = loadSkin();
+  private readonly netSkins = new Map<string, Skin>();
   private readonly modHud: ModHud;
   private readonly market: Marketplace;
   private readonly damage: DamageIndicators;
@@ -227,6 +231,11 @@ export class Game {
     const lowEnd = (nav.deviceMemory ?? 8) < 8 || (navigator.hardwareConcurrency || 4) < 4;
     const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && (window.devicePixelRatio || 1) < 2 && !lowEnd);
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
+    this.view.skinOf = (f) => {
+      // Online, everyone is known by name; offline, you are the match's player (not when watching bots).
+      if (f.networked || this.netMatch?.spectator) return this.netSkins.get(f.name) ?? null;
+      return this.state !== 'spectating' && f === this.match.player ? this.mySkin : null;
+    };
     if (this.view.softwareGL) console.warn(`WebGL is software-rendered (${this.view.gpuName}): expect low FPS.`);
     const packIcon = (id: ItemId) =>
       itemIcon({ id, count: 1, potion: 'healing' });
@@ -342,6 +351,13 @@ export class Game {
       onLeaveOnline: () => this.leaveOnline(),
       onMarketplace: () => this.openMarket(),
       installedMods: () => this.mods.installedCount,
+      skin: () => this.mySkin,
+      onSkin: (sk) => {
+        this.mySkin = sk;
+        saveSkin(sk);
+        // Joining a room from now on sends it (a room you're already in keeps the old one).
+        this.net.skin = sk;
+      },
     }, customKits);
     if (this.view.softwareGL) this.menus.setGpuWarning(this.view.gpuName || 'software WebGL');
     else if (armUnderEmulation(this.view.gpuName)) {
@@ -1442,6 +1458,8 @@ export class Game {
     // Custom kits only live in this browser: an online room uses Sword instead.
     const offline = isCustomKit(this.settings.kit);
     this.net.joinExtra = {};
+    this.netSkins.clear();
+    this.net.skin = this.mySkin;
     this.net.connect(url, room, name, offline ? 'sword' : this.settings.kit);
   }
 
@@ -1471,6 +1489,8 @@ export class Game {
         }
         this.onlineHost = host;
         this.net.joinExtra = { tour, rating: this.myRating(), squad: squadTier ? { tier: squadTier } : undefined };
+        this.netSkins.clear();
+        this.net.skin = this.mySkin;
         this.net.connectVia(host.localSocket(), host.code, name, kit, 'Starting…', 8000, 'Could not start the game you are hosting.');
       },
       (err: Error) => {
@@ -1488,6 +1508,8 @@ export class Game {
       return;
     }
     this.net.joinExtra = { rating: this.myRating() };
+    this.netSkins.clear();
+    this.net.skin = this.mySkin;
     this.net.connectVia(joinOnline(c), c, name, 'sword', `Connecting to game ${c}…`, JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT);
   }
 
@@ -1563,6 +1585,13 @@ export class Game {
   }
 
   private onNetMessage(msg: ServerMsg) {
+    if (msg.t === 'skins') {
+      for (const e of msg.list) {
+        const skin = cleanSkin(e);
+        if (skin && typeof e.name === 'string') this.netSkins.set(e.name, skin);
+      }
+      return;
+    }
     if (msg.t === 'squad') {
       // "<name> joined the game" / "left the game", like a server.
       const names = msg.members.map((m) => m.name);

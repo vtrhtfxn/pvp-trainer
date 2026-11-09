@@ -9,6 +9,7 @@ import { PREP_TICKS, teamKit } from '../game/Match';
 import { DIFFICULTIES, type DifficultyId } from '../ai/difficulty';
 import { KITS, type KitId } from '../game/kits';
 import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, cleanChat, cleanName, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
+import { cleanSkin, type Skin } from '../net/skin';
 import { OnlineTourney, isTourneySetup } from '../net/tourney';
 import { TOURNEY_KITS } from '../game/tournament';
 
@@ -47,6 +48,8 @@ export class LobbyClient {
   /** Seat in the room's duel (0/1), or -1 (a tournament member not fighting right now). */
   seat = -1;
   name = 'Player';
+  /** Their skin, if they have one (checked: a PNG data URL of sensible size). */
+  skin: Skin | null = null;
   ping = 0;
   pingId = 0;
   private pingSentAt = 0;
@@ -307,6 +310,20 @@ class Room {
     this.tour = null;
   }
 
+
+  /**
+   * Someone joined: they get everyone else's skin, and everyone else gets theirs. One skin per
+   * message, so a full tournament room never sends one message too big for a WebRTC channel.
+   */
+  shareSkins(joined: LobbyClient) {
+    const msg = (c: LobbyClient) => JSON.stringify({ t: 'skins', list: [{ name: c.name, png: c.skin!.png, slim: c.skin!.slim }] } satisfies ServerMsg);
+    const mine = joined.skin ? msg(joined) : '';
+    for (const c of this.everyone) {
+      if (c === joined) continue;
+      if (c.skin) joined.sendRaw(msg(c));
+      if (mine) c.sendRaw(mine);
+    }
+  }
 
   get players(): LobbyClient[] {
     return this.seats.filter((s): s is LobbyClient => s !== null);
@@ -573,6 +590,7 @@ export class Lobby {
         }
         if (client.room) return;
         client.name = cleanName(msg.name);
+        client.skin = cleanSkin(msg.skin);
         let code = normalizeRoom(String(msg.room || ''));
         let room: Room;
         const existing = code ? this.rooms.get(code) : undefined;
@@ -611,6 +629,7 @@ export class Lobby {
           client.seat = -1;
           client.send({ t: 'joined', you: -1, room: room.code });
           room.sendSquad();
+          room.shareSkins(client);
           this.log(`${client.name} joined 2v2 room ${room.code}`);
           return;
         }
@@ -623,6 +642,7 @@ export class Lobby {
           client.seat = -1;
           client.send({ t: 'joined', you: -1, room: room.code });
           room.sendTour();
+          room.shareSkins(client);
           this.log(`${client.name} joined tournament room ${room.code}`);
           return;
         }
@@ -646,6 +666,7 @@ export class Lobby {
         client.seat = seat;
         client.send({ t: 'joined', you: seat, room: room.code });
         room.sendLobby();
+        room.shareSkins(client);
         room.startIfReady();
         this.log(`${client.name} joined room ${room.code} as seat ${seat}`);
         return;

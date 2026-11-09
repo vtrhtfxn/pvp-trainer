@@ -7,6 +7,8 @@ import type { Assets } from './assets';
 import type { Glint } from './glint';
 import { HeldItemSlot, itemVisual } from './heldItem';
 import { firstPersonItemMatrix } from './itemTransforms';
+import { skinGeometry } from './PlayerModel';
+import { skinTexture, type Skin } from './skins';
 
 const DEG = Math.PI / 180;
 const tmp = new THREE.Matrix4();
@@ -50,6 +52,10 @@ export class FirstPersonView {
   private xBobO = 0;
   private yBobO = 0;
   private armMaterial: THREE.MeshLambertMaterial;
+  private readonly armMesh: THREE.Mesh;
+  private readonly defaultArm: THREE.BufferGeometry;
+  private readonly defaultMap: THREE.Texture;
+  private skinKey = '';
   readonly opts: HandOptions = { fov: 70, x: 0, y: 0, z: 0, scale: 1, lowShield: 0 };
 
   private readonly ambient: THREE.AmbientLight;
@@ -68,9 +74,21 @@ export class FirstPersonView {
     this.main = new HeldItemSlot(glint);
     this.off = new HeldItemSlot(glint);
     this.armMaterial = new THREE.MeshLambertMaterial({ map: assets.rig.texture, alphaTest: 0.1, side: THREE.DoubleSide });
-    this.arm.add(new THREE.Mesh(assets.rig.parts.rightArm, this.armMaterial));
+    this.armMesh = new THREE.Mesh(assets.rig.parts.rightArm, this.armMaterial);
+    this.defaultArm = assets.rig.parts.rightArm;
+    this.defaultMap = assets.rig.texture;
+    this.arm.add(this.armMesh);
     this.arm.matrixAutoUpdate = false;
     this.root.add(this.main.group, this.off.group, this.arm);
+  }
+
+  /** Your own skin on your arm (null: the default player's). */
+  setSkin(s: Skin | null) {
+    const key = s ? `${s.slim ? 1 : 0}${s.png}` : '';
+    if (key === this.skinKey) return;
+    this.skinKey = key;
+    this.armMesh.geometry = s ? skinGeometry('rightArm', s.slim) : this.defaultArm;
+    this.armMaterial.map = s ? skinTexture(s.png) : this.defaultMap;
   }
 
   /** Dims the hands with the world at night. */

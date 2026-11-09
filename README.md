@@ -191,8 +191,16 @@ shown as one of:
 
 ## Options
 
-**Options** has seven tabs:
+**Options** has eight tabs:
 
+- **Skin** — wear any Minecraft skin instead of the default player. **Upload Skin (.png)…** takes a
+  skin file from any skin site (64×64, or the old 64×32 layout, which is converted the way Minecraft
+  does; HD skins are scaled down), or type a **Minecraft username** and **Get Skin** to wear that
+  player's current skin. Classic (Steve, 4 px) or slim (Alex, 3 px) arms are detected and can be
+  switched. The skin's outer layer (hat, jacket, sleeves, trousers) is drawn too, and your
+  first-person arm wears it. Online, your skin is sent with your join, so the people in the room
+  (opponents, 2v2 teammates, tournament players and spectators) see it; only PNG data of a
+  sensible size is accepted. Bots keep the default player.
 - **Resource Packs** — play with any Minecraft resource pack (PvP packs, 16× to 512×, made for
   1.8 up to the newest versions). In the desktop app: **Open Pack Folder**, drop the pack's .zip
   (or its unzipped folder) in, press **Refresh** and **Use** it. In the browser (or an app installed
@@ -1157,7 +1165,7 @@ src/game      Fighter (movement/inventory/items/effects/durability/mining), comb
 src/game/modes  minigames on void maps: GameMode interface, maps, Bed Wars (+ shop), SkyWars (+ loot)
 src/ai        BotBrain + difficulty profiles; SkyPlanner (Bed Wars / SkyWars: shop, loot, bridge, beds)
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
-              first-person hands, item meshes from the resource pack, arrows, particles
+              first-person hands, item meshes from the resource pack, arrows, particles, custom skins (skins.ts)
 src/ui        HUD, chat, Marketplace, inventory screen, menus, kit editor, settings, pixel-art sprites,
               ModeScreens (minigame scoreboard, Bed Wars shop, SkyWars chest)
 src/commands  Brigadier-style dispatcher, argument types (selectors, coordinates, items with components),

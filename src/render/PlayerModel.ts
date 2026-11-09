@@ -8,6 +8,7 @@ import type { Glint } from './glint';
 import { HeldItemSlot, itemVisual } from './heldItem';
 import { mcBox, packTexture, toGeometry, type Vec3 } from './itemMesh';
 import { thirdPersonItemMatrix, type HandSide, type ItemKind } from './itemTransforms';
+import { skinTexture, type Skin } from './skins';
 import { blockTexture } from './textures';
 
 const PX_TO_BLOCKS = 0.9375 / 16;
@@ -63,6 +64,41 @@ const PIECES: { layer: 1 | 2; boxes: PieceBox[] }[] = [
 /** Minecraft part-local pixels (Y down, -Z front) → our part frame (Y up, +Z front). */
 const toOurs = (p: Vec3): Vec3 => [p[0], -p[1], -p[2]];
 
+/**
+ * PlayerModel's own boxes (part-local pixels, Y down) for a custom skin: the base layer and the
+ * outer layer (hat, jacket, sleeves, pants) just outside it. Slim (Alex) arms are 3 px wide and
+ * sit half a pixel lower.
+ */
+type SkinBox = { origin: Vec3; size: Vec3; tex: [number, number]; over: [number, number]; inflate: number };
+const SKIN_BOXES: Record<PartName, SkinBox> = {
+  head: { origin: [-4, -8, -4], size: [8, 8, 8], tex: [0, 0], over: [32, 0], inflate: 0.5 },
+  body: { origin: [-4, 0, -2], size: [8, 12, 4], tex: [16, 16], over: [16, 32], inflate: 0.25 },
+  rightArm: { origin: [-3, -2, -2], size: [4, 12, 4], tex: [40, 16], over: [40, 32], inflate: 0.25 },
+  leftArm: { origin: [-1, -2, -2], size: [4, 12, 4], tex: [32, 48], over: [48, 48], inflate: 0.25 },
+  rightLeg: { origin: [-2, 0, -2], size: [4, 12, 4], tex: [0, 16], over: [0, 32], inflate: 0.25 },
+  leftLeg: { origin: [-2, 0, -2], size: [4, 12, 4], tex: [16, 48], over: [0, 48], inflate: 0.25 },
+};
+const SLIM_ARMS: Partial<Record<PartName, Pick<SkinBox, 'origin' | 'size'>>> = {
+  rightArm: { origin: [-2, -1.5, -2], size: [3, 12, 4] },
+  leftArm: { origin: [-1, -1.5, -2], size: [3, 12, 4] },
+};
+const skinGeos = new Map<string, THREE.BufferGeometry>();
+
+/** One body part's geometry for a custom skin (made once per part and arm width). */
+export function skinGeometry(part: PartName, slim: boolean): THREE.BufferGeometry {
+  const key = `${part}:${slim ? 1 : 0}`;
+  let g = skinGeos.get(key);
+  if (!g) {
+    const box = { ...SKIN_BOXES[part], ...(slim ? SLIM_ARMS[part] : undefined) };
+    const b = { pos: [] as number[], nrm: [] as number[], uv: [] as number[] };
+    mcBox(b, box.origin, box.size, box.tex, [64, 64], 0, false, toOurs);
+    mcBox(b, box.origin, box.size, box.over, [64, 64], box.inflate, false, toOurs);
+    g = toGeometry(b);
+    skinGeos.set(key, g);
+  }
+  return g;
+}
+
 let shadowTexture: THREE.CanvasTexture | null = null;
 function getShadowTexture() {
   if (!shadowTexture) {
@@ -105,6 +141,11 @@ export class PlayerModel {
   private readonly tilt = new THREE.Group();
   private readonly pivots = {} as Record<PartName, THREE.Group>;
   private readonly skin: THREE.MeshLambertMaterial;
+  private readonly bodyMeshes = {} as Record<PartName, THREE.Mesh>;
+  private readonly defaultParts: Record<PartName, THREE.BufferGeometry>;
+  private readonly defaultMap: THREE.Texture;
+  /** The custom skin drawn now ('' for the default player). */
+  private skinKey = '';
   /** Armor materials keyed by "<material>/<layer>", e.g. "netherite/1". */
   private readonly armorMats = new Map<string, THREE.MeshLambertMaterial>();
   /** Per armor slot: the meshes (armor + glint) to toggle, and which layer texture they use. */
@@ -122,6 +163,8 @@ export class PlayerModel {
 
   constructor(assets: Assets, glint: Glint) {
     this.skin = new THREE.MeshLambertMaterial({ map: assets.rig.texture, alphaTest: 0.1, side: THREE.DoubleSide });
+    this.defaultParts = assets.rig.parts;
+    this.defaultMap = assets.rig.texture;
 
     const scaler = new THREE.Group();
     scaler.scale.setScalar(PX_TO_BLOCKS);
@@ -130,7 +173,9 @@ export class PlayerModel {
     for (const name of PART_NAMES) {
       const pivot = new THREE.Group();
       pivot.rotation.order = 'ZYX';
-      pivot.add(new THREE.Mesh(assets.rig.parts[name], this.skin));
+      const mesh = new THREE.Mesh(assets.rig.parts[name], this.skin);
+      this.bodyMeshes[name] = mesh;
+      pivot.add(mesh);
       scaler.add(pivot);
       this.pivots[name] = pivot;
     }
@@ -199,6 +244,15 @@ export class PlayerModel {
       this.armorMats.set(key, m);
     }
     return m;
+  }
+
+  /** Draws a custom skin (classic or slim arms, with its outer layer), or the default player. */
+  setSkin(s: Skin | null) {
+    const key = s ? `${s.slim ? 1 : 0}${s.png}` : '';
+    if (key === this.skinKey) return;
+    this.skinKey = key;
+    for (const name of PART_NAMES) this.bodyMeshes[name].geometry = s ? skinGeometry(name, s.slim) : this.defaultParts[name];
+    this.skin.map = s ? skinTexture(s.png) : this.defaultMap;
   }
 
   setVisible(v: boolean) {

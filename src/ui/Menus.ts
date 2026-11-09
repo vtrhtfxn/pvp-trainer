@@ -1,5 +1,7 @@
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../ai/difficulty';
 import { renderResourcePacks } from './ResourcePacks';
+import { renderSkinPicker } from './SkinPicker';
+import type { Skin } from '../render/skins';
 import type { FighterStats } from '../game/Fighter';
 import { KITS, customKitList, isCustomKit, kitById, type KitDef, type KitId } from '../game/kits';
 import { teamKit } from '../game/Match';
@@ -45,6 +47,9 @@ export interface MenuCallbacks {
   onQuit(): void;
   onSettingsChanged(): void;
   onUiSound(): void;
+  /** Your skin, and changing it (null: the default player). */
+  skin(): Skin | null;
+  onSkin(s: Skin | null): void;
   onConnect(url: string, room: string, name: string): void;
   /** Online over the internet: host a game in this window / join a friend's by its code. */
   onHostOnline(name: string): void;
@@ -74,9 +79,10 @@ export interface MenuCallbacks {
 /** Title-screen card that stands for all custom kits. */
 const CUSTOM_CARD = 'custom';
 
-type SettingsTab = 'video' | 'packs' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
+type SettingsTab = 'video' | 'skin' | 'packs' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
 const TAB_LABELS: Record<SettingsTab, string> = {
   video: 'Video',
+  skin: 'Skin',
   packs: 'Resource Packs',
   controls: 'Controls',
   keys: 'Key Binds',
@@ -949,6 +955,9 @@ export class Menus {
       }
       case 'packs':
         renderResourcePacks(body, () => this.cb.onUiSound());
+        break;
+      case 'skin':
+        renderSkinPicker(body, () => this.cb.onUiSound(), () => this.cb.skin(), (sk) => this.cb.onSkin(sk));
         break;
     }
   }

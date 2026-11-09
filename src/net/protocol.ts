@@ -206,6 +206,8 @@ export type ClientMsg =
       rating?: number;
       /** Creating a 2v2 room: the tier of the bots that fill empty places. */
       squad?: { tier: string };
+      /** Your skin (a 64×64 PNG data URL), shown to the others in the room. */
+      skin?: { png: string; slim: boolean };
     }
   /** 2v2 room: move to a team (0 red, 1 blue) before the game. */
   | { t: 'side'; team: number }
@@ -292,6 +294,8 @@ export interface NetEvent {
 
 export type ServerMsg =
   | { t: 'joined'; you: number; room: string }
+  /** The skins of everyone in the room who has one, by name (sent whenever someone joins). */
+  | { t: 'skins'; list: { name: string; png: string; slim: boolean }[] }
   | { t: 'error'; message: string }
   | { t: 'lobby'; room: string; players: { i: number; name: string }[]; kit: string }
   /** A duel starts. `you`: your seat in it (tournaments seat whoever plays this match). */
