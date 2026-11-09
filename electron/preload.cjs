@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld('pvpNative', {
   restart: () => ipcRenderer.invoke('pvp:restart'),
   /** Opens the download page in the browser. */
   openDownload: () => ipcRenderer.invoke('pvp:open-download'),
+  /** The mods folder: list the .jar files in it, read one, open it in Finder / Explorer. */
+  mods: {
+    list: () => ipcRenderer.invoke('pvp:mods-list'),
+    read: (name) => ipcRenderer.invoke('pvp:mods-read', String(name)),
+    openFolder: () => ipcRenderer.invoke('pvp:mods-open'),
+  },
   /** The resourcepacks folder: list it, read a pack, open it in Finder / Explorer. */
   packs: {
     list: () => ipcRenderer.invoke('pvp:packs-list'),

@@ -21,6 +21,7 @@ import { GlowOutline, Hitboxes } from './Hitboxes';
 import { Nametag } from './Nametag';
 import { Particles } from './Particles';
 import { PlayerModel } from './PlayerModel';
+import type { Skin } from './skins';
 import { setWorldLight } from './light';
 import { Crosshair } from './Crosshair';
 import { Glint } from './glint';
@@ -125,6 +126,8 @@ export class SceneRenderer {
   readonly particles = new Particles();
   readonly playerModel: PlayerModel;
   readonly botModel: PlayerModel;
+  /** Whose skin each fighter wears (set by the game: yours, online players'; bots: none). */
+  skinOf: (f: Fighter) => Skin | null = () => null;
   readonly nametag = new Nametag();
   readonly hitboxes = new Hitboxes();
   readonly firstPerson: FirstPersonView;
@@ -330,6 +333,7 @@ export class SceneRenderer {
     f.bodyYaw = f.prevBodyYaw = -body;
     f.yaw = f.prevYaw = -(body + Math.atan(dx * 0.6) * 0.6);
     f.pitch = f.prevPitch = Math.atan(dy * 0.6) * 0.5;
+    this.previewModel.setSkin(this.skinOf(p));
     this.previewModel.update(f, 1, 0);
 
     const r = this.renderer;
@@ -624,6 +628,7 @@ export class SceneRenderer {
       }
       const f = o.f;
       v.model.shadowsOn = view.entityShadows;
+      v.model.setSkin(this.skinOf(f));
       v.model.update(f, alpha, time);
       v.fire.group.visible = true;
       v.fire.update(f, alpha, this.camera, time, true);
@@ -669,8 +674,11 @@ export class SceneRenderer {
     const firstPerson = this.cameraMode === 'first' && !this.extras.freelook;
     this.playerModel.shadowsOn = this.botModel.shadowsOn = view.entityShadows;
     this.playerModel.setVisible(!firstPerson);
+    this.playerModel.setSkin(this.skinOf(player));
     this.playerModel.update(player, alpha, time);
+    this.firstPerson.setSkin(this.skinOf(player));
     this.botModel.setVisible(true);
+    this.botModel.setSkin(this.skinOf(bot));
     this.botModel.update(bot, alpha, time);
 
     this.drawOthers(alpha, time, view);

@@ -25,6 +25,12 @@ interface PvpNative {
     read(name: string): Promise<{ zip?: Uint8Array; files?: { name: string; data: Uint8Array }[] } | null>;
     openFolder(): Promise<void>;
   };
+  /** The app's mods folder (newer app shells): list the .jar files in it, read one, open it. */
+  mods?: {
+    list(): Promise<string[]>;
+    read(name: string): Promise<Uint8Array | null>;
+    openFolder(): Promise<void>;
+  };
   openDownload?(): Promise<void>;
 }
 

@@ -1,4 +1,5 @@
 import { KITS } from '../game/kits';
+import type { Skin } from './skin';
 import { PROTOCOL_VERSION, type ClientMsg, type ServerMsg } from './protocol';
 
 export type NetStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error';
@@ -61,6 +62,8 @@ export class NetClient {
   kit = 'sword';
 
   /** Sent with the next join: a tournament room to create, and your rating for its seeding. */
+  /** Your skin, sent with the join so the others in the room see it. */
+  skin: Skin | null = null;
   joinExtra: { tour?: { size: number; field: string }; rating?: number; squad?: { tier: string } } = {};
 
   connect(address: string, room: string, name: string, kit = 'sword') {
@@ -103,7 +106,7 @@ export class NetClient {
     const clearTimer = () => clearTimeout(timeout);
     ws.onopen = () => {
       clearTimer();
-      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION, kit, ...this.joinExtra });
+      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION, kit, ...this.joinExtra, ...(this.skin ? { skin: this.skin } : {}) });
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;

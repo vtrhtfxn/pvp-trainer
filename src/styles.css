@@ -5120,3 +5120,34 @@ body.broadcasting .hud .effects {
 .rp-empty { color: #a8a8a8; font-size: 14px; padding: 8px; }
 .rp-actions .mc-btn, .rp-row .mc-btn { width: auto; flex: none; padding-left: 14px; padding-right: 14px; margin: 0; }
 .rp-tag { white-space: nowrap; }
+.mk-cat.jar-ok {
+  color: #55ff55;
+}
+.mk-cat.jar-skip {
+  color: #aaaaaa;
+}
+.mk-cat.jar-bad {
+  color: #ff5555;
+}
+.jar-help {
+  margin: 6px 0 8px;
+}
+.jar-meta {
+  color: #8a8a8a;
+  font-size: 12px;
+}
+.jar-bar .mc-btn {
+  width: auto;
+  flex: none;
+  padding: 0 12px;
+}
+
+/* ---- Options → Skin */
+.skin-main { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.skin-figs { display: flex; gap: 12px; padding: 10px; background: rgba(0, 0, 0, 0.45); min-height: 140px; align-items: center; }
+.skin-fig { width: 64px; height: 128px; image-rendering: pixelated; }
+.skin-none { color: #a8a8a8; font-size: 14px; padding: 0 12px; }
+.skin-side { display: flex; flex-direction: column; gap: 8px; }
+.skin-name { width: 180px; flex: none; }
+.skin-arm.on { border-color: #ffffff; color: #ffff55; }
+.rp-actions .mc-input { margin: 0; }

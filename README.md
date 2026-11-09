@@ -170,10 +170,37 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 centre). In a duel, widgets that land on the practice panel or on each other are pushed down
 until nothing overlaps. The **Resource Packs** tab shows the active pack; more are planned.
 
+### Downloaded mods (Modrinth / CurseForge)
+
+The **Downloaded Mods** tab takes the `.jar` files you download from Modrinth or CurseForge.
+On the desktop app, drop them in the **mods folder** (*Open Mods Folder*, in the app's data
+folder like Minecraft's); in the browser or an older app, use *Add Mod (.jar)…* (kept in the
+browser's storage). The game reads which mod each jar is from `fabric.mod.json`,
+`quilt.mod.json`, `META-INF/mods.toml`, `META-INF/neoforge.mods.toml` or a 1.8 `mcmod.info`.
+
+A mod's own code is Java for Minecraft itself, so it **can't run** in PvP Trainer. Each jar is
+shown as one of:
+
+- **Works**: PvP Trainer has its own version (AppleSkin, Zoomify / Ok Zoomer / WI Zoom, Freelook /
+  Perspective, Keystrokes, Toggle Sprint, Armor HUD, potion and totem counters, ToroHealth / Neat,
+  Better F3, Low Fire, Lowered Shield, Auto GG, Custom Crosshair…). The first time the jar shows up
+  that mod is installed and switched on; switching it off or uninstalling it afterwards sticks.
+- **Not needed**: performance mods and libraries for Minecraft (Sodium, Lithium, Iris, OptiFine,
+  Fabric API, Cloth Config…).
+- **Can't run**: everything else.
+
 ## Options
 
-**Options** has seven tabs:
+**Options** has eight tabs:
 
+- **Skin** — wear any Minecraft skin instead of the default player. **Upload Skin (.png)…** takes a
+  skin file from any skin site (64×64, or the old 64×32 layout, which is converted the way Minecraft
+  does; HD skins are scaled down), or type a **Minecraft username** and **Get Skin** to wear that
+  player's current skin. Classic (Steve, 4 px) or slim (Alex, 3 px) arms are detected and can be
+  switched. The skin's outer layer (hat, jacket, sleeves, trousers) is drawn too, and your
+  first-person arm wears it. Online, your skin is sent with your join, so the people in the room
+  (opponents, 2v2 teammates, tournament players and spectators) see it; only PNG data of a
+  sensible size is accepted. Bots keep the default player.
 - **Resource Packs** — play with any Minecraft resource pack (PvP packs, 16× to 512×, made for
   1.8 up to the newest versions). In the desktop app: **Open Pack Folder**, drop the pack's .zip
   (or its unzipped folder) in, press **Refresh** and **Use** it. In the browser (or an app installed
@@ -1138,12 +1165,13 @@ src/game      Fighter (movement/inventory/items/effects/durability/mining), comb
 src/game/modes  minigames on void maps: GameMode interface, maps, Bed Wars (+ shop), SkyWars (+ loot)
 src/ai        BotBrain + difficulty profiles; SkyPlanner (Bed Wars / SkyWars: shop, loot, bridge, beds)
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
-              first-person hands, item meshes from the resource pack, arrows, particles
+              first-person hands, item meshes from the resource pack, arrows, particles, custom skins (skins.ts)
 src/ui        HUD, chat, Marketplace, inventory screen, menus, kit editor, settings, pixel-art sprites,
               ModeScreens (minigame scoreboard, Bed Wars shop, SkyWars chest)
 src/commands  Brigadier-style dispatcher, argument types (selectors, coordinates, items with components),
               the built-in commands
-src/mods      the Marketplace's mods: registry + settings, HUD widgets, damage indicator, AppleSkin maths
+src/mods      the Marketplace's mods: registry + settings, HUD widgets, damage indicator, AppleSkin maths,
+              downloaded .jar reader (jarMods.ts) and mods folder (modStore.ts)
 src/input     keyboard/mouse input and the rebindable key map
 src/assets/pack  the resource-pack textures the game uses (items, armor, shield, arrows, blocks, HUD)
 src/render/Hitboxes.ts   F3+B-style debug boxes
