@@ -439,7 +439,9 @@ export class ModHud {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     // Four slots sharing their borders, exactly like the hotbar's (20 px apart, 22 px wide).
     const w = 4 * 20 + 2;
-    const h = 22;
+    // A percentage or the points left go in a short line just above the slots, clear of the items.
+    const top = mode === 'percent' || mode === 'number' ? 9 : 0;
+    const h = 22 + top;
     c.width = w * k * dpr;
     c.height = h * k * dpr;
     c.style.width = `${w * k}px`;
@@ -458,18 +460,18 @@ export class ModHud {
       const sx = i * 20;
       if (hotbar) {
         const s = hotbar.width / 182; // an HD pack's hotbar is drawn from the same part, scaled
-        x.drawImage(hotbar, 0, 0, 22 * s, 22 * s, sx, 0, 22, 22);
+        x.drawImage(hotbar, 0, 0, 22 * s, 22 * s, sx, top, 22, 22);
       } else {
         x.fillStyle = 'rgba(0,0,0,0.55)';
-        x.fillRect(sx, 0, 22, 22);
+        x.fillRect(sx, top, 22, 22);
       }
       if (!st) continue;
       const icon = itemIcon(st);
-      if (icon) x.drawImage(icon, sx + 3, 3, 16, 16);
+      if (icon) x.drawImage(icon, sx + 3, top + 3, 16, 16);
       const max = ITEMS[st.id].maxDamage ?? 0;
       if (mode === 'bar') drawDurabilityBar(x, st, sx + 2, 3);
       else if (mode !== 'none' && max) {
-        // One short text at the bottom of the slot, small enough to stay inside it.
+        // One short text on top of the slot, no wider than the slot itself.
         const left = max - (st.damage ?? 0);
         const text = mode === 'percent' ? `${Math.round((left / max) * 100)}%` : String(left);
         x.font = '8px Minecraft, "Pixelify Sans", monospace';
@@ -477,7 +479,7 @@ export class ModHud {
         const tw = x.measureText(text).width;
         const fit = Math.min(1, 19 / tw);
         x.save();
-        x.translate(sx + 11, 20);
+        x.translate(sx + 11, 8);
         x.scale(fit, 1);
         x.fillStyle = '#3f3f3f';
         x.fillText(text, 1, 1);
