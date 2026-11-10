@@ -146,7 +146,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | --- | --- |
 | AppleSkin | Saturation and exhaustion on the hunger bar; hunger and health you'll get back while holding food; food values in tooltips |
 | FPS Display | FPS, frame time, your screen's refresh rate (desktop app) and (online) your ping |
-| uku's Armor HUD | Your armor in hotbar-style slots beside the hotbar (past the off-hand slot), with its durability as a line, real numbers (left, or left / max) and/or a percentage just above each slot — any mix. On a narrow window long numbers draw the row a little smaller instead of off the screen |
+| uku's Armor HUD | Your armor in four hotbar-style slots right beside the hotbar (touching, like the hotbar's own; past the off-hand slot), with its durability shown one way: a line, a percentage, or the points left |
 | BetterHurtCam | Hurt-camera strength 0–200% and the classic one-way tilt |
 | Pot Counter · Totem Counter · Item Counter | Healing pots, totems, gapples, pearls, arrows, crystals, obsidian, wind charges… |
 | Damage Indicator | Damage numbers (hearts or points, gold for crits) floating off whoever got hit |
@@ -461,27 +461,56 @@ Sources for rules and prices: [Hypixel Wiki — Bed Wars](https://hypixel.fandom
 
 ### Minigames (Subtiers → Minigames)
 
-Party games against bots at the tier you pick, every one for themselves (offline only). Each is
-our own take on a classic server minigame:
+Party games, every one for themselves. Each is our own take on a classic server minigame, and each
+map grows with the number of players and has a parkour challenge in it.
 
-- **Sumo** (1v1) — bare hands on a round platform over the void, 1.8 knockback and no damage:
-  knock them off the edge.
-- **Crumble** (you + 3 bots; the TNT-run kind) — three floors of TNT over the void. Every block
-  you step on drops away a moment later, so keep running; fall through a hole and you land on the
-  floor below. Drop out of the bottom floor and you're out. No fighting.
-- **Hot Potato** (you + 3 bots; the TNT-tag kind) — one player is lit, TNT in hand and Speed II.
-  Hit someone to pass it on (no tagging straight back for a second) before the fuse runs out
-  (25 s, then shorter each round); whoever holds it blows up. Last one standing wins.
-- **Whodunit** (you + 3 bots; a murder mystery) — in an old manor, one secret **murderer** (a
-  sword that kills in one hit), one **detective** (a bow whose arrow comes back after 5 s), the
-  rest **innocents**. Gold ingots appear around the house; ten buy a bow. Shoot an innocent and you
-  die too. Everyone else wins if the murderer is shot or anyone is still alive after 4 minutes.
-  The bots don't know who is who either: they suspect whoever they see with a sword out or see
-  killing, flee them, and shoot them if they have a bow; the murderer bot blends in for the first
-  half minute and then picks off whoever is alone.
+**Players.** Offline, pick how many play with the **Players − / +** row (you and bots at the tier
+you pick). Online, choose the minigame as the Kit in **Multiplayer** and press **Host online
+game**: that opens a party room. Friends join with the code, the host sets the player count
+(− / +) and starts, and bots at the host's tier take the empty places — or the place of anyone who
+leaves mid-game.
+
+| Game | Players (usual) |
+|---|---|
+| Sumo | 2–8 (2) |
+| Crumble | 2–12 (6) |
+| Hot Potato | 3–12 (6) |
+| Whodunit | 3–15 (8) |
+
+- **Sumo** — bare hands on a big round platform over the void (radius 9 + the number of players),
+  1.8 knockback and no damage: knock the others off, last one on wins. Four **outposts** float off
+  the edge, each up a parkour run of three rising stepping stones (two-block gaps). After 75 s the
+  outposts and stones fall away, and then the platform itself loses its outer ring every 12 s (down
+  to radius 5), so nobody can hide.
+- **Crumble** (the TNT-run kind) — four floors of TNT over the void, each a big square (29×29 up
+  to 53×53 with more players). Every block you step on drops away a moment later, so keep running;
+  fall through a hole and you land on the floor below. Drop out of the bottom floor and you're
+  out. No fighting. Off the edges of every floor are **islands** to parkour out to when the middle
+  is full of holes: 5×5 ones two blocks out, and 3×3 ones a three-block jump beyond those (off the
+  sides on one floor, off the corners on the next).
+- **Hot Potato** (the TNT-tag kind) — a big walled yard. One player is lit, TNT in hand and Speed
+  II. Hit someone to pass it on (no tagging straight back for a second) before the fuse runs out
+  (25 s, then shorter each round); whoever holds it blows up. Last one standing wins. A **parkour
+  loop** of floating 2×2 platforms runs in a square around the yard (two blocks apart, going up and
+  down, steps up at the start of each side), with a pavilion on posts in the middle and a run of
+  platforms from it out to the loop — a way to shake off the lit player, who can still reach you
+  from underneath if you stop.
+- **Whodunit** (a murder mystery) — an old manor of nine rooms. One secret **murderer** (a sword
+  that kills in one hit), one **detective** (a bow whose arrow comes back after 5 s), the rest
+  **innocents**. Gold ingots appear around the house (faster with more players); ten buy a bow.
+  Shoot an innocent and you die too. Everyone else wins if the murderer is shot or anyone is still
+  alive when the time runs out (4 minutes; 5 with more than eight players). The inner walls are
+  three blocks high with a doorway and two windows in every stretch; crates in the corner rooms
+  are the way **up onto the walls**, where every third gold ingot appears — run along the tops and
+  jump the window gaps to collect it. The bots don't know who is who either: they suspect whoever
+  they see with a sword out or see killing, flee them through the doorways, and shoot them if they
+  have a bow; the murderer bot blends in for the first half minute and then picks off whoever is
+  alone. Online, each player is told only their own role, and the innocent side wins together.
 
 The modes are in `src/game/modes/` (`Sumo.ts`, `Crumble.ts`, `HotPotato.ts`, `Whodunit.ts`;
-tests: `tests/party.test.ts`); each plays its own bots through `GameMode.botTick`.
+shared helpers and the bots' path-finder `NavGrid` in `party.ts`; tests: `tests/party.test.ts`,
+`tests/partyOnline.test.ts`); each plays its own bots through `GameMode.botTick`. Online they run
+on the same `Duel` as everything else, seated for as many as play.
 
 ### Spear Mace and the spear
 

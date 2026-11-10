@@ -10,8 +10,8 @@ import { HotPotato } from '../src/game/modes/HotPotato';
 import { Whodunit } from '../src/game/modes/Whodunit';
 
 /** A party game with a bot playing your side too. */
-function play(kit: KitId, seed: number, maxTicks = 20 * 60 * 6, each?: (m: Match) => void) {
-  const m = new Match(kitById(kit), DIFFICULTIES.ht3, seed);
+function play(kit: KitId, seed: number, maxTicks = 20 * 60 * 6, each?: (m: Match) => void, players?: number) {
+  const m = new Match(kitById(kit), DIFFICULTIES.ht3, seed, undefined, players);
   m.externalMining = true;
   const pb: BotBrain = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.ht3, new Rng(seed + 99), () => performAttack(m.player, pb.opponent));
   pb.attachSky(m);
@@ -33,24 +33,40 @@ function play(kit: KitId, seed: number, maxTicks = 20 * 60 * 6, each?: (m: Match
 }
 
 describe('party minigames', () => {
-  it('four players, every one for themselves (Sumo is one on one)', () => {
-    for (const kit of ['crumble', 'hotpotato', 'whodunit'] as KitId[]) {
+  it('any number of players within the game\'s limits, every one for themselves', () => {
+    for (const [kit, usual, min, max] of [
+      ['sumo', 2, 2, 8],
+      ['crumble', 6, 2, 12],
+      ['hotpotato', 6, 3, 12],
+      ['whodunit', 8, 3, 15],
+    ] as [KitId, number, number, number][]) {
       const m = new Match(kitById(kit), DIFFICULTIES.lt3, 1);
-      expect(m.fighters).toHaveLength(4);
-      expect(new Set(m.fighters.map((f) => f.team)).size).toBe(4);
+      expect(m.fighters, kit).toHaveLength(usual);
+      expect(new Set(m.fighters.map((f) => f.team)).size).toBe(usual);
+      expect(new Match(kitById(kit), DIFFICULTIES.lt3, 1, undefined, 1).fighters).toHaveLength(min);
+      const big = new Match(kitById(kit), DIFFICULTIES.lt3, 1, undefined, 99);
+      expect(big.fighters).toHaveLength(max);
+      // Everyone starts on solid ground, apart from each other.
+      for (const f of big.fighters) expect(big.world.blocks.get(Math.floor(f.pos.x), Math.floor(f.pos.y) - 1, Math.floor(f.pos.z)), `${kit} ${f.name}`).not.toBe(B.AIR);
     }
-    expect(new Match(kitById('sumo'), DIFFICULTIES.lt3, 1).fighters).toHaveLength(2);
   });
 
   it('every game ends with a winner, the bots playing all sides', () => {
-    for (const kit of ['sumo', 'crumble', 'hotpotato', 'whodunit'] as KitId[]) {
-      for (let seed = 1; seed <= 2; seed++) {
-        const { m } = play(kit, seed);
-        expect(m.phase, `${kit} ${seed}`).toBe('ended');
-        expect(m.winner, `${kit} ${seed}`).not.toBeNull();
-      }
+    for (const [kit, players] of [
+      ['sumo', 2],
+      ['sumo', 8],
+      ['crumble', 6],
+      ['crumble', 12],
+      ['hotpotato', 3],
+      ['hotpotato', 8],
+      ['whodunit', 4],
+      ['whodunit', 15],
+    ] as [KitId, number][]) {
+      const { m } = play(kit, players + 1, 20 * 60 * 8, undefined, players);
+      expect(m.phase, `${kit} ${players}`).toBe('ended');
+      expect(m.winner, `${kit} ${players}`).not.toBeNull();
     }
-  }, 300_000);
+  }, 600_000);
 
   it('Crumble: the TNT drops away under you', () => {
     const m = new Match(kitById('crumble'), DIFFICULTIES.lt3, 2);
@@ -76,7 +92,7 @@ describe('party minigames', () => {
   }, 120_000);
 
   it('Whodunit: one murderer, one detective, the rest innocent; the murderer sword kills in one hit', () => {
-    const m = new Match(kitById('whodunit'), DIFFICULTIES.lt3, 5);
+    const m = new Match(kitById('whodunit'), DIFFICULTIES.lt3, 5, undefined, 4);
     m.botDriver = () => {};
     const mode = m.mode as Whodunit;
     const roles = m.fighters.map((f) => mode.role(f)).sort();

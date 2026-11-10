@@ -3,7 +3,7 @@ import { renderResourcePacks } from './ResourcePacks';
 import { renderSkinPicker } from './SkinPicker';
 import type { Skin } from '../render/skins';
 import type { FighterStats } from '../game/Fighter';
-import { KITS, customKitList, isCustomKit, kitById, type KitDef, type KitId } from '../game/kits';
+import { KITS, customKitList, isCustomKit, kitById, partySize, type KitDef, type KitId } from '../game/kits';
 import { teamKit } from '../game/Match';
 import type { CustomKitData } from '../game/customKits';
 import { KitEditor } from './KitEditor';
@@ -57,6 +57,8 @@ export interface MenuCallbacks {
   onHostTournament(name: string, size: number, field: string): void;
   /** Host a 2v2 room: bots at `tier` fill the places nobody takes. */
   onHostSquad(name: string, tier: DifficultyId): void;
+  /** Party minigame room: the host sets how many play. */
+  onSquadSize(n: number): void;
   /** 2v2 room: move to a team (0 red, 1 blue), or (host) start the game. */
   onSquadSide(team: number): void;
   onSquadGo(): void;
@@ -1082,13 +1084,14 @@ export class Menus {
     this.nameInput = field(panel, 'Your name', loadNetName(), 'Steve', 16);
     // The kit you host with: every main kit and every subtier (Bed Wars, SkyWars, Cart, …).
     this.mpKitSel = h('select', { class: 'mc-input mp-select mp-kit' });
-    for (const [label, sub] of [
-      ['Game modes', false],
-      ['Subtiers', true],
+    for (const [label, sub, party] of [
+      ['Game modes', false, false],
+      ['Subtiers', true, false],
+      // Party minigames: a room for up to 8–15 people, every one for themselves, bots in the empty places.
+      ['Minigames (party room)', true, true],
     ] as const) {
       const group = h('optgroup', { label });
-      // The party minigames are offline only (you against bots).
-      for (const k of KITS.filter((x) => x.available && !x.party && !!x.subtier === sub)) group.append(h('option', { value: k.id }, k.name));
+      for (const k of KITS.filter((x) => x.available && !!x.party === party && !!x.subtier === sub)) group.append(h('option', { value: k.id }, k.party ? `${k.name} (up to ${k.party.max} players)` : k.name));
       this.mpKitSel.append(group);
     }
     this.mpKitSel.addEventListener('change', () => {
@@ -1241,13 +1244,33 @@ export class Menus {
    * A 2v2 room before its game: each team's two places (people, or the bot that will take an
    * empty one), a button to move to each team, and Start for the host. `null` hides it.
    */
-  showSquad(v: { kit: string; tier: string; started: boolean; members: { name: string; team: number; host: boolean; you: boolean }[] } | null) {
+  showSquad(v: { kit: string; tier: string; started: boolean; size?: number; members: { name: string; team: number; host: boolean; you: boolean }[] } | null) {
     const el = this.squadEl;
     if (!el) return;
     el.style.display = v ? '' : 'none';
     if (!v) return;
     const me = v.members.find((m) => m.you);
     const tier = DIFFICULTIES[v.tier as DifficultyId]?.name ?? v.tier;
+    if (v.size) {
+      // A party minigame room: everyone in it, the bots that fill the rest, and (for the host)
+      // how many play in all.
+      const kit = kitById(v.kit as KitId);
+      const size = Math.max(v.size, v.members.length);
+      const bots = size - v.members.length;
+      const places = v.members.map((m) => h('div', { class: `sq-place${m.you ? ' you' : ''}` }, `${m.name}${m.host ? ' ★' : ''}`));
+      if (bots > 0) places.push(h('div', { class: 'sq-place bot' }, `+ ${bots} ${tier} bot${bots === 1 ? '' : 's'}`));
+      el.replaceChildren(h('div', { class: 'sq-title' }, `${kit.name} · ${v.members.length} of ${size} players · every one for themselves`), h('div', { class: 'sq-party' }, ...places));
+      if (v.started) el.append(h('div', { class: 'mp-hint' }, 'The game is on.'));
+      else if (me?.host) {
+        const less = this.button('−', () => this.cb.onSquadSize(size - 1), 'ft-btn');
+        const more = this.button('+', () => this.cb.onSquadSize(size + 1), 'ft-btn');
+        less.disabled = size <= Math.max(kit.party?.min ?? 2, v.members.length);
+        more.disabled = size >= (kit.party?.max ?? size);
+        el.append(h('div', { class: 'ft-row' }, h('span', { class: 'ft-label' }, 'Players'), less, h('span', { class: 'ft-value' }, String(size)), more));
+        el.append(this.button(`Start ${kit.name}`, () => this.cb.onSquadGo(), 'big sq-go'));
+      } else el.append(h('div', { class: 'mp-hint' }, 'Waiting for the host to start…'));
+      return;
+    }
     const team = (t: number) => {
       const people = v.members.filter((m) => m.team === t);
       const rows = [0, 1].map((k) => {
@@ -1744,7 +1767,19 @@ export class Menus {
     panel.append(desc);
     const held = this.cb.myTiers()[kit.id];
     if (kit.party) {
-      panel.append(h('div', { class: 'tiers-sub' }, kit.party.players === 4 ? `You and three ${d.name} bots, every one for themselves · First to ${s.firstTo}` : `You against a ${d.name} bot · First to ${s.firstTo}`));
+      // How many play: you and that many bots less one.
+      const n = partySize(kit, s.partyPlayers[kit.id]);
+      const step = (by: number) => {
+        s.partyPlayers[kit.id] = partySize(kit, n + by);
+        saveSettings(s);
+        this.renderSubtiers();
+      };
+      const less = this.button('−', () => step(-1), 'ft-btn');
+      const more = this.button('+', () => step(1), 'ft-btn');
+      less.disabled = n <= kit.party.min;
+      more.disabled = n >= kit.party.max;
+      panel.append(h('div', { class: 'ft-row' }, h('span', { class: 'ft-label' }, 'Players'), less, h('span', { class: 'ft-value' }, `${n} — you and ${n - 1} ${d.name} bot${n === 2 ? '' : 's'}`), more));
+      panel.append(h('div', { class: 'tiers-sub' }, `Every one for themselves · First to ${s.firstTo} · play it with friends in Multiplayer`));
       panel.append(this.button('Play', () => this.cb.onStart(), 'big'));
     } else {
       panel.append(h('div', { class: 'tiers-sub' }, `Your ${kit.name} tier: ${held ? DIFFICULTIES[held].name : 'Unranked'} · First to ${s.firstTo} (change it on the title screen)`));

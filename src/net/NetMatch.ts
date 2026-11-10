@@ -326,7 +326,7 @@ export class NetMatch {
       this.world.blocks.clear();
     }
     this.world.legacyCombat = !!this.kit.legacyCombat;
-    const n = seats > 2 ? 4 : 2;
+    const n = this.kit.party ? Math.max(2, seats) : seats > 2 ? 4 : 2;
     this.spectator = you < 0;
     const first = this.spectator ? 0 : you;
     // Even seats are red (team 0), odd seats blue.

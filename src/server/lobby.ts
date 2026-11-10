@@ -8,7 +8,7 @@ import { Duel } from '../net/Duel';
 import { SHIELD_RAISE_TICKS } from '../core/constants';
 import { PREP_TICKS, teamKit } from '../game/Match';
 import { DIFFICULTIES, type DifficultyId } from '../ai/difficulty';
-import { KITS, type KitId } from '../game/kits';
+import { KITS, kitById, partySize, type KitId } from '../game/kits';
 import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, cleanChat, cleanName, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
 import { cleanSkin, type Skin } from '../net/skin';
 import { OnlineTourney, isTourneySetup } from '../net/tourney';
@@ -152,17 +152,31 @@ class Room {
    * A 2v2 room: up to four people pick a team each; when the host starts, server-run bots at
    * `tier` take the places nobody has. Even seats are red, odd seats blue.
    */
-  squad: { tier: DifficultyId; team: Map<LobbyClient, number> } | null = null;
+  squad: { tier: DifficultyId; team: Map<LobbyClient, number>; party: number } | null = null;
 
-  makeSquad(tier: DifficultyId) {
-    this.squad = { tier, team: new Map() };
+  /** `party`: a party minigame room for that many players, every one for themselves (0: a 2v2). */
+  makeSquad(tier: DifficultyId, party = 0) {
+    this.squad = { tier, team: new Map(), party };
+  }
+
+  /** How many people a 2v2 or party room takes. */
+  private get squadRoom(): number {
+    return this.squad?.party || 4;
+  }
+
+  /** Party room: the host sets how many play (never fewer than are here). */
+  resize(client: LobbyClient, n: number) {
+    const sq = this.squad;
+    if (!sq?.party || this.duel || this.members[0] !== client) return;
+    sq.party = Math.max(this.members.length, partySize(kitById(this.kit), n));
+    this.sendSquad();
   }
 
   /** Joins a 2v2 room before its game: onto the host's team while it has room, else the other. */
   joinSquad(client: LobbyClient): string | null {
     const sq = this.squad!;
-    if (this.duel) return 'That 2v2 game has already started.';
-    if (this.members.length >= 4) return 'That 2v2 room is full.';
+    if (this.duel) return sq.party ? 'That game has already started.' : 'That 2v2 game has already started.';
+    if (this.members.length >= this.squadRoom) return sq.party ? 'That room is full.' : 'That 2v2 room is full.';
     const taken = new Set(this.members.map((c) => c.name.toLowerCase()));
     for (let n = 2; taken.has(client.name.toLowerCase()); n++) client.name = `${client.name.replace(/ \(\d+\)$/, '')} (${n})`;
     const host = this.members[0];
@@ -183,6 +197,7 @@ class Room {
         kit: this.kit,
         tier: sq.tier,
         started: !!this.duel,
+        size: sq.party || undefined,
         members: this.members.map((m, k) => ({ name: m.name, team: sq.team.get(m) ?? 0, host: k === 0, you: m === c })),
       });
     }
@@ -191,7 +206,7 @@ class Room {
   /** 2v2: `client` moves to `team` (if it has a free place and the game hasn't started). */
   pickSide(client: LobbyClient, team: number) {
     const sq = this.squad;
-    if (!sq || this.duel || (team !== 0 && team !== 1)) return;
+    if (!sq || sq.party || this.duel || (team !== 0 && team !== 1)) return;
     if (this.members.filter((c) => c !== client && sq.team.get(c) === team).length >= 2) return;
     sq.team.set(client, team);
     this.sendSquad();
@@ -201,13 +216,22 @@ class Room {
   startSquad(client: LobbyClient) {
     const sq = this.squad;
     if (!sq || this.duel || this.members[0] !== client) return;
-    const seats: (LobbyClient | null)[] = [null, null, null, null];
-    for (const team of [0, 1]) {
-      const people = this.members.filter((c) => sq.team.get(c) === team);
-      people.forEach((c, k) => (seats[team + k * 2] = c));
-    }
     const prof = DIFFICULTIES[sq.tier];
-    const names = seats.map((c, i) => c?.name ?? `${prof.name} Bot ${i % 2 === 0 ? 'R' : 'B'}${i < 2 ? 1 : 2}`);
+    let seats: (LobbyClient | null)[];
+    let names: string[];
+    if (sq.party) {
+      // A party minigame: people first, bots in the places left.
+      seats = Array.from({ length: Math.max(sq.party, this.members.length) }, (_, i) => this.members[i] ?? null);
+      let bots = 0;
+      names = seats.map((c) => c?.name ?? `${prof.name} Bot ${++bots}`);
+    } else {
+      seats = [null, null, null, null];
+      for (const team of [0, 1]) {
+        const people = this.members.filter((c) => sq.team.get(c) === team);
+        people.forEach((c, k) => (seats[team + k * 2] = c));
+      }
+      names = seats.map((c, i) => c?.name ?? `${prof.name} Bot ${i % 2 === 0 ? 'R' : 'B'}${i < 2 ? 1 : 2}`);
+    }
     const duel = new Duel(names, this.kit);
     seats.forEach((c, i) => {
       if (!c) duel.makeBot(i, prof);
@@ -221,10 +245,10 @@ class Room {
     });
     this.duel = duel;
     this.rematchVotes.clear();
-    for (const c of this.players) c.send({ t: 'start', countdown: duel.countdownSeconds, kit: this.kit, you: c.seat, seats: 4 });
+    for (const c of this.players) c.send({ t: 'start', countdown: duel.countdownSeconds, kit: this.kit, you: c.seat, seats: seats.length });
     this.sendSquad();
     this.startClock();
-    this.lobby.log(`room ${this.code}: 2v2 started — ${names.join(', ')}`);
+    this.lobby.log(`room ${this.code}: ${sq.party ? this.kit : '2v2'} started — ${names.join(', ')}`);
   }
 
   /** Every seated person's ping, by seat. */
@@ -469,7 +493,7 @@ class Room {
     }
     if (this.tick % PING_EVERY === 0) for (const c of this.players) c.startPing();
     if (duel.phase === 'ended' && duel.phaseTicks === 1) {
-      this.broadcast({ t: 'end', winner: duel.winner });
+      this.broadcast({ t: 'end', winner: duel.winner, ws: duel.winners });
       this.lobby.log(`room ${this.code}: duel over — winner ${duel.winner ?? 'draw'}`);
       // A tournament game: the result goes into the bracket (and the duel is closed).
       if (this.tour) this.tour.duelEnded(duel.winner === null ? null : this.seats[duel.winner]?.id ?? null);
@@ -496,7 +520,7 @@ class Room {
     if (this.rematchVotes.size >= need && this.players.length === need) {
       this.rematchVotes.clear();
       this.duel.reset();
-      if (this.squad) for (const c of this.players) c.send({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit, you: c.seat, seats: 4 });
+      if (this.squad) for (const c of this.players) c.send({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit, you: c.seat, seats: this.duel.seats });
       else this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
     }
   }
@@ -661,7 +685,14 @@ export class Lobby {
         if (!existing && isTourneySetup(msg.tour)) room.makeTour(msg.tour.size, msg.tour.field);
         // A 2v2 room likewise, in a kit that has 2v2.
         const sqTier = msg.squad && typeof msg.squad === 'object' ? String(msg.squad.tier) : '';
-        if (!existing && !room.tour && Object.hasOwn(DIFFICULTIES, sqTier)) {
+        // A party minigame (Sumo, Crumble, Hot Potato, Whodunit) is always a room of its own kind:
+        // up to its player count, every one for themselves, bots in the empty places.
+        const partyKit = KITS.find((k) => k.id === String(msg.kit) && k.available && k.party);
+        if (!existing && !room.tour && partyKit) {
+          room.kit = partyKit.id as KitId;
+          const size = msg.squad && typeof msg.squad === 'object' ? Number(msg.squad.size) : NaN;
+          room.makeSquad(Object.hasOwn(DIFFICULTIES, sqTier) ? (sqTier as DifficultyId) : 'lt3', partySize(partyKit, size));
+        } else if (!existing && !room.tour && Object.hasOwn(DIFFICULTIES, sqTier)) {
           room.makeSquad(sqTier as DifficultyId);
           const kit = String(msg.kit ?? 'sword');
           room.kit = teamKit(kit) ? (kit as KitId) : 'sword';
@@ -678,7 +709,7 @@ export class Lobby {
           client.send({ t: 'joined', you: -1, room: room.code });
           room.sendSquad();
           room.shareSkins(client);
-          this.log(`${client.name} joined 2v2 room ${room.code}`);
+          this.log(`${client.name} joined ${room.squad.party ? room.kit : '2v2'} room ${room.code}`);
           return;
         }
         if (room.tour) {
@@ -766,6 +797,9 @@ export class Lobby {
         return;
       case 'go':
         client.room?.startSquad(client);
+        return;
+      case 'size':
+        client.room?.resize(client, Number(msg.n));
         return;
       case 'tstart': {
         const err = client.room?.tour?.start(client.id);

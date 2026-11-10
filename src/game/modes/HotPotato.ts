@@ -4,8 +4,8 @@ import type { Loadout } from '../kits';
 import type { BotControl, GameMode, ModeHost as Match, ScoreLine } from './GameMode';
 import { EMPTY_KIT, alive, fill, freeForAll, noDamage, place, ring } from './party';
 
-/** Arena half-size (the walls stand just outside it). */
-const HALF = 15;
+/** Heights of the parkour loop's platforms, one after another (the cell layer of each). */
+const LOOP_HEIGHTS = [2, 2, 3, 2, 3, 3, 2, 3];
 /** Seconds of the first round; each later one is a little shorter (not under MIN_ROUND). */
 const FIRST_ROUND = 25;
 const MIN_ROUND = 15;
@@ -15,7 +15,7 @@ const BREAK_TICKS = 60;
 const IT_KIT: Loadout = { hotbar: [{ id: 'tnt', count: 1 }], armor: [null, null, null, null], offhand: null };
 
 /**
- * Hot Potato: one player is lit — TNT in hand, a fuse ticking. Hit someone to pass it on. When the
+ * Hot Potato: a big walled yard with a parkour loop of floating platforms over it. One player is lit — TNT in hand, a fuse ticking. Hit someone to pass it on. When the
  * fuse runs out, whoever holds it blows up and is out, and the next round lights someone new.
  * The last one standing wins. Nobody takes damage from hits; the lit player runs a little faster.
  */
@@ -32,27 +32,62 @@ export class HotPotato implements GameMode {
   private passedAt = -100;
   private ticks = 0;
   private rng = 0;
+  /** Arena half-size (the walls stand just outside it). */
+  private half = 26;
 
   setup(m: Match) {
     const w = m.world;
     const b = w.blocks;
     b.clear();
-    // A grassy yard with a stone wall around it and a few things to dodge behind.
-    fill(b, -HALF, -1, -HALF, HALF, -1, HALF, B.GRASS);
-    fill(b, -HALF, -2, -HALF, HALF, -3, HALF, B.DIRT);
+    // A big grassy yard (bigger with more players) with a high stone wall around it.
+    const H = (this.half = Math.min(40, 20 + 2 * m.fighters.length));
+    fill(b, -H, -1, -H, H, -1, H, B.GRASS);
+    fill(b, -H, -2, -H, H, -3, H, B.DIRT);
     for (const s of [-1, 1]) {
-      fill(b, -HALF - 1, -1, s * (HALF + 1), HALF + 1, 2, s * (HALF + 1), B.COBBLESTONE);
-      fill(b, s * (HALF + 1), -1, -HALF - 1, s * (HALF + 1), 2, HALF + 1, B.COBBLESTONE);
+      fill(b, -H - 1, -1, s * (H + 1), H + 1, 6, s * (H + 1), B.COBBLESTONE);
+      fill(b, s * (H + 1), -1, -H - 1, s * (H + 1), 6, H + 1, B.COBBLESTONE);
     }
-    // (Off the diagonals, where everyone spawns.)
+    // The parkour loop: floating 2×2 platforms in a square around the yard, two blocks apart and
+    // going up and down, with room to run underneath. Each side starts at a low one with steps up.
+    const Q = Math.floor(H * 0.55);
+    const sides: { at: (t: number) => [number, number]; inward: [number, number] }[] = [
+      { at: (t) => [t, -Q], inward: [0, 1] },
+      { at: (t) => [Q, t], inward: [-1, 0] },
+      { at: (t) => [-t, Q], inward: [0, -1] },
+      { at: (t) => [-Q, -t], inward: [1, 0] },
+    ];
+    let k = 0;
+    for (const side of sides) {
+      for (let t = -Q; t < Q; t += 4) {
+        const [x, z] = side.at(t);
+        const first = t === -Q;
+        const y = first ? 2 : LOOP_HEIGHTS[k++ % LOOP_HEIGHTS.length];
+        fill(b, x, y, z, x + 1, y, z + 1, B.PLANKS);
+        if (first) {
+          // Steps up from the grass, on the inside.
+          const [ix, iz] = side.inward;
+          const sx = x + (ix > 0 ? 2 : ix < 0 ? -1 : 0);
+          const sz = z + (iz > 0 ? 2 : iz < 0 ? -1 : 0);
+          fill(b, sx, 0, sz, sx, 1, sz, B.OAK_LOG);
+          b.set(sx + ix, 0, sz + iz, B.OAK_LOG);
+        }
+      }
+    }
+    // A pavilion in the middle, up on four posts, and a run of platforms out to the loop.
+    fill(b, -2, 3, -2, 2, 3, 2, B.PLANKS);
+    for (const px of [-2, 2]) for (const pz of [-2, 2]) fill(b, px, 0, pz, px, 2, pz, B.OAK_LOG);
+    b.set(0, 4, 0, B.GLOWSTONE);
+    for (let z = -6; z > -Q + 2; z -= 4) fill(b, 0, 3, z, 1, 3, z + 1, B.PLANKS);
+    // Things to dodge behind on the ground (off the diagonals, where everyone spawns).
+    const P = Math.floor(Q / 2);
     for (const [x, z] of [
-      [-9, 0],
-      [9, 0],
-      [0, -9],
-      [0, 9],
+      [-P, 0],
+      [P, 0],
+      [0, P],
+      [-P - 6, P + 6],
+      [P + 6, -P - 6],
     ])
-      fill(b, x - 1, 0, z - 1, x + 1, 1, z + 1, B.OAK_LOG);
-    fill(b, -2, 0, 0, 2, 0, 0, B.PLANKS);
+      fill(b, x - 1, 0, z - 1, x + 1, 1, z + 1, B.COBBLESTONE);
     w.protectMap = true;
     w.placeRule = () => false;
     w.voidY = -12;
@@ -67,7 +102,7 @@ export class HotPotato implements GameMode {
     this.out = [];
     this.announcements = [];
     this.rng = m.world.rng.int(1, 2 ** 30);
-    const spots = ring(m.fighters.length, 9);
+    const spots = ring(m.fighters.length, Math.min(8 + m.fighters.length, Q - 3));
     m.fighters.forEach((f, i) => place(f, spots[i], EMPTY_KIT));
   }
 
@@ -176,9 +211,11 @@ export class HotPotato implements GameMode {
     const it = this.it;
     if (me === it) {
       c.setLabel('IT!');
+      // Whoever is nearest; someone up on the parkour course only if nobody on the ground is close.
+      const reach = (f: Fighter) => Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z) + (f.pos.y > 1.5 ? 12 : 0);
       const near = alive(m)
         .filter((f) => f !== me && !(f === this.passedBy && this.ticks - this.passedAt < 20))
-        .sort((a, b) => Math.hypot(a.pos.x - me.pos.x, a.pos.z - me.pos.z) - Math.hypot(b.pos.x - me.pos.x, b.pos.z - me.pos.z))[0];
+        .sort((a, b) => reach(a) - reach(b))[0];
       if (near) c.fight(near);
       return false;
     }
@@ -193,6 +230,7 @@ export class HotPotato implements GameMode {
     const dz = me.pos.z - it.pos.z;
     const d = Math.hypot(dx, dz) || 1;
     // Far enough: wander a little; close: run straight away, sliding along the walls.
+    const HALF = this.half;
     const scared = 10 + c.skill * 6;
     if (d > scared) {
       c.walkTo(me.pos.x + (dx / d) * 2, me.pos.z + (dz / d) * 2, 0.5, false);

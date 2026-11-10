@@ -66,7 +66,7 @@ export class NetClient {
   skin: Skin | null = null;
   /** Client-side mods the host applies to you (FastXP). */
   opts: { fastXp?: number; leftHanded?: boolean } = {};
-  joinExtra: { tour?: { size: number; field: string }; rating?: number; squad?: { tier: string } } = {};
+  joinExtra: { tour?: { size: number; field: string }; rating?: number; squad?: { tier: string; size?: number } } = {};
 
   connect(address: string, room: string, name: string, kit = 'sword') {
     this.close();

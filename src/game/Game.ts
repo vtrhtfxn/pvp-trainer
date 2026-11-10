@@ -53,7 +53,7 @@ import {
 } from './fun';
 import { Toasts } from '../ui/Toasts';
 import { EFFECT_COLORS, ITEMS, type ItemId, type ItemStack } from './items';
-import { KITS, isCustomKit, kitById, type KitId } from './kits';
+import { KITS, isCustomKit, kitById, partySize, type KitId } from './kits';
 import { entrantColor, isYours, recordGame, roundName, saveTournament, teamSlot, type Entrant, type TMatch } from './tournament';
 import { TournamentUI } from '../ui/Tournament';
 import { entryFrom, loadHistory, recordDuel, saveHistory, type DuelEntry } from './history';
@@ -357,6 +357,7 @@ export class Game {
       onHostSquad: (name, tier) => this.hostOnline(name, undefined, tier),
       onSquadSide: (team) => this.net.send({ t: 'side', team }),
       onSquadGo: () => this.net.send({ t: 'go' }),
+      onSquadSize: (n) => this.net.send({ t: 'size', n }),
       onJoinOnline: (code, name) => this.joinOnline(code, name),
       onLeaveOnline: () => this.leaveOnline(),
       onMarketplace: () => this.openMarket(),
@@ -1275,7 +1276,7 @@ export class Game {
     this.hud.setPips(!tg && !g && !drillDef && sr.target > 1 ? { you: sr.you, them: sr.bot, target: sr.target } : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
     this.hudName = loadPlayerName();
-    this.match = new Match(kit, profile, seed, teams ? {} : undefined);
+    this.match = new Match(kit, profile, seed, teams ? {} : undefined, kit.party ? this.settings.partyPlayers[kit.id] : undefined);
     if (tg) this.match.bot.name = tg.name;
     // A real duel opens with 10 s to sort your inventory (drills get straight to the point).
     if (!drillDef) this.match.countdownTicks = PREP_TICKS;
@@ -1618,7 +1619,14 @@ export class Game {
     this.sound.unlock();
     this.leaveOnline(false);
     const kit = isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit;
-    if (squadTier && !teamKit(kit)) {
+    // A party minigame is hosted as a party room: its player count, bots at your tier in the rest.
+    const party = kitById(kit).party;
+    if (party && tour) {
+      this.menus.setNetStatus('error', 'Tournaments are duels: pick a duel kit, or press Host online game for a minigame room.', '');
+      return;
+    }
+    const squad = party ? { tier: this.settings.difficulty, size: partySize(kitById(kit), this.settings.partyPlayers[kit]) } : squadTier ? { tier: squadTier } : undefined;
+    if (squadTier && !party && !teamKit(kit)) {
       this.menus.setNetStatus('error', `${kitById(kit).name} has no 2v2. Pick Sword, Diamond Pot, NethPot, UHC, Axe, Mace, Crystal, Spear Mace, Bed Wars or SkyWars in the Kit list above.`, '');
       return;
     }
@@ -1633,7 +1641,7 @@ export class Game {
         }
         this.onlineHost = host;
         host.lobby.shieldRaiseTicks = this.shieldRaiseTicks();
-        this.net.joinExtra = { tour, rating: this.myRating(), squad: squadTier ? { tier: squadTier } : undefined };
+        this.net.joinExtra = { tour, rating: this.myRating(), squad };
         this.netSkins.clear();
         this.voice.forget();
         this.net.skin = this.mySkin;
@@ -1752,7 +1760,10 @@ export class Game {
       }
       this.squadView = msg;
       this.menus.showSquad(msg);
-      if (!msg.started) this.menus.setNetStatus('lobby', `2v2 room · ${msg.members.length} of 4 people — bots take the empty places`, msg.room);
+      if (!msg.started) {
+        const what = msg.size ? `${kitById(msg.kit as KitId).name} room · ${msg.members.length} of ${Math.max(msg.size, msg.members.length)} players` : `2v2 room · ${msg.members.length} of 4 people`;
+        this.menus.setNetStatus('lobby', `${what} — bots take the empty places`, msg.room);
+      }
       return;
     }
     if (msg.t === 'tour') {
@@ -1817,14 +1828,15 @@ export class Game {
     switch (msg.t) {
       case 'end':
         if (this.state === 'playing' || this.state === 'paused') {
-          // Your team won (even seats are red, odd blue; in a duel that's just you).
-          const won = msg.winner !== null && msg.winner % 2 === this.net.you % 2;
+          // Your team won (even seats are red, odd blue; in a duel that's just you). A party
+          // minigame names every winning seat.
+          const won = msg.winner !== null && (Array.isArray(msg.ws) ? msg.ws.includes(this.net.you) : msg.winner % 2 === this.net.you % 2);
           const teams = !!this.netMatch?.teams;
           this.hud.showCenter(msg.winner === null ? 'DRAW' : won ? 'VICTORY' : teams ? 'DEFEAT' : 'YOU DIED', won ? 'win' : 'lose', 40);
           const nm = this.netMatch;
           if (nm) {
             this.earn({ kind: 'duel', won, kit: nm.kit.id, tier: 'online', stats: nm.player.stats, seconds: nm.fightTicks / 20, health: nm.player.health, online: true, tierEarned: false, kitsWon: this.kitsWon() });
-            if (msg.winner !== null) recordDuel(this.history, entryFrom(nm.player.stats, { kit: nm.kit.id, tier: 'online', mode: this.tourView ? 'tournament' : teams ? '2v2' : 'online', won, secs: nm.fightTicks / 20 }));
+            if (msg.winner !== null) recordDuel(this.history, entryFrom(nm.player.stats, { kit: nm.kit.id, tier: 'online', mode: this.tourView ? 'tournament' : teams && !nm.kit.party ? '2v2' : 'online', won, secs: nm.fightTicks / 20 }));
           }
           this.autoGG(won);
           this.resultTimer = 30;
@@ -2377,6 +2389,7 @@ export class Game {
       dayTime: m.world.dayTime,
       raining: m.world.raining,
       prep: m.countdownTicks,
+      players: kit.party ? m.fighters.length : undefined,
       date: Date.now(),
     });
     rec.start(m.player);

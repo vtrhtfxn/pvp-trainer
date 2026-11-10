@@ -4,14 +4,13 @@ import type { BotControl, GameMode, ModeHost as Match, ScoreLine } from './GameM
 import { EMPTY_KIT, alive, fill, freeForAll, noDamage, place, ring } from './party';
 
 /** The TNT floors, top to bottom (the cell layer each one sits in). */
-const LAYERS = [-1, -6, -11];
-/** Floor half-size: each floor is (2·HALF+1)² blocks. */
-const HALF = 11;
+const LAYERS = [-1, -7, -13, -19];
 /** Ticks a block lasts after someone steps on it. */
 const FUSE = 7;
 
 /**
- * Crumble: three floors of TNT stacked over the void. Every block you step on drops away a moment
+ * Crumble: four big floors of TNT stacked over the void, each with islands off its edges to
+ * parkour out to when the middle is full of holes. Every block you step on drops away a moment
  * later, so you have to keep running; fall through a hole and you land on the floor below. Drop
  * out of the bottom one and you're out. No fighting; the last one still standing wins.
  */
@@ -27,7 +26,23 @@ export class Crumble implements GameMode {
     const w = m.world;
     const b = w.blocks;
     b.clear();
-    for (const y of LAYERS) fill(b, -HALF, y, -HALF, HALF, y, HALF, B.TNT);
+    // Each floor is a big square (bigger with more players) with islands off its edges: a ring
+    // of 5×5 ones two blocks out, and 3×3 ones a three-block jump beyond those. Every other
+    // floor has them off the sides, the rest off the corners.
+    const H = Math.min(26, 14 + m.fighters.length);
+    LAYERS.forEach((y, layer) => {
+      fill(b, -H, y, -H, H, y, H, B.TNT);
+      for (const dx of [-1, 0, 1])
+        for (const dz of [-1, 0, 1]) {
+          if ((dx === 0 && dz === 0) || (dx !== 0 && dz !== 0) !== (layer % 2 === 1)) continue;
+          const ax = dx * (H + 5);
+          const az = dz * (H + 5);
+          fill(b, ax - 2, y, az - 2, ax + 2, y, az + 2, B.TNT);
+          const bx = dx * (H + 12);
+          const bz = dz * (H + 12);
+          fill(b, bx - 1, y, bz - 1, bx + 1, y, bz + 1, B.TNT);
+        }
+    });
     w.protectMap = true;
     w.noPvp = true;
     w.voidY = LAYERS[LAYERS.length - 1] - 4;
@@ -37,7 +52,7 @@ export class Crumble implements GameMode {
     this.out = [];
     this.announcements = [];
     this.ticks = 0;
-    const spots = ring(m.fighters.length, 6);
+    const spots = ring(m.fighters.length, H * 0.6);
     m.fighters.forEach((f, i) => place(f, spots[i], EMPTY_KIT));
   }
 

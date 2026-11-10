@@ -1,4 +1,4 @@
-import { B, type Blocks } from '../Blocks';
+import { B, isSolid, type Blocks } from '../Blocks';
 import type { Fighter } from '../Fighter';
 import type { Loadout } from '../kits';
 import type { ModeHost } from './GameMode';
@@ -54,3 +54,125 @@ export function floor(b: Blocks, x0: number, z0: number, x1: number, z1: number,
 }
 
 export const STONE = B.STONE;
+
+/** A round slab of `id` (radius `r`, one block thick) centred on (cx, cz) at height y. */
+export function disc(b: Blocks, cx: number, cz: number, y: number, r: number, id: number, data = 0) {
+  for (let x = -Math.ceil(r); x <= Math.ceil(r); x++)
+    for (let z = -Math.ceil(r); z <= Math.ceil(r); z++) if (x * x + z * z <= (r + 0.3) * (r + 0.3)) b.set(cx + x, y, cz + z, id, data);
+}
+
+/**
+ * Where bots can walk on a map that doesn't change (a house with rooms): every floor cell with
+ * two blocks of air over solid ground, and the way from any of them to any other. Bots follow it
+ * around walls instead of walking into them.
+ */
+export class NavGrid {
+  private readonly size: number;
+  private readonly open: Uint8Array;
+  /** Steps to a goal cell from every cell (-1: no way), per goal, for the goals asked lately. */
+  private readonly fields = new Map<number, Int16Array>();
+
+  constructor(
+    b: Blocks,
+    private readonly half: number,
+    y = 0,
+  ) {
+    this.size = half * 2 + 1;
+    this.open = new Uint8Array(this.size * this.size);
+    for (let z = -half; z <= half; z++)
+      for (let x = -half; x <= half; x++) if (!isSolid(b.get(x, y, z)) && !isSolid(b.get(x, y + 1, z)) && isSolid(b.get(x, y - 1, z))) this.open[this.idx(x, z)] = 1;
+  }
+
+  private idx(x: number, z: number): number {
+    return (z + this.half) * this.size + (x + this.half);
+  }
+
+  walkable(x: number, z: number): boolean {
+    return Math.abs(x) <= this.half && Math.abs(z) <= this.half && this.open[this.idx(x, z)] === 1;
+  }
+
+  private field(goal: number): Int16Array {
+    let f = this.fields.get(goal);
+    if (f) return f;
+    if (this.fields.size > 96) this.fields.clear();
+    f = new Int16Array(this.open.length).fill(-1);
+    f[goal] = 0;
+    const queue = [goal];
+    const n = this.size;
+    for (let q = 0; q < queue.length; q++) {
+      const c = queue[q];
+      const cx = c % n;
+      for (const d of [-1, 1, -n, n]) {
+        const o = c + d;
+        if (o < 0 || o >= f.length || f[o] >= 0 || !this.open[o]) continue;
+        if ((d === -1 && cx === 0) || (d === 1 && cx === n - 1)) continue;
+        f[o] = f[c] + 1;
+        queue.push(o);
+      }
+    }
+    this.fields.set(goal, f);
+    return f;
+  }
+
+  /** A body 0.6 wide can walk the straight line from a to b. */
+  private clear(ax: number, az: number, bx: number, bz: number): boolean {
+    const d = Math.hypot(bx - ax, bz - az);
+    const steps = Math.max(1, Math.ceil(d * 4));
+    for (let i = 0; i <= steps; i++) {
+      const x = ax + ((bx - ax) * i) / steps;
+      const z = az + ((bz - az) * i) / steps;
+      for (const ox of [-0.35, 0.35]) for (const oz of [-0.35, 0.35]) if (!this.walkable(Math.floor(x + ox), Math.floor(z + oz))) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Where to walk next to get from (fx, fz) to (tx, tz): a point a few blocks along the way that
+   * can be walked to in a straight line. Null when there's no way (or no need: go straight).
+   */
+  next(fx: number, fz: number, tx: number, tz: number): { x: number; z: number } | null {
+    const sx = Math.floor(fx);
+    const sz = Math.floor(fz);
+    let gx = Math.floor(tx);
+    let gz = Math.floor(tz);
+    if (!this.walkable(sx, sz)) return null;
+    if (!this.walkable(gx, gz)) {
+      // The goal is on furniture or in a wall: the nearest floor next to it.
+      let best = Infinity;
+      let bx = gx;
+      let bz = gz;
+      for (let dx = -2; dx <= 2; dx++)
+        for (let dz = -2; dz <= 2; dz++) {
+          const d = dx * dx + dz * dz;
+          if (d < best && this.walkable(gx + dx, gz + dz)) {
+            best = d;
+            bx = gx + dx;
+            bz = gz + dz;
+          }
+        }
+      if (best === Infinity) return null;
+      gx = bx;
+      gz = bz;
+    }
+    const f = this.field(this.idx(gx, gz));
+    let c = this.idx(sx, sz);
+    if (f[c] <= 0) return null;
+    if (this.clear(fx, fz, tx, tz)) return null;
+    const n = this.size;
+    let out: { x: number; z: number } | null = null;
+    for (let step = 0; step < 8 && f[c] > 0; step++) {
+      let nextC = -1;
+      for (const d of [-1, 1, -n, n]) {
+        const o = c + d;
+        if (o >= 0 && o < f.length && f[o] >= 0 && f[o] < f[c]) nextC = o;
+      }
+      if (nextC < 0) break;
+      c = nextC;
+      const px = (c % n) - this.half + 0.5;
+      const pz = Math.floor(c / n) - this.half + 0.5;
+      if (out && !this.clear(fx, fz, px, pz)) break;
+      out = { x: px, z: pz };
+    }
+    return out;
+  }
+}
