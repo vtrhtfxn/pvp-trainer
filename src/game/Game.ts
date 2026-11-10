@@ -15,6 +15,7 @@ import { DamageIndicators } from '../mods/damage';
 import { applyJars, listJars } from '../mods/modStore';
 import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
 import { VoiceChat, type VoiceSettings } from '../net/voice';
+import { FramePacer } from './FramePacer';
 import { pictureTexture } from '../render/shieldStatus';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
@@ -182,6 +183,7 @@ export class Game {
   /** Your skin (null: the default player), and online players' skins by name. */
   private mySkin: Skin | null = loadSkin();
   private readonly voice = new VoiceChat();
+  private readonly pacer = new FramePacer();
   private voiceRoom = '';
   private voiceHtml = '';
   private readonly voiceEl: HTMLDivElement;
@@ -231,11 +233,15 @@ export class Game {
     });
     this.match = this.newDemo();
     this.demoBrain = this.makeDemoBrain(this.match as Match);
-    // MSAA on a 2× screen draws 4× the samples for edges you can barely see: Auto skips it there,
-    // and on low-end machines (under 8 GB or 4 cores), where its framebuffers (~90 MB) hurt more.
+    // Smooth edges (MSAA). On a dense 2× screen (a MacBook's own display) it costs 4× the samples,
+    // so Auto used to skip it there — which left block edges and distant textures crawling and
+    // jagged next to an ordinary monitor, where it was on. Auto now keeps it on a 2× screen when
+    // the machine is strong enough (8 cores or more: every Apple Silicon Mac), and still skips it
+    // on low-end machines (under 8 GB or 4 cores), where its framebuffers (~90 MB) hurt more.
     const nav = navigator as Navigator & { deviceMemory?: number };
-    const lowEnd = (nav.deviceMemory ?? 8) < 8 || (navigator.hardwareConcurrency || 4) < 4;
-    const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && (window.devicePixelRatio || 1) < 2 && !lowEnd);
+    const cores = navigator.hardwareConcurrency || 4;
+    const lowEnd = (nav.deviceMemory ?? 8) < 8 || cores < 4;
+    const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && !lowEnd && ((window.devicePixelRatio || 1) < 2 || cores >= 8));
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
     this.view.skinOf = (f) => {
       // Online, everyone is known by name; offline, you are the match's player (not when watching bots).
@@ -2500,7 +2506,7 @@ export class Game {
       this.menuDrawn = now;
     }
 
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = this.pacer.step(Math.min(0.1, (now - this.last) / 1000), cap > 0);
     this.last = now;
     this.time += dt;
     this.fpsFrames++;

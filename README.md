@@ -146,7 +146,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | --- | --- |
 | AppleSkin | Saturation and exhaustion on the hunger bar; hunger and health you'll get back while holding food; food values in tooltips |
 | FPS Display | FPS, frame time, your screen's refresh rate (desktop app) and (online) your ping |
-| uku's Armor HUD | Your armor in four hotbar-style slots right beside the hotbar (touching, like the hotbar's own; past the off-hand slot), with its durability shown one way: a line, a percentage, or the points left |
+| uku's Armor HUD | Your armor in four hotbar-style slots right beside the hotbar (touching, like the hotbar's own; past the off-hand slot), with its durability shown one way: a line, a percentage, or the points left (the text sits on top of each slot, clear of the item) |
 | BetterHurtCam | Hurt-camera strength 0–200% and the classic one-way tilt |
 | Pot Counter · Totem Counter · Item Counter | Healing pots, totems, gapples, pearls, arrows, crystals, obsidian, wind charges… |
 | Damage Indicator | Damage numbers (hearts or points, gold for crits) floating off whoever got hit |
@@ -226,7 +226,7 @@ shown as one of:
 - **Video** — FOV, FOV effects, a separate **hand FOV**, third-person distance, brightness,
   GUI scale, damage tilt, view bobbing; **Max Framerate**, **Render Scale** (Auto lowers the
   resolution only while frames are slow), particles (All / Decreased / Minimal), smooth edges
-  (MSAA; Auto skips it on high-density screens), entity shadows, clouds, fog, the title-screen
+  (MSAA; Auto keeps it on ordinary screens and on high-density ones when the computer has 8 cores or more, such as any Apple Silicon Mac, and skips it on low-end machines), entity shadows, clouds, fog, the title-screen
   background; hand position (X/Y/Z) and size.
   The desktop app follows your screen's refresh rate (VSync: 60 FPS on 60 Hz, 120 on ProMotion).
   On Windows, **Uncapped FPS** turns VSync off (applies on the next launch); it is not offered on
@@ -418,6 +418,12 @@ less: 30 FPS for the title-screen duel and results, 10 FPS paused offline or min
 simulation keeps its 20 ticks). Every shader is compiled and linked behind the loading screen, the
 inventory's player preview is only redrawn when the mouse or your gear changes, and Auto
 anti-aliasing stays off on PCs under 8 GB or 4 cores.
+
+**Frame pacing.** The time the browser reports between frames wobbles a millisecond or two around the
+screen's steady beat; moving everything by those amounts makes steady motion look slightly jerky.
+`FramePacer` counts a frame that is close to a whole number of screen refreshes as exactly that
+many, and pays the difference back a little each frame so the game clock never drifts. Real hitches
+and capped frame rates are left alone.
 
 ## Game modes
 
