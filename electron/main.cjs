@@ -209,8 +209,11 @@ function createWindow() {
   // Pointer lock and fullscreen are all the game asks for; camera, microphone, location,
   // notifications and the rest are refused without a prompt.
   const ALLOWED = new Set(['pointerLock', 'fullscreen']);
-  win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => callback(ALLOWED.has(permission)));
-  win.webContents.session.setPermissionCheckHandler((_wc, permission) => ALLOWED.has(permission));
+  // The microphone (Voice Chat mod) is the only media allowed: never the camera.
+  const audioOnly = (permission, details) =>
+    permission === 'media' && (details?.mediaTypes ?? ['audio']).every((t) => t === 'audio');
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, callback, details) => callback(ALLOWED.has(permission) || audioOnly(permission, details)));
+  win.webContents.session.setPermissionCheckHandler((_wc, permission, _origin, details) => ALLOWED.has(permission) || (permission === 'media' && details?.mediaType !== 'video'));
   win.on('closed', () => {
     win = null;
   });

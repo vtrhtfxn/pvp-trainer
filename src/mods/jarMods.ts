@@ -83,6 +83,22 @@ const EQUIVALENT: Record<string, ModId[]> = {
   crosshair: ['crosshair'],
   customcrosshair: ['crosshair'],
   dynamiccrosshair: ['crosshair'],
+  shieldfix: ['responsiveshields'],
+  responsiveshields: ['responsiveshields'],
+  'responsive-shields': ['responsiveshields'],
+  noshielddelay: ['responsiveshields'],
+  'no-shield-delay': ['responsiveshields'],
+  shieldstatus: ['shieldstatus'],
+  shieldstatuses: ['shieldstatus'],
+  'shield-statuses': ['shieldstatus'],
+  fastxp: ['fastxp'],
+  'fastxp-plus': ['fastxp'],
+  fastxpplus: ['fastxp'],
+  bactromod: ['bactromod'],
+  fullbright: ['bactromod'],
+  voicechat: ['voicechat'],
+  'simple-voice-chat': ['voicechat'],
+  plasmovoice: ['voicechat'],
 };
 
 /** Performance mods and libraries: they help Minecraft, and PvP Trainer doesn't need them. */

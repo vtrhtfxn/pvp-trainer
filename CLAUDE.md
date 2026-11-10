@@ -101,6 +101,7 @@ Done recently:
 - bigger Bed Wars / SkyWars maps; Bed Wars ender chest (personal storage, `modes/containers.ts`)
 - party minigames (offline, free-for-all with up to 4 fighters): Sumo, Crumble, Hot Potato, Whodunit — each mode drives its own bots via `GameMode.botTick`
 - downloaded mods: Marketplace → Downloaded Mods reads Modrinth/CurseForge .jar metadata (`src/mods/jarMods.ts`, `modStore.ts`; desktop `mods` folder via `pvpNative.mods`). Java code never runs; known PvP/HUD mods switch on the built-in equivalent
+- mods: Responsive Shields (default installed; host's raise time online via `Lobby.shieldRaiseTicks`), Shield Statuses (shield front is its own material, `HeldItemSlot.paintShield`), FastXP (`Fighter.fastXp`, sent to the host via `join.opts`/`opts`), BactroMod (`extras.clarity`, `opts.itemScale`), Voice Chat (`src/net/voice.ts`: PeerJS audio calls, lobby relays `voice` addresses)
 - custom skins: Options → Skin (upload PNG or username via mc-heads.net, classic/slim). With a skin, `PlayerModel`/`FirstPerson` use vanilla boxes + outer layer (`skinGeometry`); without, the GLB rig. Shared online by name (`join.skin` → lobby `skins` messages)
 
 Open:

@@ -412,7 +412,11 @@ export class ModHud {
     );
   }
 
-  /** uku's Armor HUD: the four armor slots beside the hotbar, in hotbar style. */
+  /**
+   * uku's Armor HUD: the four armor pieces in hotbar-style slots beside the hotbar, level with
+   * it, with their durability as a line, real numbers (left, or left / max) and/or a percentage
+   * (the text sits just above each slot).
+   */
   private drawArmor(f: WidgetFrame | null) {
     const c = this.armor;
     if (!f) {
@@ -420,58 +424,84 @@ export class ModHud {
       return;
     }
     const p = f.player;
-    const mode = String(this.mods.cfg('armorhud', 'durability'));
-    const showEmpty = !!this.mods.cfg('armorhud', 'showEmpty');
-    const side = this.mods.cfg('armorhud', 'side');
+    const cfg = (k: string) => this.mods.cfg('armorhud', k);
+    const bar = !!cfg('bar');
+    const numbers = !!cfg('numbers');
+    const fullNumbers = numbers && cfg('numberStyle') === 'leftmax';
+    const percent = !!cfg('percent');
+    const showEmpty = !!cfg('showEmpty');
+    const side = cfg('side');
+    // Slot 0 is the helmet: first in the row, like the inventory.
     const slots = [0, 1, 2, 3].map((i) => p.armorSlots[i]);
-    const key = `${f.gui}|${mode}|${showEmpty}|${side}|${slots.map((s) => (s ? `${s.id}:${s.damage ?? 0}` : '-')).join(',')}`;
+    // The off-hand slot is on the left of the hotbar (the right for Main Hand: Left).
+    const offSide = p.offhand ? (p.leftHanded ? 'right' : 'left') : '';
+    const key = `${f.gui}|${bar}|${numbers}|${fullNumbers}|${percent}|${showEmpty}|${side}|${offSide}|${slots.map((s) => (s ? `${s.id}:${s.damage ?? 0}` : '-')).join(',')}`;
     if (c.style.display === 'none') c.style.display = '';
     if (key === this.armorKey) return;
     this.armorKey = key;
-    const k = f.gui;
+
+    const font = '8px Minecraft, "Pixelify Sans", monospace';
+    const x = this.armorCtx;
+    const labels = slots.map((st) => {
+      const max = st ? (ITEMS[st.id].maxDamage ?? 0) : 0;
+      if (!st || !max) return null;
+      const left = max - (st.damage ?? 0);
+      // Numbers and percentage on lines of their own, so each slot stays narrow.
+      const lines: string[] = [];
+      if (numbers) lines.push(fullNumbers ? `${left}/${max}` : String(left));
+      if (percent) lines.push(`${Math.round((left / max) * 100)}%`);
+      return lines.length ? { lines, frac: left / max } : null;
+    });
+    x.font = font;
+    const cell = Math.max(20, ...labels.flatMap((l) => (l ? l.lines.map((t) => Math.ceil(x.measureText(t).width) + 2) : [0])));
+    const rows = Math.max(0, ...labels.map((l) => l?.lines.length ?? 0));
+    const textH = rows * 9;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = 4 * 20 + 2;
-    const h = 22;
+    const w = 4 * cell + 2;
+    const h = 22 + textH;
+    // Beside the hotbar (182 px wide, centred, 1 px above the bottom), past the off-hand slot
+    // when it's on this side. Long numbers (312/407) on a narrow window: the row is drawn a
+    // little smaller rather than running off the screen.
+    const gap = 91 + (offSide === side ? 33 : 6);
+    const k = Math.max(0.5, Math.min(f.gui, (window.innerWidth / 2 - 2 - gap * f.gui) / w));
     c.width = w * k * dpr;
     c.height = h * k * dpr;
     c.style.width = `${w * k}px`;
     c.style.height = `${h * k}px`;
-    // Beside the hotbar (182 px wide, centred, 1 px above the bottom), past the off-hand slot.
-    const offset = (91 + 6) * k;
+    const offset = gap * f.gui;
     c.style.left = side === 'left' ? `calc(50% - ${offset + w * k}px)` : `calc(50% + ${offset}px)`;
-    const x = this.armorCtx;
     x.setTransform(k * dpr, 0, 0, k * dpr, 0, 0);
     x.imageSmoothingEnabled = false;
     x.clearRect(0, 0, w, h);
-    const bar = packImage('gui/sprites/hud/hotbar');
-    for (let i = 0; i < 4; i++) {
-      const st = slots[i];
-      if (!st && !showEmpty) continue;
-      const sx = i * 20;
-      if (bar) {
-        const k = bar.width / 182; // an HD pack's hotbar is drawn from the same part, scaled
-        x.drawImage(bar, 0, 0, 22 * k, 22 * k, sx, 0, 22, 22);
-      }
-      else {
+    const hotbar = packImage('gui/sprites/hud/hotbar');
+    slots.forEach((st, i) => {
+      if (!st && !showEmpty) return;
+      const sx = i * cell + (cell - 20) / 2;
+      if (hotbar) {
+        const s = hotbar.width / 182; // an HD pack's hotbar is drawn from the same part, scaled
+        x.drawImage(hotbar, 0, 0, 22 * s, 22 * s, sx, textH, 22, 22);
+      } else {
         x.fillStyle = 'rgba(0,0,0,0.55)';
-        x.fillRect(sx, 0, 22, 22);
+        x.fillRect(sx, textH, 22, 22);
       }
-      if (!st) continue;
+      if (!st) return;
       const icon = itemIcon(st);
-      if (icon) x.drawImage(icon, sx + 3, 3, 16, 16);
-      const max = ITEMS[st.id].maxDamage ?? 0;
-      if (mode === 'bar') drawDurabilityBar(x, st, sx + 2, 3);
-      else if (mode !== 'none' && max) {
-        const left = max - (st.damage ?? 0);
-        const text = mode === 'percent' ? `${Math.round((left / max) * 100)}%` : String(left);
-        x.font = '8px Minecraft, "Pixelify Sans", monospace';
+      if (icon) x.drawImage(icon, sx + 3, textH + 3, 16, 16);
+      if (bar) drawDurabilityBar(x, st, sx + 2, textH + 3);
+      const l = labels[i];
+      if (l) {
+        x.font = font;
         x.textAlign = 'center';
-        x.fillStyle = '#3f3f3f';
-        x.fillText(text, sx + 12, 21);
-        x.fillStyle = left / max < 0.25 ? '#ff5555' : '#ffffff';
-        x.fillText(text, sx + 11, 20);
+        // Bottom line right above the slot.
+        l.lines.forEach((t, n) => {
+          const ty = textH - (l.lines.length - n - 1) * 9 - 1;
+          x.fillStyle = '#3f3f3f';
+          x.fillText(t, sx + 12, ty + 1);
+          x.fillStyle = l.frac < 0.25 ? '#ff5555' : l.frac < 0.5 ? '#ffff55' : '#ffffff';
+          x.fillText(t, sx + 11, ty);
+        });
       }
-    }
+    });
   }
 
   /** Custom Crosshair: drawn on a canvas at the screen centre (the vanilla one is hidden). */

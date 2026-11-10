@@ -907,6 +907,7 @@ export class Duel {
       sw: f.swingCount,
       ff: f.fallFlying,
       fft: f.fallFlyTicks,
+      lh: f.leftHanded || undefined,
       cd: [...f.cooldowns].map(([id, c]) => [id, c.ticks, c.total] as [string, number, number]),
       mn,
       fire: f.fireTicks,

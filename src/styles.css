@@ -5151,3 +5151,13 @@ body.broadcasting .hud .effects {
 .skin-name { width: 180px; flex: none; }
 .skin-arm.on { border-color: #ffffff; color: #ffff55; }
 .rp-actions .mc-input { margin: 0; }
+.mk-image-opt { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mk-image-opt .mc-btn { width: auto; flex: none; padding: 0 12px; }
+.mk-image-prev { width: 24px; height: 44px; image-rendering: pixelated; border: 1px solid #555; }
+
+/* ---- Voice Chat mod: who's talking */
+.voice-hud { position: absolute; left: 8px; top: 96px; z-index: 6; pointer-events: none; font-size: 14px; line-height: 1.4; text-shadow: 1px 1px 0 #3f3f3f; }
+.voice-hud .vc-you { color: #55ff55; }
+.voice-hud .vc-talk { color: #55ffff; }
+.voice-hud .vc-dim { color: #aaaaaa; }
+.voice-hud .vc-err { color: #ff5555; }

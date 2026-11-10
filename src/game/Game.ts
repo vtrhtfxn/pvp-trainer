@@ -6,7 +6,7 @@ import { Sound, type HitKind } from '../audio/Sound';
 import { deathMessage, registerBuiltins } from '../commands/builtin';
 import { CommandError, Dispatcher } from '../commands/dispatcher';
 import { COLOR, defaultSession, sessionModified, type ChatLine, type CmdCtx, type CommandHost, type SessionState } from '../commands/host';
-import { TICK_MS } from '../core/constants';
+import { TICK_MS, VANILLA_SHIELD_RAISE_TICKS } from '../core/constants';
 import { clamp, lookDir, V3 } from '../core/math';
 import { Rng } from '../core/rng';
 import { Input } from '../input/Input';
@@ -14,6 +14,8 @@ import { keyName } from '../input/keybinds';
 import { DamageIndicators } from '../mods/damage';
 import { applyJars, listJars } from '../mods/modStore';
 import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
+import { VoiceChat, type VoiceSettings } from '../net/voice';
+import { pictureTexture } from '../render/shieldStatus';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
 import type { Assets } from '../render/assets';
@@ -179,6 +181,10 @@ export class Game {
   private readonly mods = new ModManager();
   /** Your skin (null: the default player), and online players' skins by name. */
   private mySkin: Skin | null = loadSkin();
+  private readonly voice = new VoiceChat();
+  private voiceRoom = '';
+  private voiceHtml = '';
+  private readonly voiceEl: HTMLDivElement;
   private readonly netSkins = new Map<string, Skin>();
   private readonly modHud: ModHud;
   private readonly market: Marketplace;
@@ -258,6 +264,10 @@ export class Game {
     kitIcons.hotpotato = itemIcon({ id: 'fire_charge', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.whodunit = itemIcon({ id: 'iron_sword', count: 1 }) ?? makeKitIcon('sword');
     this.hud = new HUD(uiRoot, this.mods);
+    this.voiceEl = document.createElement('div');
+    this.voiceEl.className = 'voice-hud';
+    this.voiceEl.style.display = 'none';
+    uiRoot.appendChild(this.voiceEl);
     this.specHud = new SpectatorHud(
       uiRoot,
       (cam) => {
@@ -404,7 +414,13 @@ export class Game {
       binds: () => this.settings.keys,
     });
     this.hudEditor = this.buildHudEditor(uiRoot);
-    this.mods.onChange(() => this.applyModVisuals());
+    this.net.opts = this.netOpts();
+    this.mods.onChange(() => {
+      this.applyModVisuals();
+      // Online: the host's Responsive Shields setting, and your FastXP, reach the game.
+      if (this.onlineHost) this.onlineHost.lobby.shieldRaiseTicks = this.shieldRaiseTicks();
+      this.sendNetOpts();
+    });
     // Mods dropped in the mods folder (or added before): switch on PvP Trainer's version of each new one.
     void listJars().then((jars) => applyJars(jars, this.mods)).catch(() => undefined);
     this.input = new Input(canvas, {
@@ -561,6 +577,7 @@ export class Game {
   }
 
   private applySettings() {
+    this.sendNetOpts();
     const s = this.settings;
     const inp = this.input;
     inp.sensitivity = s.sensitivity;
@@ -593,7 +610,39 @@ export class Game {
     const m = this.mods;
     const v = this.view;
     v.particles.critBoost = m.on('particles') ? Number(m.cfg('particles', 'multiplier')) : 1;
-    v.firstPerson.opts.lowShield = m.on('lowshield') ? Number(m.cfg('lowshield', 'lower')) : 0;
+    const bactro = m.on('bactromod');
+    const bcfg = (k: string) => Number(m.cfg('bactromod', k));
+    v.firstPerson.opts.lowShield = Math.max(m.on('lowshield') ? Number(m.cfg('lowshield', 'lower')) : 0, bactro ? bcfg('shieldLower') : 0);
+    v.firstPerson.opts.itemScale = bactro
+      ? (st) => {
+          const def = ITEMS[st.id];
+          if (st.id === 'totem_of_undying') return bcfg('sizeTotem');
+          if (st.id === 'potion' || st.id === 'splash_potion') return bcfg('sizePotion');
+          if (def.food) return bcfg('sizeFood');
+          if (def.handheld) return bcfg('sizeWeapon');
+          if (def.use === 'place') return bcfg('sizeBlock');
+          return bcfg('sizeOther');
+        }
+      : null;
+    v.extras.clarity = bactro
+      ? {
+          brightness: bcfg('brightness'),
+          noNightVision: !!m.cfg('bactromod', 'noNightVision'),
+          noFog: !!m.cfg('bactromod', 'noFog'),
+          noBlindFog: !!m.cfg('bactromod', 'noBlindFog'),
+          noDarkFog: !!m.cfg('bactromod', 'noDarkFog'),
+        }
+      : null;
+    v.extras.shieldStatus = m.on('shieldstatus')
+      ? {
+          ready: new THREE.Color(String(m.cfg('shieldstatus', 'enabledColor'))),
+          disabled: new THREE.Color(String(m.cfg('shieldstatus', 'disabledColor'))),
+          interpolate: !!m.cfg('shieldstatus', 'interpolate'),
+          strength: Number(m.cfg('shieldstatus', 'strength')),
+          others: !!m.cfg('shieldstatus', 'others'),
+          picture: pictureTexture(String(m.cfg('shieldstatus', 'banner'))),
+        }
+      : null;
     const hit = m.on('hitcolor');
     for (const model of [v.playerModel, v.botModel]) {
       if (hit) model.hurtColor.set(String(m.cfg('hitcolor', 'color')));
@@ -615,6 +664,100 @@ export class Game {
     this.scoreboard.setStyle(
       m.on('scoreboard') ? { hide: !!m.cfg('scoreboard', 'hide'), background: Number(m.cfg('scoreboard', 'background')), scale: Number(m.cfg('scoreboard', 'scale')) } : null,
     );
+  }
+
+  /**
+   * Mods that change how your own fighter plays offline: Responsive Shields (how long a raised
+   * shield takes to block; vanilla's 5 ticks when it's off) and FastXP.
+   */
+  private applyPlayerMods(p: Fighter) {
+    p.shieldRaiseTicks = this.shieldRaiseTicks();
+    p.fastXp = this.fastXpTicks();
+    p.leftHanded = this.settings.mainHand === 'left';
+  }
+
+  /** FastXP: ticks between bottles (0 = mod off). */
+  private fastXpTicks(): number {
+    return this.mods.on('fastxp') ? Math.max(1, Number(this.mods.cfg('fastxp', 'speed')) || 1) : 0;
+  }
+
+  /** What the host needs to know about your side: FastXP and your main hand. */
+  private netOpts(): { fastXp: number; leftHanded: boolean } {
+    return { fastXp: this.fastXpTicks(), leftHanded: this.settings.mainHand === 'left' };
+  }
+
+  /** Tells the host when FastXP or your main hand changed. */
+  private sendNetOpts() {
+    const o = this.netOpts();
+    if (this.net.opts.fastXp === o.fastXp && this.net.opts.leftHanded === o.leftHanded) return;
+    this.net.opts = o;
+    this.net.send({ t: 'opts', ...o });
+  }
+
+  /** Responsive Shields: the raise delay for people (host's rule online). */
+  private shieldRaiseTicks(): number {
+    return this.mods.on('responsiveshields') ? Number(this.mods.cfg('responsiveshields', 'raise')) : VANILLA_SHIELD_RAISE_TICKS;
+  }
+
+  /**
+   * Voice Chat mod: on while you're in an online room with the mod on; push-to-talk or voice
+   * activation; proximity by the distance to that player in the game you see.
+   */
+  private updateVoice(dt: number) {
+    const v = this.voice;
+    const room = this.net.connected ? this.net.room : '';
+    if (room !== this.voiceRoom) {
+      v.stop();
+      this.voiceRoom = room;
+    }
+    const want = this.mods.on('voicechat') && !!room;
+    if (!want && v.state !== 'off') {
+      if (v.state === 'on' && room) this.net.send({ t: 'voice', id: '' });
+      v.stop();
+    }
+    if (want && v.state === 'off') void v.start((id) => this.net.send({ t: 'voice', id }));
+    const cfg = (k: string) => this.mods.cfg('voicechat', k);
+    const me = this.match.player;
+    const res = v.update(
+      dt,
+      {
+        mode: String(cfg('mode')) as VoiceSettings['mode'],
+        threshold: Number(cfg('threshold')),
+        micGain: Number(cfg('micGain')),
+        volume: Number(cfg('volume')),
+        proximity: !!cfg('proximity'),
+        range: Number(cfg('range')),
+      },
+      this.input.held('voice') && !this.chat.open,
+      (name) => {
+        const f = this.match.world.fighters.find((o) => o.name === name && o !== me);
+        return f ? Math.hypot(f.pos.x - me.pos.x, f.pos.y - me.pos.y, f.pos.z - me.pos.z) : null;
+      },
+    );
+    // Who's talking, top left.
+    const lines: [string, string][] = [];
+    if (want) {
+      if (v.state === 'error') lines.push(['vc-err', `Voice: ${v.error}`]);
+      else if (v.state === 'starting') lines.push(['vc-dim', 'Voice: starting…']);
+      else if (cfg('speakers')) {
+        if (res.you) lines.push(['vc-you', '● You']);
+        for (const n of res.talking) lines.push(['vc-talk', `♪ ${n}`]);
+        if (!lines.length && cfg('mode') === 'muted') lines.push(['vc-dim', 'Voice: muted']);
+      }
+    }
+    const key = lines.map((l) => l.join(':')).join('|');
+    if (key !== this.voiceHtml) {
+      this.voiceHtml = key;
+      this.voiceEl.replaceChildren(
+        ...lines.map(([cls, text]) => {
+          const d = document.createElement('div');
+          d.className = cls;
+          d.textContent = text;
+          return d;
+        }),
+      );
+      this.voiceEl.style.display = lines.length ? '' : 'none';
+    }
   }
 
   /** Time Changer: the time of day you see (Minecraft ticks), or null for the world's own. */
@@ -1459,6 +1602,7 @@ export class Game {
     const offline = isCustomKit(this.settings.kit);
     this.net.joinExtra = {};
     this.netSkins.clear();
+    this.voice.forget();
     this.net.skin = this.mySkin;
     this.net.connect(url, room, name, offline ? 'sword' : this.settings.kit);
   }
@@ -1488,8 +1632,10 @@ export class Game {
           return;
         }
         this.onlineHost = host;
+        host.lobby.shieldRaiseTicks = this.shieldRaiseTicks();
         this.net.joinExtra = { tour, rating: this.myRating(), squad: squadTier ? { tier: squadTier } : undefined };
         this.netSkins.clear();
+        this.voice.forget();
         this.net.skin = this.mySkin;
         this.net.connectVia(host.localSocket(), host.code, name, kit, 'Starting…', 8000, 'Could not start the game you are hosting.');
       },
@@ -1509,6 +1655,7 @@ export class Game {
     }
     this.net.joinExtra = { rating: this.myRating() };
     this.netSkins.clear();
+    this.voice.forget();
     this.net.skin = this.mySkin;
     this.net.connectVia(joinOnline(c), c, name, 'sword', `Connecting to game ${c}…`, JOIN_TIMEOUT_MS, JOIN_TIMEOUT_TEXT);
   }
@@ -1585,6 +1732,10 @@ export class Game {
   }
 
   private onNetMessage(msg: ServerMsg) {
+    if (msg.t === 'voice') {
+      this.voice.setPeer(String(msg.name), String(msg.id));
+      return;
+    }
     if (msg.t === 'skins') {
       for (const e of msg.list) {
         const skin = cleanSkin(e);
@@ -2351,6 +2502,7 @@ export class Game {
     const p = m.player;
     const s = this.settings;
     const playing = this.state === 'playing';
+    this.updateVoice(dt);
 
     // Zoom (hold C) and Freelook (hold/toggle Alt) mods.
     const zoomOn = this.zoomHeld();
@@ -2727,6 +2879,7 @@ export class Game {
     }
 
     const prevPhase = m.phase;
+    this.applyPlayerMods(m.player);
     m.tick();
     this.view.firstPerson.tick(m.player);
     this.hud.tick(m.player);
@@ -2788,6 +2941,9 @@ export class Game {
   /** Online rounds: the server owns combat, so only local movement + feedback happen here. */
   private tickOnline(m: NetMatch) {
     const prevPhase = m.phase;
+    // Your own fighter is predicted here; the host applies the same rules to it.
+    m.player.fastXp = this.fastXpTicks();
+    m.player.leftHanded = this.settings.mainHand === 'left';
     m.tick();
     this.view.firstPerson.tick(m.player);
     this.hud.tick(m.player);

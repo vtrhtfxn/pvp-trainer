@@ -81,6 +81,8 @@ export const SHIELD_RAISE_TICKS = 0;
  * instantly in SMP stall each other until the clock runs out.
  */
 export const BOT_SHIELD_RAISE_TICKS = 5;
+/** LivingEntity.isBlocking's wait in vanilla (the Responsive Shields mod removes it). */
+export const VANILLA_SHIELD_RAISE_TICKS = 5;
 /** An axe hit on a raised shield puts it on cooldown for 5 s. */
 export const SHIELD_DISABLE_TICKS = 100;
 /** Items with an open-ended use (shield, bow, loading crossbow) — vanilla's 72000. */

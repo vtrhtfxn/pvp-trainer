@@ -379,11 +379,13 @@ export class HUD {
     const burning = info.firstPerson && player.onFire && !player.dead && !player.effects.has('fire_resistance');
     this.fire.style.display = burning ? '' : 'none';
     if (burning) {
-      const lower = this.mods?.on('lowfire') ? Number(this.mods.cfg('lowfire', 'lower')) : 0;
+      const m = this.mods;
+      const lower = Math.max(m?.on('lowfire') ? Number(m.cfg('lowfire', 'lower')) : 0, m?.on('bactromod') ? Number(m.cfg('bactromod', 'fireLower')) : 0);
       const v = lower.toFixed(2);
       if (this.fire.style.getPropertyValue('--fire-lower') !== v) this.fire.style.setProperty('--fire-lower', v);
     }
-    const eye = eyeFluid(player);
+    // BactroMod can switch the water / lava overlay off.
+    const eye = this.mods?.on('bactromod') && this.mods.cfg('bactromod', 'noLiquid') ? null : eyeFluid(player);
     this.fluidTint.className = `fluid-tint${info.firstPerson && eye ? ` ${eye}` : ''}`;
 
     // ---- crosshair + attack indicator (Gui.renderCrosshair)
@@ -495,7 +497,7 @@ export class HUD {
     // AppleSkin's flashing preview: alpha pulses 0.1..0.9 (stepped so the canvas isn't redrawn every frame).
     const flash = food ? Math.round((0.5 + 0.4 * Math.sin(this.tickCount * 0.3)) * 8) / 8 : 0;
     const slotKey = (st: ItemStack | null) => (st ? `${st.id}${st.count}${st.charged ? 'c' : ''}${st.potion ?? ''}${st.damage ?? ''}` : '-');
-    let bar = slotKey(p.offhand);
+    let bar = (p.leftHanded ? 'L' : 'R') + slotKey(p.offhand);
     for (let i = 0; i < 9; i++) bar += `,${slotKey(p.inventory[i])}`;
     const key = [
       hp,
@@ -548,9 +550,23 @@ export class HUD {
     if (selImg) draw(selImg, sx, hy - 1);
     else this.drawPlainSelection(sx + 1, hy);
     if (p.offhand) {
+      // Gui.renderHotbar: the off-hand slot is on the side away from the main hand.
       const offImg = packImage('gui/sprites/hud/hotbar_offhand_left');
-      if (offImg) draw(offImg, hx - 29, hy - 1);
-      this.drawSlotItem(p, p.offhand, hx - 26, hy + 3);
+      if (p.leftHanded) {
+        if (offImg) {
+          // hotbar_offhand_right is the left one mirrored.
+          const x0 = hx + 182;
+          c.save();
+          c.translate(2 * x0 + 29, 0);
+          c.scale(-1, 1);
+          draw(offImg, x0, hy - 1);
+          c.restore();
+        }
+        this.drawSlotItem(p, p.offhand, hx + 182 + 10, hy + 3);
+      } else {
+        if (offImg) draw(offImg, hx - 29, hy - 1);
+        this.drawSlotItem(p, p.offhand, hx - 26, hy + 3);
+      }
     }
     for (let i = 0; i < 9; i++) {
       const st = p.inventory[i];

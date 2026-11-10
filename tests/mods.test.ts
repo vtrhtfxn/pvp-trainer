@@ -36,10 +36,13 @@ describe('key binds', () => {
 });
 
 describe('mod manager', () => {
-  it('starts with everything uninstalled; install, toggle, configure, reset, move', () => {
+  it('starts with only the default mods installed; install, toggle, configure, reset, move', () => {
     const mods = new ModManager();
     expect(MODS.length).toBeGreaterThanOrEqual(15);
-    expect(mods.installedCount).toBe(0);
+    // Responsive Shields carries the game's own instant shields, so it starts installed.
+    const defaults = MODS.filter((m) => m.defaultInstalled).length;
+    expect(defaults).toBe(1);
+    expect(mods.installedCount).toBe(defaults);
     expect(mods.on('appleskin')).toBe(false);
     let changes = 0;
     mods.onChange(() => changes++);
@@ -47,7 +50,7 @@ describe('mod manager', () => {
     expect(mods.on('appleskin')).toBe(true);
     mods.setEnabled('appleskin', false);
     expect(mods.on('appleskin')).toBe(false);
-    expect(mods.installedCount).toBe(1);
+    expect(mods.installedCount).toBe(defaults + 1);
     mods.set('zoom', 'factor', 8);
     expect(mods.cfg('zoom', 'factor')).toBe(8);
     mods.resetConfig('zoom');
@@ -56,7 +59,7 @@ describe('mod manager', () => {
     mods.setPos('fps', { x: 0.5, y: 0.25 });
     expect(mods.pos('fps')).toEqual({ x: 0.5, y: 0.25 });
     mods.uninstall('appleskin');
-    expect(mods.installedCount).toBe(0);
+    expect(mods.installedCount).toBe(defaults);
     expect(changes).toBe(6);
   });
 

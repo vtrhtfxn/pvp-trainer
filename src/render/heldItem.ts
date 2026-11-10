@@ -55,7 +55,7 @@ function modelFor(key: string): ItemModel | null {
  */
 export class HeldItemSlot {
   readonly group = new THREE.Group();
-  private readonly entries = new Map<string, { root: THREE.Group; glint: THREE.Mesh; mat: THREE.MeshLambertMaterial }>();
+  private readonly entries = new Map<string, { root: THREE.Group; glint: THREE.Mesh; mat: THREE.MeshLambertMaterial; front?: THREE.MeshLambertMaterial }>();
   private shown: string | null = null;
 
   constructor(private readonly glintSource: Glint) {
@@ -75,12 +75,23 @@ export class HeldItemSlot {
           if (!m) return null;
           const mat = new THREE.MeshLambertMaterial({ map: m.texture, alphaTest: 0.1, side: THREE.DoubleSide });
           const root = new THREE.Group();
-          root.add(new THREE.Mesh(m.geometry, mat));
+          let front: THREE.MeshLambertMaterial | undefined;
+          if (key === 'shield') {
+            // The board's front face (its 4th face: vertices 18–23) gets a material of its own, so
+            // Shield Statuses can put a picture there and colour the rest.
+            front = new THREE.MeshLambertMaterial({ map: m.texture, alphaTest: 0.1, side: THREE.DoubleSide });
+            const g = m.geometry.clone();
+            const n = g.getAttribute('position').count;
+            g.addGroup(0, 18, 0);
+            g.addGroup(18, 6, 1);
+            g.addGroup(24, n - 24, 0);
+            root.add(new THREE.Mesh(g, [mat, front]));
+          } else root.add(new THREE.Mesh(m.geometry, mat));
           const glint = new THREE.Mesh(m.geometry, this.glintSource.itemMaterial(m.texture));
           glint.renderOrder = 2;
           root.add(glint);
           this.group.add(root);
-          e = { root, glint, mat };
+          e = { root, glint, mat, front };
           this.entries.set(key, e);
         }
         e.root.visible = true;
@@ -91,5 +102,31 @@ export class HeldItemSlot {
     const e = this.entries.get(key)!;
     e.glint.visible = !!v?.glint;
     return e.mat;
+  }
+
+  /**
+   * Colours the shown shield: `tint` (the hurt flash) on all of it, times Shield Statuses'
+   * colour; with a picture, the front shows the picture and only the rim, handle and back are
+   * coloured.
+   */
+  paintShield(tint: THREE.Color, status: THREE.Color | null, picture: THREE.Texture | null) {
+    const e = this.shown === 'shield' ? this.entries.get('shield') : undefined;
+    if (!e?.front) return;
+    e.mat.color.copy(tint);
+    if (status) e.mat.color.multiply(status);
+    const base = e.mat.map;
+    if (picture) {
+      if (e.front.map !== picture) {
+        e.front.map = picture;
+        e.front.needsUpdate = true;
+      }
+      e.front.color.copy(tint);
+    } else {
+      if (e.front.map !== base) {
+        e.front.map = base;
+        e.front.needsUpdate = true;
+      }
+      e.front.color.copy(e.mat.color);
+    }
   }
 }

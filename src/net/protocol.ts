@@ -162,6 +162,8 @@ export interface NetFighter {
   ast: number;
   /** Swing counter; the client replays the animation whenever it changes. */
   sw: number;
+  /** Left-handed (Main Hand: Left): how their model holds things. */
+  lh?: boolean;
   /** Gliding with an elytra, and for how long (the pose eases in). */
   ff: boolean;
   fft: number;
@@ -208,7 +210,13 @@ export type ClientMsg =
       squad?: { tier: string };
       /** Your skin (a 64×64 PNG data URL), shown to the others in the room. */
       skin?: { png: string; slim: boolean };
+      /** Your client-side mods the host needs to know about. */
+      opts?: { fastXp?: number; leftHanded?: boolean };
     }
+  /** Your client-side mods changed (FastXP switched on or off). */
+  | { t: 'opts'; fastXp: number; leftHanded?: boolean }
+  /** Voice Chat mod: where others can call you ('' = voice off). */
+  | { t: 'voice'; id: string }
   /** 2v2 room: move to a team (0 red, 1 blue) before the game. */
   | { t: 'side'; team: number }
   /** 2v2 room: the host starts the game (bots take the empty places). */
@@ -296,6 +304,8 @@ export type ServerMsg =
   | { t: 'joined'; you: number; room: string }
   /** The skins of everyone in the room who has one, by name (sent whenever someone joins). */
   | { t: 'skins'; list: { name: string; png: string; slim: boolean }[] }
+  /** Voice Chat: someone in the room can be called at `id` ('' = they stopped or left). */
+  | { t: 'voice'; name: string; id: string }
   | { t: 'error'; message: string }
   | { t: 'lobby'; room: string; players: { i: number; name: string }[]; kit: string }
   /** A duel starts. `you`: your seat in it (tournaments seat whoever plays this match). */

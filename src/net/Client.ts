@@ -64,6 +64,8 @@ export class NetClient {
   /** Sent with the next join: a tournament room to create, and your rating for its seeding. */
   /** Your skin, sent with the join so the others in the room see it. */
   skin: Skin | null = null;
+  /** Client-side mods the host applies to you (FastXP). */
+  opts: { fastXp?: number; leftHanded?: boolean } = {};
   joinExtra: { tour?: { size: number; field: string }; rating?: number; squad?: { tier: string } } = {};
 
   connect(address: string, room: string, name: string, kit = 'sword') {
@@ -106,7 +108,7 @@ export class NetClient {
     const clearTimer = () => clearTimeout(timeout);
     ws.onopen = () => {
       clearTimer();
-      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION, kit, ...this.joinExtra, ...(this.skin ? { skin: this.skin } : {}) });
+      this.send({ t: 'join', room, name, v: PROTOCOL_VERSION, kit, ...this.joinExtra, ...(this.skin ? { skin: this.skin } : {}), opts: this.opts });
     };
     ws.onmessage = (e) => {
       let msg: ServerMsg;
