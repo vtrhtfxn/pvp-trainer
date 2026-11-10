@@ -19,7 +19,7 @@ export function replayProfile(d: ReplayData): BotProfile {
 
 /** Builds the match a replay starts from: same kit, tier, seed and starting rules. */
 export function replayMatch(d: ReplayData): Match {
-  const m = new Match(replayKit(d), replayProfile(d), d.seed);
+  const m = new Match(replayKit(d), replayProfile(d), d.seed, undefined, d.players);
   m.countdownTicks = d.prep ?? COUNTDOWN_TICKS;
   m.player.name = d.playerName;
   m.bot.name = d.botName;

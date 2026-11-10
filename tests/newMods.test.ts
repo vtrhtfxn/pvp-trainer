@@ -86,12 +86,11 @@ describe('Armor HUD settings', () => {
   });
   afterEach(() => delete (globalThis as { localStorage?: unknown }).localStorage);
 
-  it('the old single durability choice becomes the new switches', () => {
-    store.set('pvp-trainer.mods.v1', JSON.stringify({ armorhud: { installed: true, enabled: true, config: { durability: 'percent' } } }));
-    const mods = new ModManager();
-    expect(mods.cfg('armorhud', 'percent')).toBe(true);
-    expect(mods.cfg('armorhud', 'bar')).toBe(false);
-    expect(mods.cfg('armorhud', 'numbers')).toBe(false);
+  it('keeps one durability style; the short-lived separate switches turn back into it', () => {
+    store.set('pvp-trainer.mods.v1', JSON.stringify({ armorhud: { installed: true, enabled: true, config: { bar: true, numbers: true, percent: true } } }));
+    expect(new ModManager().cfg('armorhud', 'durability')).toBe('percent');
+    store.set('pvp-trainer.mods.v1', JSON.stringify({ armorhud: { installed: true, enabled: true, config: { durability: 'number' } } }));
+    expect(new ModManager().cfg('armorhud', 'durability')).toBe('number');
   });
 });
 

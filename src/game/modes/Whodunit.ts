@@ -4,7 +4,7 @@ import type { Fighter } from '../Fighter';
 import type { ItemId } from '../items';
 import type { Loadout } from '../kits';
 import type { BotControl, GameMode, ModeHost as Match, ScoreLine } from './GameMode';
-import { EMPTY_KIT, alive, fill, freeForAll, noDamage, place, ring } from './party';
+import { EMPTY_KIT, NavGrid, alive, fill, freeForAll, noDamage, place, ring } from './party';
 
 export type Role = 'murderer' | 'detective' | 'innocent';
 
@@ -20,13 +20,6 @@ function take(f: Fighter, id: ItemId, n: number) {
   }
 }
 
-/** Manor half-size (the outer wall stands on ±HALF). */
-const HALF = 17;
-/** The game's length; if the murderer hasn't won by then, everyone left wins. */
-const GAME_TICKS = 20 * 60 * 4;
-/** A gold ingot appears every this many ticks (up to MAX_GOLD lying about). */
-const GOLD_EVERY = 100;
-const MAX_GOLD = 10;
 /** Gold that buys a bow (and an arrow with it). */
 const GOLD_FOR_BOW = 10;
 /** The detective's arrow comes back this long after it is shot. */
@@ -62,8 +55,16 @@ export class Whodunit implements GameMode {
   private announcements: ScoreLine[] = [];
   private dead = new Set<Fighter>();
   private minds = new Map<Fighter, BotMind>();
-  /** Spots inside the house (floor cells) gold and wandering bots use. */
-  private spots: { x: number; z: number }[] = [];
+  /** Spots on the floor that gold and wandering bots use, and spots up on the walls (bonus gold). */
+  private spots: { x: number; y: number; z: number }[] = [];
+  private topSpots: { x: number; y: number; z: number }[] = [];
+  private nav: NavGrid | null = null;
+  /** The game's length; if the murderer hasn't won by then, everyone left wins. */
+  private gameTicks = 20 * 60 * 4;
+  /** A gold ingot appears every this many ticks, up to `maxGold` lying about. */
+  private goldEvery = 100;
+  private maxGold = 10;
+  private goldCount = 0;
 
   role(f: Fighter): Role {
     return this.roles.get(f) ?? 'innocent';
@@ -73,48 +74,70 @@ export class Whodunit implements GameMode {
     const w = m.world;
     const b = w.blocks;
     b.clear();
-    // The house: a planked floor, stone walls, four rooms around a hall, lamps.
-    fill(b, -HALF, -1, -HALF, HALF, -1, HALF, B.PLANKS);
-    fill(b, -HALF, -2, -HALF, HALF, -2, HALF, B.STONE);
+    const n = m.fighters.length;
+    // The manor (bigger with more players): a planked floor inside a high stone wall, cut into
+    // nine rooms by inner walls three blocks high.
+    const H = Math.min(34, 22 + n);
+    const T = Math.floor(H / 3);
+    fill(b, -H, -1, -H, H, -1, H, B.PLANKS);
+    fill(b, -H, -2, -H, H, -2, H, B.STONE);
     for (const s of [-1, 1]) {
-      fill(b, -HALF, 0, s * HALF, HALF, 3, s * HALF, B.COBBLESTONE);
-      fill(b, s * HALF, 0, -HALF, s * HALF, 3, HALF, B.COBBLESTONE);
+      fill(b, -H, 0, s * H, H, 5, s * H, B.COBBLESTONE);
+      fill(b, s * H, 0, -H, s * H, 5, H, B.COBBLESTONE);
+      fill(b, -H + 1, 0, s * T, H - 1, 2, s * T, B.STONE);
+      fill(b, s * T, 0, -H + 1, s * T, 2, H - 1, B.STONE);
     }
-    // Inner walls (a cross), with doorways.
-    fill(b, -HALF, 0, 0, HALF, 2, 0, B.STONE);
-    fill(b, 0, 0, -HALF, 0, 2, HALF, B.STONE);
-    for (const d of [-9, 9]) {
-      fill(b, d - 1, 0, 0, d + 1, 1, 0, B.AIR);
-      fill(b, 0, 0, d - 1, 0, 1, d + 1, B.AIR);
-    }
-    fill(b, -1, 0, -1, 1, 2, 1, B.AIR); // the hall in the middle
-    // Furniture: tables and shelves to break line of sight.
+    // Every stretch of inner wall has a doorway in the middle (the wall carries on over it) and a
+    // window either side: a gap two blocks wide above a low sill — to see and shoot through, and
+    // to jump across when you're up on the wall.
+    const mids = [-Math.floor((H + T) / 2), 0, Math.floor((H + T) / 2)];
+    for (const s of [-1, 1])
+      for (const c of mids) {
+        fill(b, c - 1, 0, s * T, c + 1, 1, s * T, B.AIR);
+        fill(b, s * T, 0, c - 1, s * T, 1, c + 1, B.AIR);
+        for (const o of [-5, 4]) {
+          fill(b, c + o, 1, s * T, c + o + 1, 2, s * T, B.AIR);
+          fill(b, s * T, 1, c + o, s * T, 2, c + o + 1, B.AIR);
+        }
+      }
+    // Furniture in the eight outer rooms: a long table and a lamp (the hall stays clear).
+    for (const rx of mids)
+      for (const rz of mids) {
+        if (rx === 0 && rz === 0) continue;
+        fill(b, rx - 1, 0, rz - 4, rx + 1, 1, rz - 4, B.OAK_LOG);
+        b.set(rx + 3, 0, rz + 3, B.GLOWSTONE);
+      }
     for (const [x, z] of [
-      [-12, -12],
-      [12, 12],
-      [-12, 12],
-      [12, -12],
-      [-5, -12],
-      [5, 12],
-      [-12, 5],
-      [12, -5],
-    ])
-      fill(b, x - 1, 0, z, x + 1, 1, z, B.OAK_LOG);
-    for (const [x, z] of [
-      [-8, -8],
-      [8, 8],
-      [-8, 8],
-      [8, -8],
+      [-3, -3],
+      [3, 3],
     ])
       b.set(x, 0, z, B.GLOWSTONE);
+    // The way up: crates stacked against the inner walls in the four corner rooms.
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        fill(b, sx * (T + 1), 0, sz * (T + 3), sx * (T + 1), 1, sz * (T + 3), B.OAK_LOG);
+        b.set(sx * (T + 2), 0, sz * (T + 3), B.OAK_LOG);
+      }
     w.protectMap = true;
     w.placeRule = () => false;
     w.voidY = -10;
     w.rules.fallDamage = false;
     freeForAll(m);
     this.spots = [];
-    for (let x = -HALF + 2; x <= HALF - 2; x += 2)
-      for (let z = -HALF + 2; z <= HALF - 2; z += 2) if (b.get(x, 0, z) === B.AIR && b.get(x, 1, z) === B.AIR) this.spots.push({ x: x + 0.5, z: z + 0.5 });
+    this.topSpots = [];
+    for (let x = -H + 2; x <= H - 2; x += 2)
+      for (let z = -H + 2; z <= H - 2; z += 2) if (b.get(x, 0, z) === B.AIR && b.get(x, 1, z) === B.AIR) this.spots.push({ x: x + 0.5, y: 0, z: z + 0.5 });
+    // Up on the inner walls: every third block of their tops.
+    for (let x = -H + 2; x <= H - 2; x++)
+      for (let z = -H + 2; z <= H - 2; z++) {
+        if ((Math.abs(x) !== T && Math.abs(z) !== T) || (x + z) % 3 !== 0) continue;
+        if (b.get(x, 2, z) === B.STONE && b.get(x, 3, z) === B.AIR) this.topSpots.push({ x: x + 0.5, y: 3, z: z + 0.5 });
+      }
+    this.nav = new NavGrid(b, H, 0);
+    this.gameTicks = 20 * 60 * (n > 8 ? 5 : 4);
+    this.goldEvery = Math.max(25, 100 - 5 * n);
+    this.maxGold = 8 + 2 * n;
+    this.goldCount = 0;
     this.ticks = 0;
     this.goldTimer = 0;
     this.arrowTimer = new Map();
@@ -125,7 +148,7 @@ export class Whodunit implements GameMode {
     const order = [...m.fighters].sort(() => w.rng.next() - 0.5);
     this.roles.clear();
     order.forEach((f, i) => this.roles.set(f, i === 0 ? 'murderer' : i === 1 ? 'detective' : 'innocent'));
-    const spawns = ring(m.fighters.length, 10);
+    const spawns = ring(m.fighters.length, Math.max(3, T - 2.5));
     m.fighters.forEach((f, i) => {
       const r = this.role(f);
       place(f, spawns[i], r === 'murderer' ? MURDERER_KIT : r === 'detective' ? DETECTIVE_KIT : EMPTY_KIT);
@@ -181,12 +204,14 @@ export class Whodunit implements GameMode {
       m.world.items.push(d);
     }
     // Gold appears around the house.
-    if (++this.goldTimer >= GOLD_EVERY && this.spots.length) {
+    if (++this.goldTimer >= this.goldEvery && this.spots.length) {
       this.goldTimer = 0;
       const lying = m.world.items.filter((it) => !it.removed && it.stack.id === 'gold_ingot').length;
-      if (lying < MAX_GOLD) {
-        const s = this.spots[m.world.rng.int(0, this.spots.length - 1)];
-        const d = new DroppedItem({ id: 'gold_ingot', count: 1 }, s.x, 0.3, s.z, m.world.rng);
+      if (lying < this.maxGold) {
+        // Every third ingot appears up on the walls, for whoever dares the parkour.
+        const list = ++this.goldCount % 3 === 0 && this.topSpots.length ? this.topSpots : this.spots;
+        const s = list[m.world.rng.int(0, list.length - 1)];
+        const d = new DroppedItem({ id: 'gold_ingot', count: 1 }, s.x, s.y + 0.3, s.z, m.world.rng);
         d.vel.set(0, 0, 0);
         d.pickupDelay = 0;
         m.world.items.push(d);
@@ -227,7 +252,7 @@ export class Whodunit implements GameMode {
     const murderer = m.fighters.find((f) => this.role(f) === 'murderer');
     if (!murderer) return null;
     const others = m.fighters.filter((f) => f !== murderer);
-    const innocentsWin = murderer.dead || (this.ticks >= GAME_TICKS && others.some((f) => !f.dead));
+    const innocentsWin = murderer.dead || (this.ticks >= this.gameTicks && others.some((f) => !f.dead));
     if (innocentsWin) {
       // Everyone on the innocent side wins, dead or alive: the player if they were one.
       if (m.player !== murderer) return m.player;
@@ -237,9 +262,17 @@ export class Whodunit implements GameMode {
     return null;
   }
 
+  /** Everyone on the winning side: the murderer alone, or all the others (dead or alive). */
+  winners(m: Match): Fighter[] {
+    const murderer = m.fighters.find((f) => this.role(f) === 'murderer');
+    if (!murderer) return [];
+    const others = m.fighters.filter((f) => f !== murderer);
+    return others.every((f) => f.dead) && !murderer.dead ? [murderer] : others;
+  }
+
   scoreboard(m: Match, viewer: Fighter): ScoreLine[] {
     const r = this.role(viewer);
-    const left = Math.max(0, Math.ceil((GAME_TICKS - this.ticks) / 20));
+    const left = Math.max(0, Math.ceil((this.gameTicks - this.ticks) / 20));
     const innocents = m.fighters.filter((f) => this.role(f) !== 'murderer' && !f.dead).length;
     const det = m.fighters.find((f) => this.role(f) === 'detective');
     return [
@@ -296,13 +329,46 @@ export class Whodunit implements GameMode {
     return x;
   }
 
+  /** Walks to (x, z) around the walls: through the doorways, not into the stone. */
+  private go(c: BotControl, x: number, z: number, stop: number, sprint: boolean): boolean {
+    const me = c.bot;
+    const via = this.nav?.next(me.pos.x, me.pos.z, x, z);
+    if (!via) return c.walkTo(x, z, stop, sprint);
+    // Lean a few blocks past the next corner so it keeps its pace (and can sprint).
+    const dx = via.x - me.pos.x;
+    const dz = via.z - me.pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    c.walkTo(via.x + (dx / d) * 2.5, via.z + (dz / d) * 2.5, 0.2, sprint);
+    return false;
+  }
+
   private wander(c: BotControl, mind: BotMind) {
     const me = c.bot;
     if (--mind.wander.t <= 0 || Math.hypot(mind.wander.x - me.pos.x, mind.wander.z - me.pos.z) < 1.2) {
-      const s = this.spots[c.rng.int(0, this.spots.length - 1)];
-      mind.wander = { x: s.x, z: s.z, t: 160 };
+      // Somewhere not too far, so it drifts from room to room rather than marching across the house.
+      const near = this.spots.filter((s) => Math.hypot(s.x - me.pos.x, s.z - me.pos.z) < 22);
+      const list = near.length > 4 ? near : this.spots;
+      const s = list[c.rng.int(0, list.length - 1)];
+      mind.wander = { x: s.x, z: s.z, t: 240 };
     }
-    c.walkTo(mind.wander.x, mind.wander.z, 0.8, false);
+    this.go(c, mind.wander.x, mind.wander.z, 0.8, false);
+  }
+
+  /** Runs for a spot well away from `threat` (through the doors). */
+  private flee(c: BotControl, mind: BotMind, threat: Fighter) {
+    const me = c.bot;
+    const far = (p: { x: number; z: number }) => Math.hypot(p.x - threat.pos.x, p.z - threat.pos.z);
+    if (far(mind.wander) < 14 || --mind.wander.t <= 0) {
+      let best = this.spots[0];
+      for (let i = 0; i < 8; i++) {
+        const s = this.spots[c.rng.int(0, this.spots.length - 1)];
+        // Far from them, and not past them.
+        const score = far(s) - Math.hypot(s.x - me.pos.x, s.z - me.pos.z) * 0.5;
+        if (score > far(best) - Math.hypot(best.x - me.pos.x, best.z - me.pos.z) * 0.5) best = s;
+      }
+      mind.wander = { x: best.x, z: best.z, t: 200 };
+    }
+    this.go(c, mind.wander.x, mind.wander.z, 0.5, true);
   }
 
   private nearest(me: Fighter, list: Fighter[]): Fighter | null {
@@ -365,26 +431,24 @@ export class Whodunit implements GameMode {
       if (d < 12) {
         if (me.usingItem) me.releaseUsingItem();
         c.emptyHand();
-        const ax = me.pos.x - threat.pos.x;
-        const az = me.pos.z - threat.pos.z;
-        const l = Math.hypot(ax, az) || 1;
-        c.walkTo(me.pos.x + (ax / l) * 5, me.pos.z + (az / l) * 5, 0.5, true);
+        this.flee(c, mind, threat);
         return false;
       }
     }
     if (me.usingItem) me.releaseUsingItem();
     c.emptyHand();
+    // Gold on the floor nearby (the ingots up on the walls are for people who parkour).
     const gold = m.world.items
-      .filter((it) => !it.removed && it.stack.id === 'gold_ingot' && Math.hypot(it.pos.x - me.pos.x, it.pos.z - me.pos.z) < 6 + c.skill * 10)
+      .filter((it) => !it.removed && it.stack.id === 'gold_ingot' && it.pos.y < 1.5 && Math.hypot(it.pos.x - me.pos.x, it.pos.z - me.pos.z) < 6 + c.skill * 10)
       .sort((a, b) => Math.hypot(a.pos.x - me.pos.x, a.pos.z - me.pos.z) - Math.hypot(b.pos.x - me.pos.x, b.pos.z - me.pos.z))[0];
     if (gold) {
-      c.walkTo(gold.pos.x, gold.pos.z, 0.2, false);
+      this.go(c, gold.pos.x, gold.pos.z, 0.2, false);
       return false;
     }
     // A dropped bow is worth fetching.
     const bow = me.countItem('bow') === 0 ? m.world.items.find((it) => !it.removed && it.stack.id === 'bow') : null;
     if (bow) {
-      c.walkTo(bow.pos.x, bow.pos.z, 0.2, true);
+      this.go(c, bow.pos.x, bow.pos.z, 0.2, true);
       return false;
     }
     this.wander(c, mind);
@@ -406,14 +470,15 @@ export class Whodunit implements GameMode {
       mind.victim = this.nearest(me, cand);
     }
     // Late in the game, it stops being picky.
-    if (!mind.victim && this.ticks > GAME_TICKS * 0.6) mind.victim = this.nearest(me, others);
+    if (!mind.victim && this.ticks > this.gameTicks * 0.6) mind.victim = this.nearest(me, others);
     const v = mind.victim;
     if (v) {
       const d = Math.hypot(v.pos.x - me.pos.x, v.pos.z - me.pos.z);
       if (d < 5) c.equip('iron_sword');
       else c.emptyHand();
-      if (d < 5) c.fight(v);
-      else c.walkTo(v.pos.x, v.pos.z, 1, d > 6);
+      if (d < 5 && this.sees(m, me, v)) c.fight(v);
+      else if (d < 5) this.go(c, v.pos.x, v.pos.z, 1, true);
+      else this.go(c, v.pos.x, v.pos.z, 1, d > 6);
       return false;
     }
     c.emptyHand();

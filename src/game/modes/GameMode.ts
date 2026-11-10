@@ -45,6 +45,11 @@ export interface GameMode {
   tick(m: Match): void;
   /** The winner, once there is one (a death alone may not end a Bed Wars game). */
   winner(m: Match): Fighter | null;
+  /**
+   * Everyone on the winning side once `winner` names one, when that's more than the winner alone
+   * (Whodunit's innocents win together). Online, each of them is told they won.
+   */
+  winners?(m: Match): Fighter[];
   /** Scoreboard lines for `viewer`. */
   scoreboard(m: Match, viewer: Fighter): ScoreLine[];
   /** A big message for `viewer` right now (respawn countdown…), or null. */

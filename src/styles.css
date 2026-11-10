@@ -5161,3 +5161,4 @@ body.broadcasting .hud .effects {
 .voice-hud .vc-talk { color: #55ffff; }
 .voice-hud .vc-dim { color: #aaaaaa; }
 .voice-hud .vc-err { color: #ff5555; }
+.sq-party { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px; margin: 6px 0; }

@@ -116,10 +116,10 @@ export const MODS: ModDef[] = [
     id: 'armorhud',
     name: "uku's Armor HUD",
     basedOn: "uku's Armor HUD",
-    description: 'Your armor in hotbar-style slots beside the hotbar, with its durability as a line, real numbers (left, or left / max), a percentage, or any mix — see a piece about to break without opening your inventory.',
+    description: 'Your armor in hotbar-style slots right beside the hotbar, with its durability shown one way: a line, a percentage, or the real points left — see a piece about to break without opening your inventory.',
     category: 'HUD',
     icon: 'item:netherite_chestplate',
-    defaults: { side: 'right', bar: true, numbers: false, numberStyle: 'left', percent: false, showEmpty: true },
+    defaults: { side: 'right', durability: 'bar', showEmpty: true },
     options: [
       {
         key: 'side',
@@ -130,18 +130,17 @@ export const MODS: ModDef[] = [
           ['left', 'Left'],
         ],
       },
-      { key: 'bar', label: 'Durability line', type: 'toggle' },
-      { key: 'numbers', label: 'Durability numbers', type: 'toggle' },
       {
-        key: 'numberStyle',
-        label: 'Numbers show',
+        key: 'durability',
+        label: 'Durability',
         type: 'select',
         options: [
-          ['left', 'Points left (312)'],
-          ['leftmax', 'Left / max (312/407)'],
+          ['bar', 'Line'],
+          ['percent', 'Percentage'],
+          ['number', 'Numbers (points left)'],
+          ['none', 'Hidden'],
         ],
       },
-      { key: 'percent', label: 'Durability percentage', type: 'toggle' },
       { key: 'showEmpty', label: 'Show empty slots', type: 'toggle' },
     ],
   },
@@ -755,14 +754,12 @@ export class ModManager {
         pos: s?.pos && Number.isFinite(s.pos.x) && Number.isFinite(s.pos.y) ? s.pos : undefined,
       };
     }
-    // Armor HUD used to have one "durability" choice; it's three switches now.
-    const armor = this.states.armorhud.config;
-    const old = (saved.armorhud?.config as Record<string, OptValue> | undefined)?.durability;
-    if (typeof old === 'string' && saved.armorhud?.config && !('bar' in saved.armorhud.config)) {
-      armor.bar = old === 'bar';
-      armor.numbers = old === 'number';
-      armor.percent = old === 'percent';
+    // Armor HUD briefly had separate line / numbers / percentage switches: back to one choice.
+    const was = saved.armorhud?.config as Record<string, OptValue> | undefined;
+    if (was && !('durability' in was) && 'bar' in was) {
+      this.states.armorhud.config.durability = was.percent ? 'percent' : was.numbers ? 'number' : was.bar ? 'bar' : 'none';
     }
+    if (!['bar', 'percent', 'number', 'none'].includes(String(this.states.armorhud.config.durability))) this.states.armorhud.config.durability = 'bar';
   }
 
   onChange(fn: () => void) {

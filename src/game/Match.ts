@@ -5,7 +5,7 @@ import { Rng } from '../core/rng';
 import { performAttack, pushApart, rayDistanceToTarget, type AttackOutcome } from './combat';
 import { hitNearerEntity } from './crystals';
 import { Fighter } from './Fighter';
-import type { KitDef } from './kits';
+import { partySize, type KitDef } from './kits';
 import { World } from './World';
 import type { GameMode } from './modes/GameMode';
 import { createMode } from './modes';
@@ -90,10 +90,12 @@ export class Match {
     seed?: number,
     /** 2v2: you and a bot ally against two bots (the ally plays at `allyProfile`). */
     teams?: { allyProfile?: BotProfile },
+    /** A party minigame: how many play, you included (the kit's usual number if not given). */
+    players?: number,
   ) {
-    // A four-player party minigame (Crumble, Hot Potato, Whodunit) is always four.
-    const party = kit.party?.players === 4;
-    if (party) teams = {};
+    // A party minigame is you and bots, every one for themselves.
+    const party = kit.party ? partySize(kit, players) : 0;
+    if (party) teams = undefined;
     this.rng = new Rng(seed);
     this.mode = createMode(kit);
     this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
@@ -103,15 +105,23 @@ export class Match {
       this.world.blocks.clear();
     }
     this.player = new Fighter('player', 'You', this.world);
-    this.bot = new Fighter('bot', teams ? `${profile.name} Bot 1` : `${profile.name} Bot`, this.world);
+    this.bot = new Fighter('bot', teams || party > 2 ? `${profile.name} Bot 1` : `${profile.name} Bot`, this.world);
     this.fighters = [this.player, this.bot];
+    const partyBots: Fighter[] = [];
     if (teams) {
-      const ally = new Fighter('bot', party ? `${profile.name} Bot 3` : `${(teams.allyProfile ?? profile).name} Ally`, this.world);
+      const ally = new Fighter('bot', `${(teams.allyProfile ?? profile).name} Ally`, this.world);
       ally.team = 0;
       const bot2 = new Fighter('bot', `${profile.name} Bot 2`, this.world);
       this.ally = ally;
       this.bot2 = bot2;
       this.fighters.push(ally, bot2);
+    }
+    for (let i = 2; i < party; i++) {
+      const f = new Fighter('bot', `${profile.name} Bot ${i}`, this.world);
+      // (The mode puts everyone on a team of their own.)
+      f.team = i;
+      partyBots.push(f);
+      this.fighters.push(f);
     }
     this.world.fighters.push(...this.fighters);
     this.world.damageMultiplier = kit.damageMultiplier ?? 1;
@@ -121,10 +131,7 @@ export class Match {
     // Like the player's clicks: an end crystal nearer than the opponent takes the hit.
     this.brain = new BotBrain(this.bot, this.player, this.world, profile, this.rng, () => this.botAttack(this.bot, this.brain.opponent));
     if (this.mode) this.brain.attachSky(this);
-    for (const [f, prof] of [
-      [this.ally, teams?.allyProfile ?? profile],
-      [this.bot2, profile],
-    ] as const) {
+    for (const [f, prof] of [[this.ally, teams?.allyProfile ?? profile], [this.bot2, profile], ...partyBots.map((f) => [f, profile])] as [Fighter | undefined, BotProfile][]) {
       if (!f) continue;
       const brain: BotBrain = new BotBrain(f, this.enemiesOf(f)[0], this.world, prof, this.rng, () => this.botAttack(f, brain.opponent));
       if (this.mode) brain.attachSky(this);

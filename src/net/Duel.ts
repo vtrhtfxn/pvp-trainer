@@ -142,7 +142,8 @@ export class Duel {
     this.world.legacyCombat = !!this.kit.legacyCombat;
     this.world.rng = new Rng((Math.random() * 2 ** 30) | 0);
     this.world.blocks.changeLog = new Set();
-    const n = names.length > 2 ? 4 : 2;
+    // A party minigame seats everyone there is (the mode puts each on a team of their own).
+    const n = this.kit.party ? Math.max(2, names.length) : names.length > 2 ? 4 : 2;
     this.fighters = Array.from({ length: n }, (_, i) => new Fighter(i === 0 ? 'player' : 'bot', names[i] ?? `Player ${i + 1}`, this.world));
     this.fighters.forEach((f, i) => (f.team = i % 2));
     this.world.fighters.push(...this.fighters);
@@ -168,7 +169,14 @@ export class Duel {
     this.reset();
   }
 
-  /** Seats in this game (2 or 4). */
+  /** Party minigames: every seat on the winning side once the game is over. */
+  get winners(): number[] | undefined {
+    if (!this.kit.party || this.winner === null || !this.mode) return undefined;
+    const list = this.mode.winners?.(this).map((f) => this.fighters.indexOf(f)) ?? [this.winner];
+    return list.filter((i) => i >= 0);
+  }
+
+  /** Seats in this game (2, 4, or a party minigame's player count). */
   get seats(): number {
     return this.fighters.length;
   }

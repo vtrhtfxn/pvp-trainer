@@ -207,7 +207,7 @@ export type ClientMsg =
       /** Your best tier (0 = LT5 … 9 = HT1), for tournament seeding. */
       rating?: number;
       /** Creating a 2v2 room: the tier of the bots that fill empty places. */
-      squad?: { tier: string };
+      squad?: { tier: string; size?: number };
       /** Your skin (a 64×64 PNG data URL), shown to the others in the room. */
       skin?: { png: string; slim: boolean };
       /** Your client-side mods the host needs to know about. */
@@ -221,6 +221,8 @@ export type ClientMsg =
   | { t: 'side'; team: number }
   /** 2v2 room: the host starts the game (bots take the empty places). */
   | { t: 'go' }
+  /** Party minigame room: the host changes how many play (bots take the empty places). */
+  | { t: 'size'; n: number }
   /** Tournament: the host starts it; your ban or pick; how your game against a bot went. */
   | { t: 'tstart' }
   | { t: 'tdraft'; kit: string }
@@ -311,7 +313,8 @@ export type ServerMsg =
   /** A duel starts. `you`: your seat in it (tournaments seat whoever plays this match). */
   | { t: 'start'; countdown: number; kit: string; you?: number; seats?: number }
   /** A 2v2 room before its game: who's in, on which team, and who is host. */
-  | { t: 'squad'; room: string; kit: string; tier: string; members: SquadMember[]; started: boolean }
+  /** `size`: a party minigame room — that many play, every one for themselves (no teams). */
+  | { t: 'squad'; room: string; kit: string; tier: string; members: SquadMember[]; started: boolean; size?: number }
   /** Tournament: the room, the bracket and what is happening now. */
   | { t: 'tour'; view: TourView }
   /** Tournament: your game against a bot — your own game plays it, then send tresult. */
@@ -356,7 +359,8 @@ export type ServerMsg =
   | { t: 'chest'; x: number; y: number; z: number; items: Slot[] | null; open?: boolean }
   /** The answer to a shop purchase. */
   | { t: 'bought'; msg: string }
-  | { t: 'end'; winner: number | null }
+  /** `ws`: every winning seat, in a party minigame (one winner, or Whodunit's whole innocent side). */
+  | { t: 'end'; winner: number | null; ws?: number[] }
   | { t: 'ping'; id: number }
   | { t: 'chat'; kind: ChatKind; from: string; text: string };
 

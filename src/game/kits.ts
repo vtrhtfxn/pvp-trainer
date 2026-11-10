@@ -74,10 +74,19 @@ export interface KitDef extends Loadout {
   /** A minigame (Bed Wars, SkyWars, …): its own map and rules; the loadout comes from the game. */
   mode?: ModeId;
   /**
-   * A party minigame (Sumo, Crumble, Hot Potato, Whodunit): every one for themselves against bots
-   * at the chosen tier, `players` in all (you included). Offline only.
+   * A party minigame (Sumo, Crumble, Hot Potato, Whodunit): every one for themselves, `players`
+   * in all by default (you included) and anything from `min` to `max`. Offline the others are
+   * bots at the chosen tier; online they are people, with bots in the empty places.
    */
-  party?: { players: 2 | 4 };
+  party?: { players: number; min: number; max: number };
+}
+
+/** How many play a party minigame: `want` (or the kit's usual number) kept within its limits. */
+export function partySize(kit: KitDef, want?: number): number {
+  const p = kit.party;
+  if (!p) return 2;
+  const n = Math.round(Number(want));
+  return Number.isFinite(n) ? Math.max(p.min, Math.min(p.max, n)) : p.players;
 }
 
 /** Sums armor points, toughness and Protection from the pieces actually worn. */
@@ -698,9 +707,9 @@ export const KITS: KitDef[] = [
     available: true,
     subtier: true,
     mode: 'sumo',
-    party: { players: 2 },
-    summary: 'Bare hands on a round platform over the void. No damage — knock them off the edge.',
-    contents: ['No items: punches only, 1.8 knockback, nobody gets hurt', 'Fall off the platform and you lose', 'Bots fight at the tier you pick'],
+    party: { players: 2, min: 2, max: 8 },
+    summary: 'Bare hands on a big round platform over the void. No damage — knock them off the edge. 2 to 8 players.',
+    contents: ['No items: punches only, 1.8 knockback, nobody gets hurt', 'Fall off and you are out · four outposts up parkour stepping stones', 'After 75 s the outposts fall, then the platform shrinks'],
     hotbar: [],
     armor: [null, null, null, null],
     offhand: null,
@@ -715,9 +724,9 @@ export const KITS: KitDef[] = [
     available: true,
     subtier: true,
     mode: 'crumble',
-    party: { players: 4 },
-    summary: 'Three floors of TNT over the void: every block you step on drops away. Keep running — the last one standing wins.',
-    contents: ['You and three bots, no fighting', 'Blocks fall a moment after you step on them; fall through and you land on the floor below', 'Drop out of the bottom floor and you are out · jump over holes'],
+    party: { players: 6, min: 2, max: 12 },
+    summary: 'Four big floors of TNT over the void: every block you step on drops away. Keep running — the last one standing wins.',
+    contents: ['2 to 12 players (you pick), no fighting', 'Blocks fall a moment after you step on them; fall through and you land on the floor below', 'Drop out of the bottom floor and you are out · jump holes, parkour out to the islands'],
     hotbar: [],
     armor: [null, null, null, null],
     offhand: null,
@@ -731,9 +740,9 @@ export const KITS: KitDef[] = [
     available: true,
     subtier: true,
     mode: 'hotpotato',
-    party: { players: 4 },
+    party: { players: 6, min: 3, max: 12 },
     summary: 'One player is lit with TNT. Hit someone to pass it on before the fuse runs out — whoever holds it blows up.',
-    contents: ['You and three bots in a walled yard', 'Rounds of 25 s, getting shorter; the lit player runs faster', 'No damage from hits · last one standing wins'],
+    contents: ['3 to 12 players (you pick) in a big walled yard with a parkour course over it', 'Rounds of 25 s, getting shorter; the lit player runs faster · get away over the platforms', 'No damage from hits · last one standing wins'],
     hotbar: [],
     armor: [null, null, null, null],
     offhand: null,
@@ -747,13 +756,13 @@ export const KITS: KitDef[] = [
     available: true,
     subtier: true,
     mode: 'whodunit',
-    party: { players: 4 },
-    summary: 'A murder mystery in an old manor: one murderer, one detective, the rest innocent — and nobody knows who is who.',
+    party: { players: 8, min: 3, max: 15 },
+    summary: 'A murder mystery in an old manor: one murderer, one detective, the rest innocent — and nobody knows who is who. 3 to 15 players.',
     contents: [
       'Murderer: a sword that kills in one hit — kill everyone',
       'Detective: a bow, its arrow comes back after 5 s — shoot the murderer (shoot an innocent and you die too)',
-      'Innocents: survive; 10 gold ingots from around the house buy a bow',
-      'Everyone else wins if the murderer dies or anyone is alive after 4 minutes',
+      'Innocents: survive; 10 gold ingots from around the house buy a bow · more gold up on the walls (climb the crates)',
+      'Everyone else wins if the murderer dies or anyone is alive when the time runs out',
     ],
     hotbar: [],
     armor: [null, null, null, null],

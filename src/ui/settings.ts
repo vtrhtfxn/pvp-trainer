@@ -87,6 +87,8 @@ export interface Settings {
   firstTo: number;
   /** 2v2 against bots (you and a bot ally), in the kits that have it. */
   teams: boolean;
+  /** Party minigames: how many play each one, you included (by kit id; unset = the usual number). */
+  partyPlayers: Record<string, number>;
   /** Bot vs Bot: the two tiers last picked. */
   versusA: DifficultyId;
   versusB: DifficultyId;
@@ -148,6 +150,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kit: 'sword',
   difficulty: 'ht4',
   firstTo: 1,
+  partyPlayers: {},
   teams: false,
   versusA: 'lt1',
   versusB: 'ht1',
@@ -168,6 +171,7 @@ export function loadSettings(): Settings {
         if (typeof s[k] !== typeof DEFAULT_SETTINGS[k]) (s as unknown as Record<string, unknown>)[k] = DEFAULT_SETTINGS[k];
       }
       s.firstTo = clampFirstTo(s.firstTo);
+      if (!s.partyPlayers || Array.isArray(s.partyPlayers)) s.partyPlayers = {};
       // Custom kits are checked again once they have loaded (Game drops one that is gone).
       if (!KITS.some((kit) => kit.id === s.kit) && !/^custom:[a-z0-9]{1,16}$/.test(s.kit)) s.kit = DEFAULT_SETTINGS.kit;
       for (const k of ['versusA', 'versusB'] as const) if (!(s[k] in DIFFICULTIES) || s[k] === 'practice') s[k] = DEFAULT_SETTINGS[k];
