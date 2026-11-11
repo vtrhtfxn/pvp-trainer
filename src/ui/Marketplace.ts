@@ -1,4 +1,6 @@
 import { keyName, type KeyBinds } from '../input/keybinds';
+import { GRID, MID, PRESETS, decodeGrid, encodeGrid } from '../mods/crosshairGrid';
+import { paintGrid } from '../mods/widgets';
 import { MODS, MOD_BY_ID, type ModCategory, type ModDef, type ModId, type ModManager, type ModOption } from '../mods/registry';
 import { itemIcon } from '../render/itemIcons';
 import { packImage } from '../render/pack';
@@ -380,6 +382,8 @@ export class Marketplace {
         });
         return wrap;
       }
+      case 'pixels':
+        return this.pixelEditor(m, o.key);
       case 'image': {
         // A picture made small (it's kept with the mod's settings) — the first frame of a GIF.
         const file = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
@@ -414,6 +418,135 @@ export class Marketplace {
         return wrap;
       }
     }
+  }
+
+  /** Pixel editor tools (kept while the page redraws). */
+  private paint = { erase: false, mirror: true };
+
+  /**
+   * The crosshair editor: a 15×15 grid to draw on (left button draws, right button or Erase
+   * rubs out; drag to paint), mirrored four ways if you like, with ready-made starting points and
+   * a preview at real size — as it looks normally and on an opponent.
+   */
+  private pixelEditor(m: ModDef, key: string): HTMLElement {
+    const CELL = 16;
+    const cells = decodeGrid(this.mods.cfg(m.id, key));
+    const cfg = (k: string) => this.mods.cfg(m.id, k);
+    const board = h('canvas', { class: 'xh-board', width: String(GRID * CELL), height: String(GRID * CELL) });
+    const prev = h('canvas', { class: 'xh-preview', width: String((GRID + 2) * 2), height: String((GRID + 2) * 2) });
+    const prevHot = h('canvas', { class: 'xh-preview', width: String((GRID + 2) * 2), height: String((GRID + 2) * 2) });
+    const draw = () => {
+      const x = board.getContext('2d')!;
+      x.fillStyle = '#2a2a2a';
+      x.fillRect(0, 0, board.width, board.height);
+      cells.forEach((on, i) => {
+        if (!on) return;
+        x.fillStyle = String(cfg('color'));
+        x.fillRect((i % GRID) * CELL, Math.floor(i / GRID) * CELL, CELL, CELL);
+      });
+      // Grid lines, and the middle pixel (where you aim) marked.
+      x.strokeStyle = 'rgba(255,255,255,0.12)';
+      x.lineWidth = 1;
+      for (let k = 1; k < GRID; k++) {
+        x.beginPath();
+        x.moveTo(k * CELL + 0.5, 0);
+        x.lineTo(k * CELL + 0.5, board.height);
+        x.moveTo(0, k * CELL + 0.5);
+        x.lineTo(board.width, k * CELL + 0.5);
+        x.stroke();
+      }
+      x.strokeStyle = '#ffaa00';
+      x.strokeRect(MID * CELL + 1.5, MID * CELL + 1.5, CELL - 3, CELL - 3);
+      for (const [c, color] of [
+        [prev, String(cfg('color'))],
+        [prevHot, String(cfg('targetColor'))],
+      ] as const) {
+        const y = c.getContext('2d')!;
+        y.setTransform(2, 0, 0, 2, 0, 0);
+        y.fillStyle = '#6f8f4f';
+        y.fillRect(0, 0, GRID + 2, GRID + 2);
+        paintGrid(y, encodeGrid(cells), color, !!cfg('outline'));
+      }
+    };
+    const set = (i: number, v: boolean) => {
+      const cx = i % GRID;
+      const cy = Math.floor(i / GRID);
+      const spots = this.paint.mirror
+        ? [
+            [cx, cy],
+            [GRID - 1 - cx, cy],
+            [cx, GRID - 1 - cy],
+            [GRID - 1 - cx, GRID - 1 - cy],
+          ]
+        : [[cx, cy]];
+      for (const [a, b] of spots) cells[b * GRID + a] = v;
+    };
+    let painting: boolean | null = null;
+    const at = (e: PointerEvent) => {
+      const r = board.getBoundingClientRect();
+      const cx = Math.floor(((e.clientX - r.left) / r.width) * GRID);
+      const cy = Math.floor(((e.clientY - r.top) / r.height) * GRID);
+      return cx >= 0 && cy >= 0 && cx < GRID && cy < GRID ? cy * GRID + cx : -1;
+    };
+    board.addEventListener('contextmenu', (e) => e.preventDefault());
+    board.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      board.setPointerCapture(e.pointerId);
+      const i = at(e);
+      if (i < 0) return;
+      painting = e.button === 2 || this.paint.erase ? false : true;
+      set(i, painting);
+      draw();
+    });
+    board.addEventListener('pointermove', (e) => {
+      if (painting === null) return;
+      const i = at(e);
+      if (i >= 0) {
+        set(i, painting);
+        draw();
+      }
+    });
+    const done = () => {
+      if (painting === null) return;
+      painting = null;
+      // Saved once the stroke ends (saving redraws the page).
+      this.mods.set(m.id, key, encodeGrid(cells));
+    };
+    board.addEventListener('pointerup', done);
+    board.addEventListener('pointercancel', done);
+    const tool = (label: string, on: boolean, flip: () => void) => this.button(`${label}: ${on ? 'ON' : 'OFF'}`, () => {
+      flip();
+      this.render();
+    });
+    const presets = h('select', { class: 'mc-input xh-presets' }, h('option', { value: '' }, 'Start from…'));
+    for (const [name] of PRESETS) presets.append(h('option', { value: name }, name));
+    presets.addEventListener('change', () => {
+      const p = PRESETS.find(([n]) => n === presets.value);
+      if (!p) return;
+      this.cb.onUiSound();
+      this.mods.set(m.id, key, p[1]);
+    });
+    draw();
+    const wrap = h(
+      'div',
+      { class: 'xh-editor' },
+      h('div', { class: 'xh-title' }, 'Draw your crosshair (pick Style: Your drawing). Left button draws, right button rubs out; the orange square is where you aim.'),
+      h(
+        'div',
+        { class: 'xh-row' },
+        board,
+        h(
+          'div',
+          { class: 'xh-side' },
+          tool('Erase', this.paint.erase, () => (this.paint.erase = !this.paint.erase)),
+          tool('Mirror', this.paint.mirror, () => (this.paint.mirror = !this.paint.mirror)),
+          this.button('Clear', () => this.mods.set(m.id, key, encodeGrid(cells.map(() => false)))),
+          presets,
+          h('div', { class: 'xh-previews' }, h('div', {}, prev, h('span', {}, 'Normal')), h('div', {}, prevHot, h('span', {}, 'On target'))),
+        ),
+      ),
+    );
+    return wrap;
   }
 
   /** Mods downloaded from Modrinth / CurseForge: what each jar is and what it does here. */

@@ -1,3 +1,4 @@
+import { DEFAULT_GRID } from './crosshairGrid';
 /**
  * The Marketplace's mods. They all ship inside the game (nothing is downloaded) but start
  * uninstalled: installing one in the Marketplace turns it on and gives it a settings page.
@@ -48,6 +49,8 @@ export type ModOption =
   | { key: string; label: string; type: 'slider'; min: number; max: number; step: number; unit?: 'x' | '%' | 'px' | '' }
   | { key: string; label: string; type: 'select'; options: [string, string][] }
   | { key: string; label: string; type: 'color' }
+  /** A pixel drawing made in the Marketplace (the Custom Crosshair's own one). */
+  | { key: string; label: string; type: 'pixels' }
   /** A picture the player uploads (kept as a small PNG data URL; '' = none). */
   | { key: string; label: string; type: 'image'; width: number; height: number };
 
@@ -302,10 +305,23 @@ export const MODS: ModDef[] = [
     id: 'crosshair',
     name: 'Custom Crosshair',
     basedOn: 'custom crosshair mods',
-    description: 'Pick your crosshair: shape, size, gap, thickness, colour, outline and a centre dot. The vanilla attack indicator still shows under it.',
+    description:
+      'Pick your crosshair — shape, size, gap, thickness, colour, outline, a centre dot — or draw your own pixel by pixel. It can change when it is on an opponent in reach: another colour, and bigger or pulsing if you like. The vanilla attack indicator still shows under it.',
     category: 'Visual',
     icon: 'pack:gui/sprites/hud/crosshair',
-    defaults: { style: 'cross', color: '#ffffff', size: 5, gap: 2, thickness: 1, outline: true, dot: false },
+    defaults: {
+      style: 'cross',
+      color: '#ffffff',
+      size: 5,
+      gap: 2,
+      thickness: 1,
+      outline: true,
+      dot: false,
+      pixels: DEFAULT_GRID,
+      onTarget: true,
+      targetColor: '#ff5555',
+      targetEffect: 'color',
+    },
     options: [
       {
         key: 'style',
@@ -317,15 +333,30 @@ export const MODS: ModDef[] = [
           ['dot', 'Dot'],
           ['circle', 'Circle'],
           ['t', 'T'],
+          ['drawn', 'Your drawing'],
         ],
       },
+      { key: 'pixels', label: 'Your drawing', type: 'pixels' },
       { key: 'color', label: 'Colour', type: 'color' },
       { key: 'size', label: 'Length', type: 'slider', min: 1, max: 15, step: 1, unit: 'px' },
       { key: 'gap', label: 'Gap', type: 'slider', min: 0, max: 10, step: 1, unit: 'px' },
       { key: 'thickness', label: 'Thickness', type: 'slider', min: 1, max: 5, step: 1, unit: 'px' },
       { key: 'outline', label: 'Black outline', type: 'toggle' },
       { key: 'dot', label: 'Centre dot', type: 'toggle' },
+      { key: 'onTarget', label: 'Change on an opponent in reach', type: 'toggle' },
+      { key: 'targetColor', label: 'Colour on target', type: 'color' },
+      {
+        key: 'targetEffect',
+        label: 'On target',
+        type: 'select',
+        options: [
+          ['color', 'Colour only'],
+          ['grow', 'Colour + bigger'],
+          ['pulse', 'Colour + pulse'],
+        ],
+      },
     ],
+    isNew: true,
   },
   {
     id: 'lowfire',

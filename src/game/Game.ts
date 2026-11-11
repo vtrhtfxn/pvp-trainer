@@ -527,6 +527,7 @@ export class Game {
       opponent: null,
       opponentColor: '#ffffff',
       lastReach: null,
+      onTarget: false,
       player: this.match.player,
       keys: { forward: false, left: false, back: false, right: false, jump: false, attack: false, use: false },
       cps: { left: 0, right: 0 },
@@ -2827,6 +2828,8 @@ export class Game {
     f.gui = this.hud.guiScale;
     f.inGame = inGame;
     f.opponent = inGame ? this.match.bot : null;
+    // On an opponent within reach (any of them in a 2v2 or a party game).
+    f.onTarget = inGame && !p.dead && this.match.world.fighters.some((o) => o !== p && o.isEnemy(p) && rayDistanceToTarget(p, o) >= 0);
     f.opponentColor = this.match.profile.color;
     f.lastReach = this.lastReach;
     this.modHud.update(f);

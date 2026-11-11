@@ -153,7 +153,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | Keystrokes | W A S D, mouse buttons with CPS, space bar |
 | ToggleSprint Display · Coordinates | Sprint/sneak/fly state; XYZ and facing |
 | Zoom | Hold C to zoom (scroll for more), with slower mouse while zoomed |
-| Custom Crosshair | Cross, plus, dot, circle or T; size, gap, thickness, colour, outline |
+| Custom Crosshair | Cross, plus, dot, circle or T; size, gap, thickness, colour, outline. **New:** or **draw your own** on a 15×15 pixel grid in its settings (the middle pixel is where you aim; left button draws, right button or Erase rubs out, drag to paint, Mirror copies each stroke four ways, Clear, and ready-made starting points: cross, dot, ring, ring + dot, chevron, corners, X), with previews at real size. **On target:** while it is on an opponent within reach it can turn another colour (red by default), and also grow or pulse |
 | Low Fire · Low Shield | The burning overlay and a raised shield drawn lower |
 | Hit Color | The hurt flash in any colour and strength |
 | Particles+ | More crit and sharpness sparks |
