@@ -1096,6 +1096,14 @@ In **NethPot** it plays the pot game:
   and restocks the hotbar totem and healing pots when it has room
 - mends its armor with XP bottles in the gaps knockback opens, and eats a golden apple for absorption
   when you are far away
+- **mending sense** (the kits with XP bottles): from **LT2** up it reads you stopping to mend (an XP
+  bottle in your hand, more than 3.5 blocks away) as its own chance and mends then too, starting from a
+  little less worn than it otherwise would (LT2 thinks of it 60% of the time, HT2 80%, LT1 90%, HT1
+  always). **LT1 and HT1 mend by armor**: Mending gives each orb to a random damaged piece, so with
+  9 blocks of room and a worst piece under 60% they take their healthier damaged pieces off (as many
+  as the inventory has empty slots for), throw their bottles at the worst one alone, put the rest
+  back on and do the next. The armor goes straight back on if you come within 7 blocks or they drop
+  to 4 hearts
 - goes for jump crits and **P-crits** (LT1 55%, HT1 70% of the times you hit it)
 
 In **UHC** it plays the Axe-kit shield game (with stuns) plus:
