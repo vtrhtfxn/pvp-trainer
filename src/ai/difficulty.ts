@@ -84,6 +84,17 @@ export interface SenseSkill {
   escapeHP: number;
   /** Runs off to mend with XP once its worst armor piece is below this durability (0 = never). */
   mendRun: number;
+  /**
+   * Mends "by armor" (1 = yes). Mending gives each XP orb to a random damaged piece, so with
+   * room to spare it takes its healthier pieces off and throws its bottles at the worst one
+   * alone, then puts them back (and does the next). LT1 and HT1 only.
+   */
+  mendFocus: number;
+  /**
+   * Chance it reads you stopping to mend (an XP bottle in your hand) as its own chance: it mends
+   * then too, from a little further off empty than it otherwise would. LT2 and up.
+   */
+  mendRead: number;
   /** Mace: chance it wind-charges up from 5–10 blocks away and slides through the air onto you. */
   slide: number;
   /** UHC: chance it pulls the crossbow (bow taps when you're nearly dead) to stop you healing. */
@@ -277,7 +288,7 @@ const BASIC: Skills = {
   },
   mace: { launch: 0.25, steer: 0.4, elytra: false, pickMace: false, defend: 0, smashDepth: 0 },
   legacy: { cps: 5, blockHit: 0, blockTicks: [3, 5], blockOnHurt: 0 },
-  sense: { escape: 0.01, escapeHP: 5, mendRun: 0.2, slide: 0.03, finish: 0.05, wall: 0.02, read: 0.25, safeEat: true },
+  sense: { escape: 0.01, escapeHP: 5, mendRun: 0.2, slide: 0.03, finish: 0.05, wall: 0.02, read: 0.25, safeEat: true, mendFocus: 0, mendRead: 0 },
 };
 
 /** Skill 2 (from LT2 up): starts to space and W-tap; anchors, pearls, water and a crossbow come in. */
@@ -321,7 +332,7 @@ const DECENT: Skills = {
   },
   mace: { launch: 0.55, steer: 0.6, elytra: false, pickMace: true, defend: 1, smashDepth: 0.3 },
   legacy: { cps: 7, blockHit: 0.15, blockTicks: [3, 5], blockOnHurt: 0 },
-  sense: { escape: 0.35, escapeHP: 7, mendRun: 0.25, slide: 0.5, finish: 0.35, wall: 0.25, read: 0.45, safeEat: true },
+  sense: { escape: 0.35, escapeHP: 7, mendRun: 0.25, slide: 0.5, finish: 0.35, wall: 0.25, read: 0.45, safeEat: true, mendFocus: 0, mendRead: 0 },
 };
 
 /** Skill 4 = HT2: times its hits, sometimes W-taps and crits; uses the crossbow and hotbar totems. */
@@ -367,7 +378,7 @@ const GOOD: Skills = {
   },
   mace: { launch: 0.8, steer: 0.75, elytra: true, pickMace: true, defend: 1, smashDepth: 0.6 },
   legacy: { cps: 8.5, blockHit: 0.3, blockTicks: [2, 4], blockOnHurt: 0.1 },
-  sense: { escape: 0.6, escapeHP: 8, mendRun: 0.3, slide: 0.65, finish: 0.6, wall: 0.5, read: 0.6, safeEat: true },
+  sense: { escape: 0.6, escapeHP: 8, mendRun: 0.3, slide: 0.65, finish: 0.6, wall: 0.5, read: 0.6, safeEat: true, mendFocus: 0, mendRead: 0 },
 };
 
 /** Skill 6 = LT1: W-taps, jump-resets, crits, attribute swaps, surrounds and digs — every item. */
@@ -413,7 +424,7 @@ const STRONG: Skills = {
   },
   mace: { launch: 0.9, steer: 0.88, elytra: true, pickMace: true, defend: 2, smashDepth: 1 },
   legacy: { cps: 10, blockHit: 0.45, blockTicks: [2, 3], blockOnHurt: 0.2 },
-  sense: { escape: 0.8, escapeHP: 9, mendRun: 0.32, slide: 0.8, finish: 0.8, wall: 0.7, read: 0.75, safeEat: true },
+  sense: { escape: 0.8, escapeHP: 9, mendRun: 0.32, slide: 0.8, finish: 0.8, wall: 0.7, read: 0.75, safeEat: true, mendFocus: 0, mendRead: 0 },
 };
 
 /** Skill 8 (between LT1 and HT1): tier-tester level — near-perfect timing and spacing. */
@@ -448,7 +459,7 @@ const ELITE: Skills = {
   crystal: { ...STRONG.crystal, clickGap: 2, aimSettle: 2, comboGap: 5, thinkTicks: 3, selfWeight: 1 },
   mace: { launch: 0.92, steer: 0.9, elytra: true, pickMace: true, defend: 2, smashDepth: 1.1 },
   legacy: { cps: 11, blockHit: 0.5, blockTicks: [2, 3], blockOnHurt: 0.25 },
-  sense: { escape: 0.88, escapeHP: 9.5, mendRun: 0.34, slide: 0.86, finish: 0.88, wall: 0.8, read: 0.85, safeEat: true },
+  sense: { escape: 0.88, escapeHP: 9.5, mendRun: 0.34, slide: 0.86, finish: 0.88, wall: 0.8, read: 0.85, safeEat: true, mendFocus: 0, mendRead: 0 },
 };
 
 /**
@@ -484,7 +495,7 @@ const BEST: Skills = {
   crystal: { ...ELITE.crystal, clickGap: 1, aimSettle: 2, comboGap: 4, thinkTicks: 2, selfWeight: 1.1 },
   mace: { launch: 0.95, steer: 0.93, elytra: true, pickMace: true, defend: 2, smashDepth: 1.2 },
   legacy: { cps: 12, blockHit: 0.55, blockTicks: [1, 3], blockOnHurt: 0.3 },
-  sense: { escape: 0.95, escapeHP: 10, mendRun: 0.35, slide: 0.92, finish: 0.95, wall: 0.9, read: 0.92, safeEat: true },
+  sense: { escape: 0.95, escapeHP: 10, mendRun: 0.35, slide: 0.92, finish: 0.95, wall: 0.9, read: 0.92, safeEat: true, mendFocus: 0, mendRead: 0 },
 };
 
 /**
@@ -564,8 +575,11 @@ const TIERS: { id: TierId; name: string; tagline: string; color: string }[] = [
  * (about 0.55 s and 0.4 s in the Axe kit): they now take longer to notice it and to swing (about 0.75 s and 0.6 s).
  */
 function tweak(id: TierId, p: BotProfile): BotProfile {
-  if (id === 'lt2') return { ...p, axe: { ...p.axe, shieldReact: 11, axeDelay: [10, 15] } };
-  if (id === 'ht2') return { ...p, axe: { ...p.axe, shieldReact: 10, axeDelay: [8, 12] } };
+  // Mending sense comes in at tier 2 (reading your mending) and tier 1 (mending piece by piece).
+  if (id === 'lt2') return { ...p, axe: { ...p.axe, shieldReact: 11, axeDelay: [10, 15] }, sense: { ...p.sense, mendRead: 0.6 } };
+  if (id === 'ht2') return { ...p, axe: { ...p.axe, shieldReact: 10, axeDelay: [8, 12] }, sense: { ...p.sense, mendRead: 0.8 } };
+  if (id === 'lt1') return { ...p, sense: { ...p.sense, mendFocus: 1, mendRead: 0.9 } };
+  if (id === 'ht1') return { ...p, sense: { ...p.sense, mendFocus: 1, mendRead: 1 } };
   return p;
 }
 

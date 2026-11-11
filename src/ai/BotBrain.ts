@@ -131,6 +131,8 @@ const FACES: [number, number, number][] = [
 ];
 
 /** At or below this (health + absorption) the bot drops everything to heal, at every tier. */
+/** Blocks of room it wants before taking armor off to mend one piece (it puts it back on two blocks sooner). */
+const MEND_FOCUS_ROOM = 9;
 const CRITICAL_HP = 5;
 
 export class BotBrain {
@@ -234,6 +236,10 @@ export class BotBrain {
   private escapeFlight = false;
   /** Running off to mend: flees until there's room to throw the XP bottles. */
   private mendRunTicks = 0;
+  /** Mending by armor: the pieces taken off for now, as [armor slot, inventory slot]. */
+  private mendOff: [number, number][] = [];
+  /** Whether it took the opponent's mending as its own chance (null: they aren't mending). */
+  private mendReadRoll: boolean | null = null;
   /** UHC: whether it goes for the finish while they are low this time (rolled once per chance). */
   private finishRoll: boolean | null = null;
 
@@ -357,6 +363,8 @@ export class BotBrain {
     this.escapeWeb = false;
     this.escapeFlight = false;
     this.mendRunTicks = 0;
+    this.mendOff = [];
+    this.mendReadRoll = null;
     this.finishRoll = null;
     this.slideCooldown = 0;
     this.seen = [];
@@ -433,6 +441,7 @@ export class BotBrain {
     const b = this.bot;
     const T = this.target;
     this.ticks++;
+    this.mendFocusCheck();
     this.remember();
     const input: MoveInput = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
     if (b.dead || T.dead) {
@@ -1378,20 +1387,78 @@ export class BotBrain {
     if (buffOk && this.buffs && low('speed') && (has('swiftness') || has('long_swiftness'))) return { what: has('swiftness') ? 'swiftness' : 'long_swiftness', left: 1 };
     if (buffOk && low('regeneration') && has('regeneration')) return { what: 'regeneration', left: 1 };
     // Mending: in bursts whenever a knockback opens a gap.
-    if (N.mendAt > 0 && trueDist > 4.5 && b.countItem('experience_bottle') > 0) {
+    const S = this.profile.sense;
+    // They've stopped to mend (a bottle in hand, not on top of us): that time is ours too. One
+    // roll each time they start — a lower tier often doesn't think of it.
+    const theyMend = T.heldStack()?.id === 'experience_bottle' && !T.dead && trueDist > 3.5;
+    if (!theyMend) this.mendReadRoll = null;
+    else if (this.mendReadRoll === null) this.mendReadRoll = this.rng.chance(S.mendRead);
+    const reading = theyMend && this.mendReadRoll === true;
+    if (N.mendAt > 0 && trueDist > (reading ? 3.5 : 4.5) && b.countItem('experience_bottle') > 0) {
       let worst = 1;
+      let worstSlot = -1;
       let missing = 0;
       for (let i = 0; i < 4; i++) {
         const st = b.armorSlots[i];
         const f = durabilityFraction(st);
         if (f !== null) {
-          worst = Math.min(worst, f);
+          if (f < worst) {
+            worst = f;
+            worstSlot = i;
+          }
           missing += st!.damage ?? 0;
         }
       }
-      if (worst < N.mendAt) return { what: 'xp', left: Math.min(16, Math.ceil(missing / 14)) };
+      // While they mend it tops up from a little further off empty than it otherwise would.
+      const at = reading ? Math.min(0.95, N.mendAt + 0.2) : N.mendAt;
+      if (worst < at) {
+        // Mending by armor: with room to spare, the other damaged pieces come off first, so
+        // every orb goes to the worst one.
+        if (S.mendFocus > 0 && !this.mendOff.length && worst < 0.6 && trueDist > MEND_FOCUS_ROOM) {
+          const free: number[] = [];
+          for (let i = 9; i < 36 && free.length < 3; i++) if (!b.inventory[i]) free.push(i);
+          const moves: [number, number][] = [];
+          for (let i = 0; i < 4; i++) {
+            const st = b.armorSlots[i];
+            const f = durabilityFraction(st);
+            if (i === worstSlot || !st || f === null || !st.ench?.mending || (st.damage ?? 0) === 0 || f < worst + 0.12) continue;
+            const to = free.shift();
+            if (to === undefined) break;
+            moves.push([SLOT_ARMOR + i, to]);
+          }
+          if (moves.length) {
+            this.mendOff = moves;
+            this.openInv(moves.map((mv) => [mv[0], mv[1]]));
+            return null;
+          }
+        }
+        const need = this.mendOff.length && worstSlot >= 0 ? (b.armorSlots[worstSlot]?.damage ?? 0) : missing;
+        return { what: 'xp', left: Math.min(16, Math.max(1, Math.ceil(need / 14))) };
+      }
     }
     return null;
+  }
+
+  /**
+   * Mending by armor: the pieces it took off go back on once the worst one is mended, the
+   * bottles are gone, or the opponent is coming (armor first, mending later).
+   */
+  private mendFocusCheck() {
+    if (!this.mendOff.length || this.inv) return;
+    const b = this.bot;
+    const T = this.target;
+    const dist = Math.hypot(T.pos.x - b.pos.x, T.pos.z - b.pos.z);
+    let worst = 1;
+    for (let i = 0; i < 4; i++) {
+      const f = durabilityFraction(b.armorSlots[i]);
+      if (f !== null) worst = Math.min(worst, f);
+    }
+    const done = worst >= this.profile.neth.mendAt || b.countItem('experience_bottle') === 0;
+    if (!done && dist > MEND_FOCUS_ROOM - 2 && !b.dead && b.health > 8) return;
+    const back: [number, number][] = this.mendOff.filter(([armor, held]) => !b.getSlot(armor) && b.getSlot(held)).map(([armor, held]) => [held, armor]);
+    this.mendOff = [];
+    if (this.throwing?.what === 'xp') this.throwing = null;
+    if (back.length) this.openInv(back);
   }
 
   /** Select the item, look down, back away and throw; an XP bottle repeats on the held button. */
