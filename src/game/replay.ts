@@ -73,6 +73,8 @@ export interface ReplayHeader {
   /** Countdown length in ticks (older replays: the 3 s one). */
   /** A party minigame: how many played (the kit's usual number if unset). */
   players?: number;
+  /** You played left-handed (Main Hand: Left). */
+  leftHanded?: boolean;
   prep?: number;
   /** Date.now() when the duel started. */
   date: number;

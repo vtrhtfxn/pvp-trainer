@@ -352,7 +352,8 @@ export type ServerMsg =
    * Bed Wars / SkyWars: your scoreboard, the big title (respawn countdown) and your team's shop
    * upgrades — sent when any of them changes.
    */
-  | { t: 'mode'; sb: NetLine[]; title: { title: string; sub: string } | null; gear?: Record<string, unknown> }
+  /** `tags`: what each seat's nametag shows to you (null: the usual; '': nothing), when the mode says. */
+  | { t: 'mode'; sb: NetLine[]; title: { title: string; sub: string } | null; gear?: Record<string, unknown>; tags?: (string | null)[] }
   /** Mode announcements (bed destroyed, final kill, refill) for the chat. */
   | { t: 'announce'; lines: NetLine[] }
   /** A chest's contents, for the chest screen (items null: it is gone). */

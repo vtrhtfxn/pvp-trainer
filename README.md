@@ -513,6 +513,10 @@ leaves mid-game.
   have a bow; the murderer bot blends in for the first half minute and then picks off whoever is
   alone. Online, each player is told only their own role, and the innocent side wins together.
 
+Once you are out of a party game that is still going, you watch it through the eyes of the nearest
+player left (and the next one when they go out). Nametags say only what the game allows — "IT!"
+over the lit player in Hot Potato, nothing about anyone in Whodunit — online as well as offline.
+
 The modes are in `src/game/modes/` (`Sumo.ts`, `Crumble.ts`, `HotPotato.ts`, `Whodunit.ts`;
 shared helpers and the bots' path-finder `NavGrid` in `party.ts`; tests: `tests/party.test.ts`,
 `tests/partyOnline.test.ts`); each plays its own bots through `GameMode.botTick`. Online they run

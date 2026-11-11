@@ -2377,6 +2377,8 @@ export class Game {
   private squadView: Extract<ServerMsg, { t: 'squad' }> | null = null;
   /** 2v2: you're down and the camera is on your ally. */
   private watchingAlly = false;
+  /** A party minigame you're out of: whose eyes you're watching through. */
+  private partyWatch: Fighter | null = null;
 
   private startRecording(m: Match, seed: number) {
     const s = this.session;
@@ -2396,6 +2398,7 @@ export class Game {
       raining: m.world.raining,
       prep: m.countdownTicks,
       players: kit.party ? m.fighters.length : undefined,
+      leftHanded: this.settings.mainHand === 'left' || undefined,
       date: Date.now(),
     });
     rec.start(m.player);
@@ -2683,12 +2686,21 @@ export class Game {
       // fights, you watch through their eyes.
       const others = this.othersOf(m);
       const foe = others.length ? this.focusEnemy(m) : m.bot;
-      const ally = others.find((f) => f.team === p.team && !f.dead);
-      const watchAlly = !!ally && p.dead && m.phase === 'fight' && this.state === 'playing';
+      // Out of a party minigame with others still playing: you watch one of them the same way
+      // (the nearest, and the same one until they are out too).
+      const down = p.dead && m.phase === 'fight' && this.state === 'playing';
+      if (!down || !m.kit.party || this.partyWatch?.dead) this.partyWatch = null;
+      if (down && m.kit.party && !this.partyWatch) {
+        const near = (f: Fighter) => Math.hypot(f.pos.x - p.pos.x, f.pos.z - p.pos.z);
+        this.partyWatch = [...others, m.bot].filter((f) => f !== p && !f.dead).sort((a, b) => near(a) - near(b))[0] ?? null;
+      }
+      const ally = this.partyWatch ?? others.find((f) => f.team === p.team && !f.dead);
+      const watchAlly = !!ally && down;
       const eye = watchAlly ? ally! : p;
       const theirFoe = watchAlly ? this.nearestEnemy(m, ally!) : foe;
       // A minigame can say what nametags show (Hot Potato: who is lit; Whodunit: nothing).
-      const modeTag = (f: Fighter) => (m instanceof Match ? (m.mode?.tagStatus?.(m, f, p) ?? null) : null);
+      // (Online the host sends them, one per fighter.)
+      const modeTag = (f: Fighter) => (m instanceof Match ? (m.mode?.tagStatus?.(m, f, p) ?? null) : (m.modeUi.tags?.[m.fighters.indexOf(f)] ?? null));
       this.view.extras.others = [p, ...others, m.bot]
         .filter((f) => f !== eye && f !== theirFoe && others.length > 0)
         .map((f) => ({ f, name: f.name, color: f.team === p.team ? '#55ff55' : m.profile.color, status: modeTag(f) ?? '' }));

@@ -102,4 +102,25 @@ describe('party minigames online', () => {
     }
     vi.useRealTimers();
   }, 240_000);
+
+  it('nametags online say what the game allows: who is lit in Hot Potato, nothing in Whodunit', () => {
+    vi.useFakeTimers();
+    for (const kit of ['hotpotato', 'whodunit'] as const) {
+      const lobby = new Lobby();
+      const a = conn();
+      lobby.connect(a);
+      a.say({ t: 'join', room: 'TAGS', name: 'A', v: PROTOCOL_VERSION, kit, squad: { tier: 'lt3', size: 4 } });
+      a.say({ t: 'go' });
+      const duel = lobby.rooms.get('TAGS')!.duel!;
+      // Into the fight, and past Hot Potato's two seconds before someone is lit.
+      while (duel.phase !== 'fight') vi.advanceTimersByTime(50);
+      vi.advanceTimersByTime(4000);
+      const tags = a.last('mode')!.tags!;
+      expect(tags, kit).toHaveLength(4);
+      if (kit === 'whodunit') expect(tags).toEqual(['', '', '', '']);
+      else expect(tags.filter((t) => t === 'IT!'), kit).toHaveLength(1);
+      lobby.closeAll();
+    }
+    vi.useRealTimers();
+  });
 });

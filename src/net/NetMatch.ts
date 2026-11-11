@@ -303,7 +303,7 @@ export class NetMatch {
    */
   readonly mode: GameMode | null;
   /** The server's scoreboard, title and team upgrades for us. */
-  modeUi: { sb: ScoreLine[]; title: { title: string; sub: string } | null; gear: TeamGear | null } = { sb: [], title: null, gear: null };
+  modeUi: { sb: ScoreLine[]; title: { title: string; sub: string } | null; gear: TeamGear | null; tags?: (string | null)[] } = { sb: [], title: null, gear: null };
   /** Announcements not yet shown. */
   announcements: ScoreLine[] = [];
   /** Chest contents the server sent (the newest), and whether it asked to open the screen. */
@@ -500,7 +500,13 @@ export class NetMatch {
         this.teleportAck = msg.id;
         break;
       case 'mode':
-        this.modeUi = { sb: msg.sb ?? [], title: msg.title ?? null, gear: (msg.gear as unknown as TeamGear) ?? null };
+        this.modeUi = {
+          sb: msg.sb ?? [],
+          title: msg.title ?? null,
+          gear: (msg.gear as unknown as TeamGear) ?? null,
+          // Short plain text only, one per fighter.
+          tags: Array.isArray(msg.tags) ? msg.tags.slice(0, this.fighters.length).map((t) => (typeof t === 'string' ? t.slice(0, 24) : null)) : undefined,
+        };
         break;
       case 'announce':
         this.announcements.push(...(msg.lines ?? []));
