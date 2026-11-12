@@ -17,6 +17,7 @@ import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
 import { VoiceChat, type VoiceSettings } from '../net/voice';
 import { FramePacer } from './FramePacer';
 import { pictureTexture } from '../render/shieldStatus';
+import { attackIndicatorFor } from '../render/Crosshair';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
 import type { Assets } from '../render/assets';
@@ -527,6 +528,7 @@ export class Game {
       opponent: null,
       opponentColor: '#ffffff',
       lastReach: null,
+      onTarget: false,
       player: this.match.player,
       keys: { forward: false, left: false, back: false, right: false, jump: false, attack: false, use: false },
       cps: { left: 0, right: 0 },
@@ -2377,6 +2379,8 @@ export class Game {
   private squadView: Extract<ServerMsg, { t: 'squad' }> | null = null;
   /** 2v2: you're down and the camera is on your ally. */
   private watchingAlly = false;
+  /** A party minigame you're out of: whose eyes you're watching through. */
+  private partyWatch: Fighter | null = null;
 
   private startRecording(m: Match, seed: number) {
     const s = this.session;
@@ -2396,6 +2400,7 @@ export class Game {
       raining: m.world.raining,
       prep: m.countdownTicks,
       players: kit.party ? m.fighters.length : undefined,
+      leftHanded: this.settings.mainHand === 'left' || undefined,
       date: Date.now(),
     });
     rec.start(m.player);
@@ -2637,6 +2642,7 @@ export class Game {
       tag.color = onB ? spec.colorA : spec.colorB;
       tag.status = spec.label(onB ? 'a' : 'b');
       this.view.crosshairOn = pov && this.hud.crosshairShown;
+      this.view.attackIndicator = pov && this.hud.shown ? attackIndicatorFor(cp, rayDistanceToTarget(cp, cb) >= 0) : null;
       this.view.crosshairGui = this.hud.guiScale;
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);
       this.specHud.update(spec, dt);
@@ -2683,12 +2689,21 @@ export class Game {
       // fights, you watch through their eyes.
       const others = this.othersOf(m);
       const foe = others.length ? this.focusEnemy(m) : m.bot;
-      const ally = others.find((f) => f.team === p.team && !f.dead);
-      const watchAlly = !!ally && p.dead && m.phase === 'fight' && this.state === 'playing';
+      // Out of a party minigame with others still playing: you watch one of them the same way
+      // (the nearest, and the same one until they are out too).
+      const down = p.dead && m.phase === 'fight' && this.state === 'playing';
+      if (!down || !m.kit.party || this.partyWatch?.dead) this.partyWatch = null;
+      if (down && m.kit.party && !this.partyWatch) {
+        const near = (f: Fighter) => Math.hypot(f.pos.x - p.pos.x, f.pos.z - p.pos.z);
+        this.partyWatch = [...others, m.bot].filter((f) => f !== p && !f.dead).sort((a, b) => near(a) - near(b))[0] ?? null;
+      }
+      const ally = this.partyWatch ?? others.find((f) => f.team === p.team && !f.dead);
+      const watchAlly = !!ally && down;
       const eye = watchAlly ? ally! : p;
       const theirFoe = watchAlly ? this.nearestEnemy(m, ally!) : foe;
       // A minigame can say what nametags show (Hot Potato: who is lit; Whodunit: nothing).
-      const modeTag = (f: Fighter) => (m instanceof Match ? (m.mode?.tagStatus?.(m, f, p) ?? null) : null);
+      // (Online the host sends them, one per fighter.)
+      const modeTag = (f: Fighter) => (m instanceof Match ? (m.mode?.tagStatus?.(m, f, p) ?? null) : (m.modeUi.tags?.[m.fighters.indexOf(f)] ?? null));
       this.view.extras.others = [p, ...others, m.bot]
         .filter((f) => f !== eye && f !== theirFoe && others.length > 0)
         .map((f) => ({ f, name: f.name, color: f.team === p.team ? '#55ff55' : m.profile.color, status: modeTag(f) ?? '' }));
@@ -2696,6 +2711,8 @@ export class Game {
       tag.color = theirFoe.team === p.team ? '#55ff55' : m.profile.color;
       tag.status = this.state === 'menu' ? '' : (modeTag(theirFoe) ?? (theirFoe !== m.bot ? '' : m.brain.label));
       this.view.crosshairOn = (this.state === 'playing' || this.state === 'paused') && this.hud.crosshairShown;
+      const firstPerson = this.view.cameraMode === 'first' && !this.view.extras.freelook && eye === p;
+      this.view.attackIndicator = (this.state === 'playing' || this.state === 'paused') && this.hud.shown && firstPerson ? attackIndicatorFor(p, m.world.fighters.some((o) => o !== p && o.isEnemy(p) && rayDistanceToTarget(p, o) >= 0)) : null;
       this.view.crosshairGui = this.hud.guiScale;
       if (watchAlly !== this.watchingAlly) {
         this.watchingAlly = watchAlly;
@@ -2815,6 +2832,8 @@ export class Game {
     f.gui = this.hud.guiScale;
     f.inGame = inGame;
     f.opponent = inGame ? this.match.bot : null;
+    // On an opponent within reach (any of them in a 2v2 or a party game).
+    f.onTarget = inGame && !p.dead && this.match.world.fighters.some((o) => o !== p && o.isEnemy(p) && rayDistanceToTarget(p, o) >= 0);
     f.opponentColor = this.match.profile.color;
     f.lastReach = this.lastReach;
     this.modHud.update(f);

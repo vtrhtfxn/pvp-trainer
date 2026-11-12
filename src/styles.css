@@ -481,35 +481,6 @@ body {
   transform: translateX(-50%);
   image-rendering: pixelated;
 }
-.attack-bar {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + var(--gui) * 9px);
-  width: calc(var(--gui) * 16px);
-  height: calc(var(--gui) * 4px);
-  transform: translateX(-50%);
-  background: rgba(40, 40, 40, 0.8);
-  mix-blend-mode: normal;
-  box-shadow: 0 0 0 calc(var(--gui) * 0.5px) rgba(0, 0, 0, 0.6);
-}
-.attack-fill {
-  height: 100%;
-  background: #e8e8e8;
-}
-.attack-full {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + var(--gui) * 7px);
-  width: calc(var(--gui) * 16px);
-  height: calc(var(--gui) * 8px);
-  transform: translateX(-50%);
-  display: none;
-  background:
-    linear-gradient(135deg, transparent 38%, #fff 38%, #fff 50%, transparent 50%) center / 70% 100% no-repeat,
-    linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, 0.85) 20%, rgba(255, 255, 255, 0.85) 80%, transparent 80%)
-      center 85% / 100% 25% no-repeat;
-  opacity: 0.9;
-}
 .eat-bar {
   position: absolute;
   left: 50%;
@@ -5162,3 +5133,21 @@ body.broadcasting .hud .effects {
 .voice-hud .vc-dim { color: #aaaaaa; }
 .voice-hud .vc-err { color: #ff5555; }
 .sq-party { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px; margin: 6px 0; }
+/* Custom Crosshair on an opponent in reach */
+.mod-crosshair { transition: transform 0.08s ease-out; }
+.mod-crosshair.grow { transform: translate(-50%, -50%) scale(1.35); }
+.mod-crosshair.pulse { animation: xh-pulse 0.5s ease-in-out infinite; }
+@keyframes xh-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.3); }
+}
+/* Marketplace: crosshair pixel editor */
+.xh-editor { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; padding: 6px; background: rgba(0, 0, 0, 0.35); }
+.xh-title { color: #c8c8c8; font-size: 13px; }
+.xh-row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.xh-board { width: 240px; height: 240px; image-rendering: pixelated; cursor: crosshair; touch-action: none; border: 2px solid #555; }
+.xh-side { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
+.xh-side .mc-btn { width: auto; }
+.xh-previews { display: flex; gap: 10px; }
+.xh-previews > div { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #a8a8a8; font-size: 12px; }
+.xh-preview { width: 68px; height: 68px; image-rendering: pixelated; border: 1px solid #555; }

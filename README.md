@@ -153,7 +153,7 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | Keystrokes | W A S D, mouse buttons with CPS, space bar |
 | ToggleSprint Display · Coordinates | Sprint/sneak/fly state; XYZ and facing |
 | Zoom | Hold C to zoom (scroll for more), with slower mouse while zoomed |
-| Custom Crosshair | Cross, plus, dot, circle or T; size, gap, thickness, colour, outline |
+| Custom Crosshair | Cross, plus, dot, circle or T; size, gap, thickness, colour, outline. **New:** or **draw your own** on a 15×15 pixel grid in its settings (the middle pixel is where you aim; left button draws, right button or Erase rubs out, drag to paint, Mirror copies each stroke four ways, Clear, and ready-made starting points: cross, dot, ring, ring + dot, chevron, corners, X), with previews at real size. **On target:** while it is on an opponent within reach it can turn another colour (red by default), and also grow or pulse |
 | Low Fire · Low Shield | The burning overlay and a raised shield drawn lower |
 | Hit Color | The hurt flash in any colour and strength |
 | Particles+ | More crit and sharpness sparks |
@@ -512,6 +512,10 @@ leaves mid-game.
   they see with a sword out or see killing, flee them through the doorways, and shoot them if they
   have a bow; the murderer bot blends in for the first half minute and then picks off whoever is
   alone. Online, each player is told only their own role, and the innocent side wins together.
+
+Once you are out of a party game that is still going, you watch it through the eyes of the nearest
+player left (and the next one when they go out). Nametags say only what the game allows — "IT!"
+over the lit player in Hot Potato, nothing about anyone in Whodunit — online as well as offline.
 
 The modes are in `src/game/modes/` (`Sumo.ts`, `Crumble.ts`, `HotPotato.ts`, `Whodunit.ts`;
 shared helpers and the bots' path-finder `NavGrid` in `party.ts`; tests: `tests/party.test.ts`,
@@ -881,6 +885,10 @@ nametag reads *Passive*.
 
 - **Attack cooldown**: damage × (0.2 + 0.8·charge²); a sword fully charges in 12 ticks
   (0.6 s). Every click, including a miss, resets the cooldown. Switching items resets it too.
+  Under the crosshair, vanilla's **attack indicator** shows it with Minecraft's own sprites (or a
+  resource pack's): the little sword filling up in 16 steps while it charges, and the full-strength
+  sign when a fully charged hit is on an opponent in reach — drawn inverted over whatever is behind
+  it, like vanilla. Not in 1.8 kits (no cooldown).
 - **Reach**: 3.0 blocks from the eyes to the hitbox, ray-tested against your crosshair. The box a
   swing has to hit is 10% wider and 9% taller than the body (0.66 × 1.96). A click is judged on
   what is on screen when you click — both fighters where they are drawn, your aim as it is — like

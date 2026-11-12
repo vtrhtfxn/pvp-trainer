@@ -22,6 +22,7 @@ export function replayMatch(d: ReplayData): Match {
   const m = new Match(replayKit(d), replayProfile(d), d.seed, undefined, d.players);
   m.countdownTicks = d.prep ?? COUNTDOWN_TICKS;
   m.player.name = d.playerName;
+  m.player.leftHanded = !!d.leftHanded;
   m.bot.name = d.botName;
   Object.assign(m.world.rules, d.rules);
   m.world.dayTime = d.dayTime;

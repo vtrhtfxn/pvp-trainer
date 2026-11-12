@@ -1,3 +1,4 @@
+import { GRID, decodeGrid } from './crosshairGrid';
 import type { Fighter } from '../game/Fighter';
 import { ITEMS, POTIONS, stackName, type ItemId, type ItemStack, type PotionId } from '../game/items';
 import { drawDurabilityBar, itemIcon } from '../render/itemIcons';
@@ -25,6 +26,8 @@ export interface WidgetFrame {
   opponent: Fighter | null;
   opponentColor: string;
   lastReach: number | null;
+  /** The crosshair is on an opponent within reach (Custom Crosshair's on-target look). */
+  onTarget: boolean;
 }
 
 const WIDGETS: ModId[] = [
@@ -214,7 +217,7 @@ export class ModHud {
     }
     if (show && !this.editing) this.checkOverlap();
     this.drawArmor(show && this.mods.on('armorhud') ? f! : null);
-    this.drawCrosshair(!!f && f.inGame && this.mods.on('crosshair'));
+    this.drawCrosshair(!!f && f.inGame && this.mods.on('crosshair'), !!f?.onTarget);
   }
 
   /**
@@ -491,7 +494,22 @@ export class ModHud {
   }
 
   /** Custom Crosshair: drawn on a canvas at the screen centre (the vanilla one is hidden). */
-  private drawCrosshair(on: boolean) {
+  /** Your own drawing as the crosshair, its middle pixel on the screen's centre. */
+  private drawPixels(c: HTMLCanvasElement, pixels: string, color: string, outline: boolean) {
+    const px = GRID + 2;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const k = 2 * dpr; // crosshair pixels are drawn at 2 screen pixels
+    c.width = px * k;
+    c.height = px * k;
+    c.style.width = `${px * 2}px`;
+    c.style.height = `${px * 2}px`;
+    const x = c.getContext('2d')!;
+    x.setTransform(k, 0, 0, k, 0, 0);
+    x.clearRect(0, 0, px, px);
+    paintGrid(x, pixels, color, outline);
+  }
+
+  private drawCrosshair(on: boolean, aimed: boolean) {
     const c = this.crosshair;
     document.body.classList.toggle('custom-crosshair', on);
     if (!on) {
@@ -500,9 +518,19 @@ export class ModHud {
     }
     if (c.style.display === 'none') c.style.display = '';
     const g = (k: string) => this.mods.cfg('crosshair', k);
-    const key = ['style', 'color', 'size', 'gap', 'thickness', 'outline', 'dot'].map((k) => String(g(k))).join('|');
+    // On an opponent in reach: the target colour, and bigger or pulsing if chosen.
+    const hot = aimed && !!g('onTarget');
+    const effect = String(g('targetEffect'));
+    c.classList.toggle('grow', hot && effect === 'grow');
+    c.classList.toggle('pulse', hot && effect === 'pulse');
+    const key = ['style', 'color', 'size', 'gap', 'thickness', 'outline', 'dot', 'pixels', 'targetColor'].map((k) => String(g(k))).join('|') + (hot ? '|hot' : '');
     if (key === this.crosshairKey) return;
     this.crosshairKey = key;
+    const color = String(hot ? g('targetColor') : g('color'));
+    if (g('style') === 'drawn') {
+      this.drawPixels(c, String(g('pixels')), color, !!g('outline'));
+      return;
+    }
     const size = Number(g('size'));
     const gap = Number(g('gap'));
     const th = Number(g('thickness'));
@@ -518,7 +546,6 @@ export class ModHud {
     x.setTransform(k, 0, 0, k, 0, 0);
     x.clearRect(0, 0, px, px);
     const cx = R;
-    const color = String(g('color'));
     const rects: [number, number, number, number][] = [];
     const style = g('style');
     const half = Math.floor(th / 2);
@@ -553,6 +580,17 @@ export class ModHud {
     x.fillStyle = color;
     for (const [a, b, w, h] of rects) x.fillRect(a, b, w, h);
   }
+}
+
+/** A crosshair drawn on the 15×15 grid (with a one-pixel border for its outline). */
+export function paintGrid(x: CanvasRenderingContext2D, pixels: string, color: string, outline: boolean, at = 1) {
+  const cells = decodeGrid(pixels);
+  if (outline) {
+    x.fillStyle = 'rgba(0,0,0,0.85)';
+    cells.forEach((on, i) => on && x.fillRect(at + (i % GRID) - 1, at + Math.floor(i / GRID) - 1, 3, 3));
+  }
+  x.fillStyle = color;
+  cells.forEach((on, i) => on && x.fillRect(at + (i % GRID), at + Math.floor(i / GRID), 1, 1));
 }
 
 /** What each widget is called in the HUD editor. */

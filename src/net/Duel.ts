@@ -543,6 +543,8 @@ export class Duel {
         sb: mode.scoreboard(this, f),
         title: mode.title(this, f),
         gear: mode instanceof Bedwars ? ({ ...mode.gear(this, f) } as Record<string, unknown>) : undefined,
+        // Nametags the mode has a say in (Hot Potato: who is lit; Whodunit: nothing about anyone).
+        tags: mode.tagStatus ? this.fighters.map((g) => mode.tagStatus!(this, g, f)) : undefined,
       };
       const json = JSON.stringify(ui);
       if (json !== this.lastModeUi[i]) {
