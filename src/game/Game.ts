@@ -17,6 +17,7 @@ import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
 import { VoiceChat, type VoiceSettings } from '../net/voice';
 import { FramePacer } from './FramePacer';
 import { pictureTexture } from '../render/shieldStatus';
+import { attackIndicatorFor } from '../render/Crosshair';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
 import type { Assets } from '../render/assets';
@@ -2641,6 +2642,7 @@ export class Game {
       tag.color = onB ? spec.colorA : spec.colorB;
       tag.status = spec.label(onB ? 'a' : 'b');
       this.view.crosshairOn = pov && this.hud.crosshairShown;
+      this.view.attackIndicator = pov && this.hud.shown ? attackIndicatorFor(cp, rayDistanceToTarget(cp, cb) >= 0) : null;
       this.view.crosshairGui = this.hud.guiScale;
       this.view.render(cp, cb, alpha, this.time, dt, s, tag);
       this.specHud.update(spec, dt);
@@ -2709,6 +2711,8 @@ export class Game {
       tag.color = theirFoe.team === p.team ? '#55ff55' : m.profile.color;
       tag.status = this.state === 'menu' ? '' : (modeTag(theirFoe) ?? (theirFoe !== m.bot ? '' : m.brain.label));
       this.view.crosshairOn = (this.state === 'playing' || this.state === 'paused') && this.hud.crosshairShown;
+      const firstPerson = this.view.cameraMode === 'first' && !this.view.extras.freelook && eye === p;
+      this.view.attackIndicator = (this.state === 'playing' || this.state === 'paused') && this.hud.shown && firstPerson ? attackIndicatorFor(p, m.world.fighters.some((o) => o !== p && o.isEnemy(p) && rayDistanceToTarget(p, o) >= 0)) : null;
       this.view.crosshairGui = this.hud.guiScale;
       if (watchAlly !== this.watchingAlly) {
         this.watchingAlly = watchAlly;

@@ -177,6 +177,10 @@ export async function parseZipPack(bytes: Uint8Array, known: ReadonlySet<string>
  */
 export const ICON_SPRITES: Record<string, [number, number, number, number]> = {
   'gui/sprites/hud/crosshair': [0, 0, 15, 15],
+  // (1.9–1.19: the attack indicator, from GuiIngame.renderAttackIndicator.)
+  'gui/sprites/hud/crosshair_attack_indicator_full': [68, 94, 16, 16],
+  'gui/sprites/hud/crosshair_attack_indicator_background': [36, 94, 16, 4],
+  'gui/sprites/hud/crosshair_attack_indicator_progress': [52, 94, 16, 4],
   'gui/sprites/hud/heart/container': [16, 0, 9, 9],
   'gui/sprites/hud/heart/container_blinking': [25, 0, 9, 9],
   'gui/sprites/hud/heart/full': [52, 0, 9, 9],

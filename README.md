@@ -885,6 +885,10 @@ nametag reads *Passive*.
 
 - **Attack cooldown**: damage × (0.2 + 0.8·charge²); a sword fully charges in 12 ticks
   (0.6 s). Every click, including a miss, resets the cooldown. Switching items resets it too.
+  Under the crosshair, vanilla's **attack indicator** shows it with Minecraft's own sprites (or a
+  resource pack's): the little sword filling up in 16 steps while it charges, and the full-strength
+  sign when a fully charged hit is on an opponent in reach — drawn inverted over whatever is behind
+  it, like vanilla. Not in 1.8 kits (no cooldown).
 - **Reach**: 3.0 blocks from the eyes to the hitbox, ray-tested against your crosshair. The box a
   swing has to hit is 10% wider and 9% taller than the body (0.66 × 1.96). A click is judged on
   what is on screen when you click — both fighters where they are drawn, your aim as it is — like

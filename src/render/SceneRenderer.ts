@@ -24,7 +24,7 @@ import { PlayerModel } from './PlayerModel';
 import type { ShieldStatusOpts } from './shieldStatus';
 import type { Skin } from './skins';
 import { setWorldLight } from './light';
-import { Crosshair } from './Crosshair';
+import { Crosshair, type AttackIndicator } from './Crosshair';
 import { Glint } from './glint';
 import { RainView } from './Weather';
 
@@ -161,6 +161,8 @@ export class SceneRenderer {
   private readonly crosshair = new Crosshair();
   /** Draw the crosshair this frame (the HUD is up and no custom crosshair replaces it), at this GUI scale. */
   crosshairOn = false;
+  /** Vanilla's attack indicator under the crosshair (null: not shown). */
+  attackIndicator: AttackIndicator = null;
   crosshairGui = 2;
   private readonly viewShake = new THREE.Matrix4();
   cameraMode: CameraMode = 'orbit';
@@ -759,6 +761,6 @@ export class SceneRenderer {
       this.renderer.clearDepth();
       this.renderer.render(this.firstPerson.scene, this.firstPerson.camera);
     }
-    if (this.crosshairOn) this.crosshair.render(this.renderer, this.crosshairGui);
+    if (this.crosshairOn || this.attackIndicator) this.crosshair.render(this.renderer, this.crosshairGui, this.crosshairOn, this.attackIndicator);
   }
 }

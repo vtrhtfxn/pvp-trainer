@@ -105,9 +105,6 @@ export class HUD {
   readonly root: HTMLDivElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly attackBar: HTMLDivElement;
-  private readonly attackFill: HTMLDivElement;
-  private readonly attackFull: HTMLDivElement;
   private readonly eatBar: HTMLDivElement;
   private readonly eatFill: HTMLDivElement;
   readonly practice: HTMLDivElement;
@@ -154,9 +151,6 @@ export class HUD {
     this.sprites = makeHudSprites();
     this.canvas = el('canvas', 'hud-bars', this.root);
     this.ctx = this.canvas.getContext('2d')!;
-    this.attackBar = el('div', 'attack-bar', this.root);
-    this.attackFill = el('div', 'attack-fill', this.attackBar);
-    this.attackFull = el('div', 'attack-full', this.root);
     this.eatBar = el('div', 'eat-bar', this.root);
     this.eatFill = el('div', 'eat-fill', this.eatBar);
     this.practice = el('div', 'practice', this.root);
@@ -274,6 +268,11 @@ export class HUD {
     this.root.style.display = v ? '' : 'none';
   }
 
+  /** The HUD is on screen (the attack indicator shows with it, under any crosshair). */
+  get shown(): boolean {
+    return this.root.style.display !== 'none';
+  }
+
   /** The vanilla crosshair belongs on screen: the HUD is up and no custom crosshair replaces it. */
   get crosshairShown(): boolean {
     return this.root.style.display !== 'none' && !document.body.classList.contains('custom-crosshair');
@@ -388,13 +387,6 @@ export class HUD {
     const eye = this.mods?.on('bactromod') && this.mods.cfg('bactromod', 'noLiquid') ? null : eyeFluid(player);
     this.fluidTint.className = `fluid-tint${info.firstPerson && eye ? ` ${eye}` : ''}`;
 
-    // ---- crosshair + attack indicator (Gui.renderCrosshair)
-    const charge = player.attackStrengthScale(0);
-    // 1.8 had no attack indicator (and no cooldown to show).
-    const fullAndAiming = info.aimingAtBot && charge >= 1 && player.attackDelay() > 5 && !player.world.legacyCombat;
-    this.attackFull.style.display = fullAndAiming ? 'block' : 'none';
-    this.attackBar.style.display = !fullAndAiming && charge < 1 ? 'block' : 'none';
-    this.attackFill.style.width = `${Math.min(100, (Math.floor(charge * 17) / 16) * 100)}%`;
 
     // Use progress: eating, drawing a bow, loading a crossbow.
     const kind = player.useKind();

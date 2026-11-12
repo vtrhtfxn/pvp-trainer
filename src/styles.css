@@ -481,35 +481,6 @@ body {
   transform: translateX(-50%);
   image-rendering: pixelated;
 }
-.attack-bar {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + var(--gui) * 9px);
-  width: calc(var(--gui) * 16px);
-  height: calc(var(--gui) * 4px);
-  transform: translateX(-50%);
-  background: rgba(40, 40, 40, 0.8);
-  mix-blend-mode: normal;
-  box-shadow: 0 0 0 calc(var(--gui) * 0.5px) rgba(0, 0, 0, 0.6);
-}
-.attack-fill {
-  height: 100%;
-  background: #e8e8e8;
-}
-.attack-full {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + var(--gui) * 7px);
-  width: calc(var(--gui) * 16px);
-  height: calc(var(--gui) * 8px);
-  transform: translateX(-50%);
-  display: none;
-  background:
-    linear-gradient(135deg, transparent 38%, #fff 38%, #fff 50%, transparent 50%) center / 70% 100% no-repeat,
-    linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, 0.85) 20%, rgba(255, 255, 255, 0.85) 80%, transparent 80%)
-      center 85% / 100% 25% no-repeat;
-  opacity: 0.9;
-}
 .eat-bar {
   position: absolute;
   left: 50%;
