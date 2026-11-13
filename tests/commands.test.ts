@@ -237,3 +237,89 @@ describe('commands', () => {
     expect(t.out.at(-1)).toBe('[Steve] hi');
   });
 });
+
+describe('more commands', () => {
+  it('/summon puts crystals, TNT and lightning in the world', () => {
+    const t = setup();
+    t.run('/summon end_crystal ~ ~ ~3');
+    expect(t.m.world.crystals.length).toBe(1);
+    t.run('/summon tnt ~ ~ ~5');
+    expect(t.m.world.carts.at(-1)!.fuse).toBe(80);
+    const b = t.m.bot;
+    t.run(`/summon lightning_bolt ${b.pos.x} ${b.pos.y} ${b.pos.z}`);
+    expect(b.health).toBeLessThan(20);
+    expect(b.fireTicks).toBeGreaterThan(0);
+    expect(t.fail('/summon creeper').message).toMatch(/creeper/);
+  });
+
+  it('/data get entity reads health, position and more', () => {
+    const t = setup();
+    t.run('/data get entity @s Health');
+    expect(t.out.at(-1)).toBe('Steve has the following entity data: 20f');
+    t.run('/data get entity bot foodLevel');
+    expect(t.out.at(-1)).toMatch(/: 20$/);
+    expect(t.fail('/data get entity @s Nope').message).toMatch(/Found no elements/);
+    expect(t.suggest('/data get entity @s Fa')).toEqual(['FallDistance']);
+  });
+
+  it('/item replace fills a named slot', () => {
+    const t = setup();
+    t.run('/item replace entity @s armor.head with iron_helmet');
+    expect(t.m.player.armorSlots[0]!.id).toBe('iron_helmet');
+    t.run('/item replace entity @s hotbar.4 with golden_apple 16');
+    expect(t.m.player.inventory[4]).toMatchObject({ id: 'golden_apple', count: 16 });
+    t.run('/item replace entity @s weapon.offhand with totem_of_undying');
+    expect(t.m.player.offhand!.id).toBe('totem_of_undying');
+    expect(t.fail('/item replace entity @s armor.feet with diamond_sword').message).toMatch(/can't be worn/);
+    expect(t.fail('/item replace entity @s pocket with stick').message).toMatch(/Unknown slot/);
+  });
+
+  it('/clone copies blocks; masked skips air', () => {
+    const t = setup();
+    t.run('/fill 0 0 0 1 1 1 obsidian');
+    t.run('/clone 0 0 0 1 1 1 5 0 5');
+    expect(t.m.world.blocks.get(6, 1, 6)).toBe(B.OBSIDIAN);
+    expect(t.out.at(-1)).toBe('Successfully cloned 8 block(s)');
+    t.run('/clone 0 0 0 1 1 1 10 0 10 replace move');
+    expect(t.m.world.blocks.get(0, 0, 0)).toBe(B.AIR);
+    expect(t.m.world.blocks.get(11, 1, 11)).toBe(B.OBSIDIAN);
+  });
+
+  it('/tellraw prints a JSON text component', () => {
+    const t = setup();
+    t.run('/tellraw @a ["",{"text":"GG ","color":"gold"},{"text":"well played","bold":true}]');
+    expect(t.out.at(-1)).toBe('GG well played');
+    expect(t.fail('/tellraw @a {oops').message).toMatch(/Invalid chat component/);
+  });
+
+  it('/execute runs a command as someone else, with if/unless entity', () => {
+    const t = setup();
+    t.run('/execute as bot run effect give @s speed');
+    expect(t.m.bot.effects.has('speed')).toBe(true);
+    expect(t.m.player.effects.has('speed')).toBe(false);
+    expect(t.run('/execute as @a run feed')).toBe(2);
+    t.run('/execute if entity bot run say hi');
+    expect(t.out.at(-1)).toBe('[Steve] hi');
+    expect(t.fail('/execute unless entity bot run say hi').message).toBe('Test failed');
+    expect(t.fail('/execute sideways run say hi').message).toMatch(/Unknown execute subcommand/);
+  });
+
+  it('/seed, /stats, /feed, /repair, /distance, /pos', () => {
+    const t = setup();
+    expect(t.run('/seed')).toBe(t.m.seed);
+    t.m.player.food.level = 5;
+    t.run('/feed');
+    expect(t.m.player.food.level).toBe(20);
+    t.m.player.armorSlots[0]!.damage = 100;
+    t.run('/repair @s');
+    expect(t.m.player.armorSlots[0]!.damage).toBe(0);
+    expect(t.fail('/repair').message).toBe('Nothing to repair');
+    t.run('/stats');
+    expect(t.out.some((l) => l.startsWith('  Hits:'))).toBe(true);
+    const d = t.run('/distance');
+    expect(d).toBeCloseTo(Math.hypot(t.m.bot.pos.x - t.m.player.pos.x, t.m.bot.pos.z - t.m.player.pos.z), 1);
+    t.run('/pos');
+    expect(t.out.some((l) => l.startsWith('XYZ: '))).toBe(true);
+    expect(t.fail('/clearchat').message).toMatch(/can’t be cleared/);
+  });
+});
