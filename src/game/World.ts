@@ -24,7 +24,9 @@ export type WorldEvent =
   | { type: 'pearl'; x: number; y: number; z: number }
   | { type: 'cartPlace'; x: number; y: number; z: number }
   | { type: 'cartPrimed'; x: number; y: number; z: number }
-  | { type: 'cartBreak'; x: number; y: number; z: number };
+  | { type: 'cartBreak'; x: number; y: number; z: number }
+  /** A lightning bolt (/summon lightning_bolt). */
+  | { type: 'lightning'; x: number; y: number; z: number };
 
 /**
  * The game rules /gamerule can change that mean something in a duel (vanilla names). Everything

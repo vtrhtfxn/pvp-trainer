@@ -121,7 +121,9 @@ export function intRange(): Arg<[number, number]> {
 /** Every fighter in the duel (you first). */
 function fighters(ctx: CmdCtx): Fighter[] {
   const m = ctx.host.match;
-  return m ? [m.player, m.bot] : [];
+  if (!m) return [];
+  // 2v2 and party games: everyone in the world, you first.
+  return m.world.fighters.length > 2 ? [m.player, ...m.world.fighters.filter((f) => f !== m.player)] : [m.player, m.bot];
 }
 
 /** Names a fighter can be targeted by: its name with the spaces removed or as underscores, or just "bot". */

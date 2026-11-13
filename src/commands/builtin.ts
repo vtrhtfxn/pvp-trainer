@@ -31,6 +31,7 @@ import {
   vec3,
 } from './args';
 import { arg, CommandError, Dispatcher, lit, type Args } from './dispatcher';
+import { registerExtras } from './extra';
 import { COLOR, type CmdCtx, type ChatLine } from './host';
 
 type Ctx = CmdCtx;
@@ -765,7 +766,7 @@ export function registerBuiltins(d: Dispatcher<Ctx>) {
   d.register(
     lit<Ctx>('list').runs((ctx) => {
       const names = ctx.host.players();
-      say(ctx, `There are ${names.length} of a max of 2 players online: ${names.join(', ')}`);
+      say(ctx, `There are ${names.length} of a max of ${Math.max(2, names.length)} players online: ${names.join(', ')}`);
     }),
     'Who is here',
   );
@@ -856,6 +857,7 @@ export function registerBuiltins(d: Dispatcher<Ctx>) {
     }).requires(offline),
     'PvP Trainer: start the duel again (rules, reach and other settings stay)',
   );
+  registerExtras(d);
 }
 
 /**

@@ -83,6 +83,8 @@ export class Match {
   frozen = false;
   /** Records this match for a replay (offline duels only). */
   recorder: ReplayRecorder | null = null;
+  /** The random seed this duel started from (/seed). */
+  readonly seed: number;
 
   constructor(
     readonly kit: KitDef,
@@ -96,7 +98,8 @@ export class Match {
     // A party minigame is you and bots, every one for themselves.
     const party = kit.party ? partySize(kit, players) : 0;
     if (party) teams = undefined;
-    this.rng = new Rng(seed);
+    this.seed = seed ?? (Math.random() * 2 ** 32) >>> 0;
+    this.rng = new Rng(this.seed);
     this.mode = createMode(kit);
     this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
     if (this.mode) {

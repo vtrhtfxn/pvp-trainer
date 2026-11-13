@@ -102,6 +102,8 @@ export interface CommandHost {
   broadcast(kind: 'chat' | 'say' | 'me', text: string): void;
   /** Names of everyone in the game (/list). */
   players(): string[];
+  /** Empties the chat (/clearchat). */
+  clearChat?(): void;
 }
 
 /** Context passed to every command. */

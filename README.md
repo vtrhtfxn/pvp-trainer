@@ -129,10 +129,21 @@ changed by a command isn't counted in your record. Online, only chat, `/say`, `/
 | `/kill` · `/damage <target> <amount> [type]` · `/heal` | End the duel, hurt anyone by any damage type, or fully heal |
 | `/tp <x y z \| target> [yaw pitch]` | `~` is relative and `^` goes along your view |
 | `/setblock` · `/fill` | Build or clear blocks (kits with blocks: UHC, Crystal) |
-| `/title <target> title\|subtitle\|actionbar <text>` · `/say` · `/me` · `/list` · `/random roll 1..6` | Chat and on-screen text |
+| `/clone <from> <to> <destination> [replace\|masked] [normal\|force\|move]` | Copy (or move) a box of blocks; `masked` skips air |
+| `/summon end_crystal\|tnt\|tnt_minecart\|experience_orb\|lightning_bolt [pos]` | Spawn things into the arena; primed TNT has vanilla's 4 s fuse, lightning does 5 damage and sets people on fire |
+| `/item replace entity <target> <slot> with <item> [count]` | Put an item in one slot: `weapon.mainhand`, `weapon.offhand`, `armor.head` … `armor.feet`, `hotbar.0–8`, `inventory.0–26` |
+| `/data get entity <target> [path]` | Read `Health`, `AbsorptionAmount`, `Pos`, `Motion`, `Rotation`, `OnGround`, `FallDistance`, `HurtTime`, `Fire`, `foodLevel`, `foodSaturationLevel`, `SelectedItem`, `active_effects`, … |
+| `/execute as\|at <target> … if\|unless entity <target> … run <command>` | Run a command as someone else (so `@s` and `~` are them), or only if someone exists, e.g. `/execute as @a run effect give @s speed` |
+| `/title <target> title\|subtitle\|actionbar <text>` · `/tellraw <target> <json>` · `/say` · `/me` · `/list` · `/random roll 1..6` | Chat and on-screen text; `/tellraw` takes vanilla's JSON text (`color`, `bold`, `italic`, `underlined`, `extra`) |
+| `/seed` | This duel's random seed |
 | `/kit <kit>` · `/bot tier <LT5 … HT1>` · `/restart` | PvP Trainer extras: start another duel straight from chat |
+| `/stats [target]` | PvP Trainer: hits and accuracy, crits, sprint hits, combo, average and longest reach, damage, blocks so far this duel |
+| `/feed [targets]` · `/repair [targets]` | PvP Trainer: full hunger and saturation; full durability on every armor piece, weapon and shield |
+| `/distance` · `/pos` | PvP Trainer: how far the opponent is and whether your crosshair is in reach; your position, block and facing (like F3) |
+| `/clearchat` (`/cls`) | PvP Trainer: wipe the chat |
 
-Targets are `@s` (you), `@p`, `@a`, `@e`, `@r` or a name (`bot`). Commands you set up — game
+Targets are `@s` (you), `@p`, `@a`, `@e`, `@r` or a name (`bot`); in 2v2 and party games `@a`/`@e` include
+every fighter. Commands you set up — game
 rules, attributes, game modes, tick rate, time, weather — stay for the following duels until
 you change them back (like a singleplayer world); items, effects and health start fresh.
 

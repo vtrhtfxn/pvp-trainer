@@ -895,6 +895,7 @@ export class Game {
         return loadPlayerName();
       },
       broadcast: (kind: ChatKind, text: string) => this.broadcast(kind, text),
+      clearChat: () => this.chat.clear(),
       players: () => {
         const me = loadPlayerName();
         if (this.netMatch) return this.lobbyNames.length ? this.lobbyNames : [me, this.netMatch.bot.name];
@@ -3042,6 +3043,8 @@ export class Game {
         this.sound.anchorCharge({ x: e.x + 0.5, y: e.y + 0.5, z: e.z + 0.5 }, e.charge);
       } else if (e.type === 'pearl') {
         fx.portal(e.x, e.y, e.z);
+      } else if (e.type === 'lightning') {
+        this.playKillEffect('lightning', e);
       } else if (e.type === 'blockConvert') {
         const at = { x: e.x + 0.5, y: e.y + 0.5, z: e.z + 0.5 };
         if (e.from === B.COBWEB) fx.blockBreak(e.x, e.y, e.z, BLOCK_COLORS[B.COBWEB]);
