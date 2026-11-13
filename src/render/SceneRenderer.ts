@@ -25,6 +25,7 @@ import type { ShieldStatusOpts } from './shieldStatus';
 import type { Skin } from './skins';
 import { setWorldLight } from './light';
 import { Crosshair, type AttackIndicator } from './Crosshair';
+import { MotionBlur } from './motionBlur';
 import { Glint } from './glint';
 import { RainView } from './Weather';
 
@@ -157,10 +158,16 @@ export class SceneRenderer {
   private previewTarget: THREE.WebGLRenderTarget | null = null;
   private previewBuf: Uint8Array | null = null;
   private previewImg: ImageData | null = null;
-  private readonly glint: Glint;
+  readonly glint: Glint;
   private readonly crosshair = new Crosshair();
   /** Draw the crosshair this frame (the HUD is up and no custom crosshair replaces it), at this GUI scale. */
   crosshairOn = false;
+  /** Hit Color mod: the damage flash on every player model (red at 0.45 when off). */
+  readonly hurtColor = new THREE.Color(1, 0, 0);
+  hurtStrength = 0.45;
+  /** Motion Blur mod (null: off): strength 0..1 and the turn speed it starts at (rad/s). */
+  motionBlur: { strength: number; threshold: number } | null = null;
+  private readonly blur = new MotionBlur();
   /** Vanilla's attack indicator under the crosshair (null: not shown). */
   attackIndicator: AttackIndicator = null;
   crosshairGui = 2;
@@ -643,6 +650,8 @@ export class SceneRenderer {
       const f = o.f;
       v.model.shadowsOn = view.entityShadows;
       v.model.setSkin(this.skinOf(f));
+      v.model.hurtColor.copy(this.hurtColor);
+      v.model.hurtStrength = this.hurtStrength;
       v.model.shieldStatus = this.extras.shieldStatus;
       v.model.shieldStatusShown = !!this.extras.shieldStatus?.others;
       v.model.update(f, alpha, time);
@@ -695,6 +704,10 @@ export class SceneRenderer {
     this.playerModel.shieldStatus = this.botModel.shieldStatus = shields;
     this.playerModel.shieldStatusShown = true;
     this.botModel.shieldStatusShown = !!shields?.others;
+    for (const model of [this.playerModel, this.botModel]) {
+      model.hurtColor.copy(this.hurtColor);
+      model.hurtStrength = this.hurtStrength;
+    }
     this.playerModel.setSkin(this.skinOf(player));
     this.playerModel.update(player, alpha, time);
     this.firstPerson.setSkin(this.skinOf(player));
@@ -750,6 +763,8 @@ export class SceneRenderer {
 
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
+    // The world smears with fast turns; the hands and crosshair drawn after stay sharp.
+    this.blur.apply(this.renderer, this.camera, dt, this.motionBlur);
     if (firstPerson && !player.dead && view.showHand && this.extras.zoom < 1.5) {
       const o = this.firstPerson.opts;
       o.fov = view.handFov;

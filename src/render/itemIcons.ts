@@ -181,6 +181,7 @@ export function registerGoldenHead() {
  * registered with the pack, so icons, hand meshes and thrown sprites all share it.
  */
 export function potionTexture(potion: PotionId): string {
+  if (shinyPots) return shinyPotionTexture(potion);
   const name = `item/splash_potion_${potion}`;
   if (packImage(name)) return name;
   const bottle = packImage('item/splash_potion');
@@ -198,6 +199,80 @@ export function potionTexture(potion: PotionId): string {
   ctx.fillRect(0, 0, c.width, c.height);
   ctx.globalCompositeOperation = 'destination-in';
   ctx.drawImage(overlay, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(bottle, 0, 0);
+  registerPackImage(name, c);
+  return name;
+}
+
+/** Shiny Pots mod: potions drawn with the whole bottle filled (and `shine`, a gleam over it). */
+let shinyPots: { shine: boolean } | null = null;
+export function setShinyPots(v: { shine: boolean } | null) {
+  if (JSON.stringify(v) === JSON.stringify(shinyPots)) return;
+  shinyPots = v;
+  // Potion icons are drawn again (hand meshes and thrown sprites follow the texture name).
+  for (const k of [...cache.keys()]) if (k.includes('potion')) cache.delete(k);
+}
+
+/**
+ * A potion with its colour filling the whole bottle: every see-through pixel inside the glass
+ * (found by flooding the outside from the edges), brighter towards the top, under the bottle.
+ */
+function shinyPotionTexture(potion: PotionId): string {
+  const shine = !!shinyPots?.shine;
+  const name = `item/splash_potion_${potion}_shiny${shine ? '_lit' : ''}`;
+  if (packImage(name)) return name;
+  const bottle = packImage('item/splash_potion');
+  if (!bottle) return 'item/splash_potion';
+  const w = bottle.width;
+  const h = bottle.height;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(bottle, 0, 0);
+  const glass = ctx.getImageData(0, 0, w, h).data;
+  const solid = (i: number) => glass[i * 4 + 3] > 40;
+  // Outside: see-through pixels reachable from the edges.
+  const outside = new Uint8Array(w * h);
+  const queue: number[] = [];
+  for (let x = 0; x < w; x++) queue.push(x, (h - 1) * w + x);
+  for (let y = 0; y < h; y++) queue.push(y * w, y * w + w - 1);
+  while (queue.length) {
+    const i = queue.pop()!;
+    if (outside[i] || solid(i)) continue;
+    outside[i] = 1;
+    const x = i % w;
+    if (x > 0) queue.push(i - 1);
+    if (x < w - 1) queue.push(i + 1);
+    if (i >= w) queue.push(i - w);
+    if (i < w * (h - 1)) queue.push(i + w);
+  }
+  const col = POTIONS[potion].color;
+  const out = ctx.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    if (outside[i] || solid(i)) continue;
+    // A little lighter towards the top, like light through the liquid.
+    const lift = 1 + 0.35 * (1 - Math.floor(i / w) / h);
+    out.data[i * 4] = Math.min(255, ((col >> 16) & 255) * lift);
+    out.data[i * 4 + 1] = Math.min(255, ((col >> 8) & 255) * lift);
+    out.data[i * 4 + 2] = Math.min(255, (col & 255) * lift);
+    out.data[i * 4 + 3] = 255;
+  }
+  ctx.clearRect(0, 0, w, h);
+  ctx.putImageData(out, 0, 0);
+  if (shine) {
+    // A soft diagonal gleam over the liquid only.
+    ctx.globalCompositeOperation = 'source-atop';
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, 'rgba(255,255,255,0.55)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.08)');
+    g.addColorStop(0.55, 'rgba(255,255,255,0.3)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
   ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(bottle, 0, 0);
   registerPackImage(name, c);
@@ -240,16 +315,36 @@ function shieldIcon(): HTMLCanvasElement | undefined {
   return c;
 }
 
+/**
+ * Glint Colorizer for the 2D icons: the sheen's colour as [r, g, b] (null: vanilla purple), or
+ * 'rainbow' for a rainbow sheen. Icons are drawn once and kept, so the rainbow doesn't cycle there.
+ */
+let iconGlint: [number, number, number] | 'rainbow' | null = null;
+export function setIconGlint(v: [number, number, number] | 'rainbow' | null) {
+  const key = JSON.stringify(v);
+  if (key === JSON.stringify(iconGlint)) return;
+  iconGlint = v;
+  // Enchanted icons are drawn again with the new sheen.
+  for (const k of [...cache.keys()]) if (k.endsWith('+')) cache.delete(k);
+}
+
 /** Enchantment glint for GUI icons: a purple sheen clipped to the sprite. */
 function glint(src: HTMLCanvasElement): HTMLCanvasElement {
   const [c, ctx] = blank();
   ctx.drawImage(src, 0, 0);
   ctx.globalCompositeOperation = 'source-atop';
   const g = ctx.createLinearGradient(0, 16, 16, 0);
-  g.addColorStop(0, 'rgba(128,64,255,0.10)');
-  g.addColorStop(0.45, 'rgba(170,110,255,0.45)');
-  g.addColorStop(0.6, 'rgba(128,64,255,0.12)');
-  g.addColorStop(1, 'rgba(160,90,255,0.35)');
+  const tone = iconGlint;
+  if (tone === 'rainbow') {
+    ['rgba(255,60,60,0.35)', 'rgba(255,220,60,0.4)', 'rgba(60,255,120,0.4)', 'rgba(60,160,255,0.4)', 'rgba(200,80,255,0.35)'].forEach((col, i) => g.addColorStop(i / 4, col));
+  } else {
+    const [r, gr, b] = tone ?? [150, 90, 255];
+    const at = (a: number) => `rgba(${r},${gr},${b},${a})`;
+    g.addColorStop(0, at(0.1));
+    g.addColorStop(0.45, at(0.45));
+    g.addColorStop(0.6, at(0.12));
+    g.addColorStop(1, at(0.35));
+  }
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 16, 16);
   return c;

@@ -124,6 +124,27 @@ function drawIcon(name: string): HTMLCanvasElement {
       px('#0b2e15', [[7, 7, 2, 2]]);
       px('#ffff55', [[2, 1, 1, 2], [7, 0, 2, 2], [13, 1, 1, 2], [2, 13, 1, 2], [13, 13, 1, 2], [7, 14, 2, 2]]);
       break;
+    case 'memory':
+      // A RAM stick.
+      px('#1f6b2e', [[1, 4, 14, 7]]);
+      px('#111111', [[2, 5, 3, 4], [6, 5, 3, 4], [10, 5, 3, 4]]);
+      px('#d4af37', [[2, 11, 1, 2], [4, 11, 1, 2], [6, 11, 1, 2], [8, 11, 1, 2], [10, 11, 1, 2], [12, 11, 1, 2]]);
+      break;
+    case 'blur':
+      // A shape with fading copies trailing behind it.
+      x.globalAlpha = 0.25;
+      px('#ffffff', [[2, 4, 6, 8]]);
+      x.globalAlpha = 0.5;
+      px('#ffffff', [[5, 4, 6, 8]]);
+      x.globalAlpha = 1;
+      px('#ffffff', [[8, 4, 6, 8]]);
+      break;
+    case 'sound':
+      // A speaker with sliders.
+      px('#cfcfcf', [[1, 6, 3, 4], [4, 4, 2, 8], [6, 2, 2, 12]]);
+      px('#55ffff', [[10, 3, 1, 10], [13, 3, 1, 10]]);
+      px('#ffffff', [[9, 9, 3, 2], [12, 5, 3, 2]]);
+      break;
     default:
       px('#888', [[2, 2, 12, 12]]);
   }

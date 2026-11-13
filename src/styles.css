@@ -5151,3 +5151,18 @@ body.broadcasting .hud .effects {
 .xh-previews { display: flex; gap: 10px; }
 .xh-previews > div { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #a8a8a8; font-size: 12px; }
 .xh-preview { width: 68px; height: 68px; image-rendering: pixelated; border: 1px solid #555; }
+/* Damage Tint mod: a glow from the screen edges at low health */
+.damage-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+  background: radial-gradient(ellipse at center, transparent 55%, color-mix(in srgb, var(--tint, #f00) 25%, transparent) 80%, var(--tint, #f00) 125%);
+}
+.damage-tint.pulse { animation: dt-beat 0.9s ease-in-out infinite; }
+@keyframes dt-beat {
+  0%, 100% { filter: brightness(1); }
+  18% { filter: brightness(1.6); }
+  36% { filter: brightness(1.1); }
+  50% { filter: brightness(1.45); }
+}

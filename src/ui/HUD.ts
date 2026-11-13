@@ -171,6 +171,7 @@ export class HUD {
     this.root.prepend(this.fire);
     // Head under water or lava: tint the view (vanilla's fog colour).
     this.fluidTint = el('div', 'fluid-tint', this.root);
+    this.damageTint = el('div', 'damage-tint', this.root);
     this.root.prepend(this.fluidTint);
     const fireUrl = packUrl('block/fire_0');
     for (const side of ['left', 'right']) {
@@ -266,6 +267,37 @@ export class HUD {
 
   setVisible(v: boolean) {
     this.root.style.display = v ? '' : 'none';
+  }
+
+  private readonly damageTint: HTMLDivElement;
+  private damageKey = '';
+
+  private updateDamageTint(player: Fighter) {
+    const m = this.mods;
+    let style = '';
+    if (m?.on('damagetint') && !player.dead) {
+      const below = Number(m.cfg('damagetint', 'below'));
+      const hp = player.health + player.absorption;
+      if (hp < below) {
+        const k = Math.min(1, (below - hp) / below);
+        const a = (0.25 + 0.75 * k) * Number(m.cfg('damagetint', 'strength'));
+        // A heartbeat in the last quarter of the way down.
+        const pulse = m.cfg('damagetint', 'pulse') && k > 0.75;
+        style = `${String(m.cfg('damagetint', 'color'))}|${a.toFixed(2)}|${pulse ? 1 : 0}`;
+      }
+    }
+    if (style === this.damageKey) return;
+    this.damageKey = style;
+    const el = this.damageTint;
+    if (!style) {
+      el.style.display = 'none';
+      return;
+    }
+    const [color, a, pulse] = style.split('|');
+    el.style.display = 'block';
+    el.style.setProperty('--tint', color);
+    el.style.opacity = a;
+    el.classList.toggle('pulse', pulse === '1');
   }
 
   /** The HUD is on screen (the attack indicator shows with it, under any crosshair). */
@@ -383,6 +415,8 @@ export class HUD {
       const v = lower.toFixed(2);
       if (this.fire.style.getPropertyValue('--fire-lower') !== v) this.fire.style.setProperty('--fire-lower', v);
     }
+    // Damage Tint mod: a red glow from the screen's edges as health drops below the setting.
+    this.updateDamageTint(player);
     // BactroMod can switch the water / lava overlay off.
     const eye = this.mods?.on('bactromod') && this.mods.cfg('bactromod', 'noLiquid') ? null : eyeFluid(player);
     this.fluidTint.className = `fluid-tint${info.firstPerson && eye ? ` ${eye}` : ''}`;

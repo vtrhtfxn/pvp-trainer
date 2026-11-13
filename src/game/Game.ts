@@ -17,6 +17,7 @@ import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
 import { VoiceChat, type VoiceSettings } from '../net/voice';
 import { FramePacer } from './FramePacer';
 import { pictureTexture } from '../render/shieldStatus';
+import { setIconGlint, setShinyPots } from '../render/itemIcons';
 import { attackIndicatorFor } from '../render/Crosshair';
 import { ModManager } from '../mods/registry';
 import { ModHud, type WidgetFrame } from '../mods/widgets';
@@ -653,11 +654,23 @@ export class Game {
         }
       : null;
     const hit = m.on('hitcolor');
-    for (const model of [v.playerModel, v.botModel]) {
-      if (hit) model.hurtColor.set(String(m.cfg('hitcolor', 'color')));
-      else model.hurtColor.setRGB(1, 0, 0);
-      model.hurtStrength = hit ? Number(m.cfg('hitcolor', 'strength')) : 0.45;
+    // Every player model: yours, the bot's, and everyone else's in 2v2 and party games.
+    if (hit) v.hurtColor.set(String(m.cfg('hitcolor', 'color')));
+    else v.hurtColor.setRGB(1, 0, 0);
+    v.hurtStrength = hit ? Number(m.cfg('hitcolor', 'strength')) : 0.45;
+    // Glint Colorizer, Shiny Pots, Motion Blur, Sound Changer.
+    v.glint.colorize = m.on('glintcolor')
+      ? { color: new THREE.Color(String(m.cfg('glintcolor', 'color'))), rainbow: !!m.cfg('glintcolor', 'rainbow'), speed: Number(m.cfg('glintcolor', 'speed')), strength: Number(m.cfg('glintcolor', 'strength')) }
+      : null;
+    if (!m.on('glintcolor')) setIconGlint(null);
+    else if (m.cfg('glintcolor', 'rainbow')) setIconGlint('rainbow');
+    else {
+      const c = new THREE.Color(String(m.cfg('glintcolor', 'color')));
+      setIconGlint([Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255)]);
     }
+    setShinyPots(m.on('shinypots') ? { shine: !!m.cfg('shinypots', 'shine') } : null);
+    v.motionBlur = m.on('motionblur') ? { strength: Number(m.cfg('motionblur', 'strength')), threshold: (Number(m.cfg('motionblur', 'threshold')) * Math.PI) / 180 } : null;
+    for (const g of Object.keys(this.sound.groups) as (keyof typeof this.sound.groups)[]) this.sound.groups[g] = m.on('soundchanger') ? Number(m.cfg('soundchanger', g)) : 1;
     v.extras.hurtcam = m.on('hurtcam') ? { strength: Number(m.cfg('hurtcam', 'strength')), classic: m.cfg('hurtcam', 'mode') === 'classic' } : null;
     v.blocks.setOverlay(
       m.on('blockoverlay')
@@ -2532,7 +2545,7 @@ export class Game {
     const zoomOn = this.zoomHeld();
     const target = zoomOn ? Number(this.mods.cfg('zoom', 'factor')) * this.zoomScroll : 1;
     if (!zoomOn) this.zoomScroll = 1;
-    this.zoom = this.mods.cfg('zoom', 'smooth') ? this.zoom + (target - this.zoom) * Math.min(1, dt * 14) : target;
+    this.zoom = this.mods.cfg('zoom', 'smooth') ? this.zoom + (target - this.zoom) * Math.min(1, dt * (Number(this.mods.cfg('zoom', 'speed')) || 14)) : target;
     if (Math.abs(this.zoom - target) < 0.005) this.zoom = target;
     this.input.lookScale = zoomOn && this.mods.cfg('zoom', 'slowMouse') ? 1 / Math.max(1, this.zoom) : 1;
     this.view.extras.zoom = this.zoom;

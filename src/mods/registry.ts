@@ -39,7 +39,14 @@ export type ModId =
   | 'shieldstatus'
   | 'fastxp'
   | 'bactromod'
-  | 'voicechat';
+  | 'voicechat'
+  | 'damagetint'
+  | 'arrowcounter'
+  | 'memory'
+  | 'motionblur'
+  | 'glintcolor'
+  | 'shinypots'
+  | 'soundchanger';
 
 export type ModCategory = 'HUD' | 'Visual' | 'Utility';
 export type OptValue = number | string | boolean;
@@ -289,13 +296,14 @@ export const MODS: ModDef[] = [
     id: 'zoom',
     name: 'Zoom',
     basedOn: "OptiFine's zoom",
-    description: 'Hold C (Options → Key Binds) to zoom in; scroll while zooming to zoom further. Mouse speed drops with it so aiming stays steady.',
+    description: 'OptiFine-style zoom: hold C (Options → Key Binds) to zoom in, smoothly at the speed you set; scroll while zooming to zoom further (or back out). Mouse speed drops with it so aiming stays steady.',
     category: 'Utility',
     icon: 'pack:item/spyglass',
-    defaults: { factor: 4, smooth: true, scroll: true, slowMouse: true },
+    defaults: { factor: 4, smooth: true, speed: 14, scroll: true, slowMouse: true },
     options: [
       { key: 'factor', label: 'Zoom', type: 'slider', min: 1.5, max: 10, step: 0.5, unit: 'x' },
       { key: 'smooth', label: 'Smooth zoom', type: 'toggle' },
+      { key: 'speed', label: 'Smooth zoom speed', type: 'slider', min: 2, max: 30, step: 1, unit: '' },
       { key: 'scroll', label: 'Scroll to zoom further', type: 'toggle' },
       { key: 'slowMouse', label: 'Slower mouse while zoomed', type: 'toggle' },
     ],
@@ -382,7 +390,7 @@ export const MODS: ModDef[] = [
     id: 'hitcolor',
     name: 'Hit Color',
     basedOn: 'hit colour mods',
-    description: 'Changes the red flash on a player you hit to any colour and strength — easier to see on some skins.',
+    description: 'Changes the red damage flash on every player and bot (2v2 and party games too) to any colour and strength — easier to see on some skins.',
     category: 'Visual',
     icon: 'draw:hitcolor',
     defaults: { color: '#ff0000', strength: 0.45 },
@@ -747,6 +755,119 @@ export const MODS: ModDef[] = [
       { key: 'speakers', label: 'Show who is talking', type: 'toggle' },
     ],
     key: 'voice',
+    isNew: true,
+  },
+  {
+    id: 'damagetint',
+    name: 'Damage Tint',
+    basedOn: 'the Damage Tint mod',
+    description: 'A red glow creeps in from the edges of your screen as your health gets low — stronger the lower you are, with a heartbeat pulse near the end — so you notice without looking at your hearts.',
+    category: 'Visual',
+    icon: 'pack:gui/sprites/hud/heart/full',
+    defaults: { below: 8, strength: 0.5, pulse: true, color: '#ff0000' },
+    options: [
+      { key: 'below', label: 'Starts below (health)', type: 'slider', min: 2, max: 18, step: 1, unit: '' },
+      { key: 'strength', label: 'Strength', type: 'slider', min: 0.1, max: 1, step: 0.05, unit: '%' },
+      { key: 'pulse', label: 'Heartbeat pulse when very low', type: 'toggle' },
+      { key: 'color', label: 'Colour', type: 'color' },
+    ],
+    isNew: true,
+  },
+  {
+    id: 'arrowcounter',
+    name: 'Arrow Counter',
+    basedOn: 'the Arrow Counter mod',
+    description: 'How many arrows you have left, next to the crosshair while you hold a bow or crossbow (or always) — tipped and spectral ones counted too.',
+    category: 'HUD',
+    icon: 'item:arrow',
+    defaults: { onlyHolding: true, separateTipped: false, lowAt: 5, scale: 1 },
+    options: [
+      { key: 'onlyHolding', label: 'Only while holding a bow or crossbow', type: 'toggle' },
+      { key: 'separateTipped', label: 'Count tipped arrows separately', type: 'toggle' },
+      { key: 'lowAt', label: 'Red when this many or fewer', type: 'slider', min: 0, max: 32, step: 1, unit: '' },
+      scale(),
+    ],
+    widget: { x: 0.53, y: 0.53 },
+    isNew: true,
+  },
+  {
+    id: 'memory',
+    name: 'Memory Usage',
+    basedOn: 'the Memory Usage mod',
+    description: "The game's memory: how much is in use, of how much allocated, as a percentage (and of the most it may take). Chrome, Edge and the desktop app report it; Safari and Firefox don't.",
+    category: 'HUD',
+    icon: 'draw:memory',
+    defaults: { showMax: false, background: true, color: '#ffffff', scale: 1 },
+    options: [
+      { key: 'showMax', label: 'Also show the most it may use', type: 'toggle' },
+      { key: 'background', label: 'Background', type: 'toggle' },
+      { key: 'color', label: 'Text colour', type: 'color' },
+      scale(),
+    ],
+    widget: { x: 0.008, y: 0.06, right: true },
+    isNew: true,
+  },
+  {
+    id: 'motionblur',
+    name: 'Motion Blur',
+    basedOn: 'motion blur mods',
+    description: 'Smears the picture in the direction you turn when you flick fast — the faster the turn, the stronger. Your hands and the crosshair stay sharp. Off while still.',
+    category: 'Visual',
+    icon: 'draw:blur',
+    defaults: { strength: 0.5, threshold: 90 },
+    options: [
+      { key: 'strength', label: 'Strength', type: 'slider', min: 0.1, max: 0.9, step: 0.05, unit: '%' },
+      { key: 'threshold', label: 'Starts at this turn speed (°/s)', type: 'slider', min: 0, max: 360, step: 15, unit: '' },
+    ],
+    isNew: true,
+  },
+  {
+    id: 'glintcolor',
+    name: 'Glint Colorizer',
+    basedOn: 'glint colour mods',
+    description: 'The enchantment glint on armor, weapons and enchanted items in any colour you like — or cycling through the rainbow.',
+    category: 'Visual',
+    icon: 'item:diamond_sword',
+    defaults: { color: '#ff3355', rainbow: false, speed: 1, strength: 1 },
+    options: [
+      { key: 'color', label: 'Glint colour', type: 'color' },
+      { key: 'rainbow', label: 'RGB cycle', type: 'toggle' },
+      { key: 'speed', label: 'Cycle speed', type: 'slider', min: 0.2, max: 5, step: 0.1, unit: 'x' },
+      { key: 'strength', label: 'Brightness', type: 'slider', min: 0.3, max: 2, step: 0.05, unit: '%' },
+    ],
+    isNew: true,
+  },
+  {
+    id: 'shinypots',
+    name: 'Shiny Pots',
+    basedOn: 'the Shiny Pots mod',
+    description: 'Potions with the whole bottle filled with their colour and a soft shine, so you can tell Healing from Strength at a glance in the hotbar, in your hand and in the air.',
+    category: 'Visual',
+    icon: 'item:splash_potion',
+    defaults: { shine: true },
+    options: [{ key: 'shine', label: 'Shine over the liquid', type: 'toggle' }],
+    isNew: true,
+  },
+  {
+    id: 'soundchanger',
+    name: 'Sound Changer',
+    basedOn: 'the Sound Changer / Sound Filters mods',
+    description: 'Turn individual game sounds up or down on their own: hits, arrows, explosions, ender pearl teleports, shields, eating, totems, items and XP, blocks and footsteps.',
+    category: 'Utility',
+    icon: 'draw:sound',
+    defaults: { hits: 1, arrows: 1, explosions: 1, teleports: 1, shields: 1, eating: 1, totems: 1, items: 1, blocks: 1, steps: 1 },
+    options: [
+      { key: 'hits', label: 'Hits and swings', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'arrows', label: 'Bows, crossbows and arrows', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'explosions', label: 'Explosions, crystals, anchors, wind, thunder', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'teleports', label: 'Ender pearl teleports', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'shields', label: 'Shields', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'eating', label: 'Eating and drinking', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'totems', label: 'Totem pops', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'items', label: 'Items, XP, armor, buckets', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'blocks', label: 'Blocks', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+      { key: 'steps', label: 'Footsteps and landing', type: 'slider', min: 0, max: 2, step: 0.05, unit: '%' },
+    ],
     isNew: true,
   },
 ];

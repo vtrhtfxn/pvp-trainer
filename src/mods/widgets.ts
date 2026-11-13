@@ -45,6 +45,8 @@ const WIDGETS: ModId[] = [
   'directionhud',
   'speedometer',
   'clock',
+  'arrowcounter',
+  'memory',
 ];
 
 /** Compass points in Minecraft degrees (0 = south, 90 = west). */
@@ -376,6 +378,32 @@ export class ModHud {
         }
         const pad = (n: number) => String(n).padStart(2, '0');
         const text = `${cfg('twelve') ? hh : pad(hh)}:${pad(d.getMinutes())}${cfg('seconds') ? `:${pad(d.getSeconds())}` : ''}${suffix}`;
+        return textBox(text, cfg('color'), cfg('background'));
+      }
+      case 'arrowcounter': {
+        const held = p.heldStack()?.id;
+        const off = p.offhand?.id;
+        const bowOut = held === 'bow' || held === 'crossbow' || off === 'bow' || off === 'crossbow';
+        if (cfg('onlyHolding') && !bowOut && !this.editing) return '';
+        const plain = p.countItem('arrow');
+        const tipped = p.countItem('tipped_arrow');
+        const low = Number(cfg('lowAt'));
+        const row = (stack: ItemStack, n: number, title: string) =>
+          `<div class="mw-count" title="${esc(title)}"><img src="${iconUrl(stack)}"><b style="color:${n <= low ? '#ff5555' : '#ffffff'}">${n}</b></div>`;
+        if (cfg('separateTipped')) {
+          const tip = p.inventory.find((st) => st?.id === 'tipped_arrow') ?? { id: 'tipped_arrow' as ItemId, count: 1 };
+          return row({ id: 'arrow', count: 1 }, plain, 'Arrows') + (tipped || this.editing ? row(tip, tipped, 'Tipped arrows') : '');
+        }
+        return row({ id: 'arrow', count: 1 }, plain + tipped, 'Arrows');
+      }
+      case 'memory': {
+        // Chrome, Edge and the desktop app (Chromium) report the page's memory; others don't.
+        const mem = (performance as Performance & { memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+        if (!mem) return textBox('Memory: not reported by this browser', cfg('color'), cfg('background'));
+        const mb = (b: number) => Math.round(b / 1048576);
+        const pct = Math.round((mem.usedJSHeapSize / Math.max(1, mem.totalJSHeapSize)) * 100);
+        let text = `Mem: ${pct}% ${mb(mem.usedJSHeapSize)}/${mb(mem.totalJSHeapSize)} MB`;
+        if (cfg('showMax')) text += ` · max ${mb(mem.jsHeapSizeLimit)} MB (${Math.round((mem.usedJSHeapSize / mem.jsHeapSizeLimit) * 100)}%)`;
         return textBox(text, cfg('color'), cfg('background'));
       }
       default:
