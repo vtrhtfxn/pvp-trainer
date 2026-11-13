@@ -177,7 +177,7 @@ export class Menus {
   private netStatusEl!: HTMLDivElement;
   private netRoomEl!: HTMLDivElement;
   /** Title screen: the game is drawn without a graphics card (and how to fix that). */
-  private gpuWarnEl!: HTMLDivElement;
+  private gpuWarnEl!: HTMLDetailsElement;
   /** The 2v2 room panel: teams, who's in them, and the buttons. */
   private squadEl!: HTMLDivElement;
   /** Multiplayer: the kit you host with (main kits and subtiers). */
@@ -265,6 +265,7 @@ export class Menus {
     if (name === 'multiplayer') this.mpKitSel.value = isCustomKit(this.settings.kit) ? 'sword' : this.settings.kit;
     if (name === 'controls') this.refreshControls();
     if (name === 'settings') this.renderSettings();
+    if (name === 'pause') for (const f of this.quickRepaint) f();
     for (const b of this.marketBtns) b.textContent = this.marketLabel();
   }
 
@@ -287,24 +288,37 @@ export class Menus {
   private buildMain(): HTMLDivElement {
     const root = h('div', { class: 'screen main-menu' });
     const panel = h('div', { class: 'menu-panel mm-panel' });
-    // Three groups, so a wide window can lay them out in two columns (see .mm-panel).
-    const head = h('div', { class: 'mm-head' });
+    // A top bar (logo and the screens you visit now and then), then the duel setup with its
+    // Start button, and a side column with every other way to play.
+    const top = h('div', { class: 'mm-top' });
+    const body = h('div', { class: 'mm-body' });
     const setup = h('div', { class: 'mm-setup' });
-    const actions = h('div', { class: 'mm-actions' });
-    panel.append(head, setup, actions);
-    const logo = h(
-      'div',
-      { class: 'logo' },
-      h('img', { class: 'logo-img', src: logoUrl, alt: 'PvP Trainer', draggable: 'false' }),
-      h('div', { class: 'splash' }, 'Now with 1.8 PvP!'),
+    const side = h('div', { class: 'mm-side' });
+    body.append(setup, side);
+    panel.append(top, body);
+
+    const market = this.button('Marketplace', () => {
+      this.settingsReturn = 'main';
+      this.cb.onMarketplace();
+    }, 'market-btn');
+    this.marketBtns.push(market);
+    top.append(
+      h('img', { class: 'mm-logo', src: logoUrl, alt: 'PvP Trainer', draggable: 'false' }),
+      h('div', { class: 'mm-title' }, h('div', { class: 'mm-title-name' }, 'PvP Trainer'), h('div', { class: 'mm-title-sub' }, 'Minecraft 1.9+ PvP practice')),
+      h(
+        'div',
+        { class: 'mm-utils' },
+        this.button('Settings', () => this.openSettings('main')),
+        this.button('Controls', () => this.show('controls')),
+        this.button('My Tiers', () => this.show('tiers')),
+        this.button('Locker', () => this.show('locker')),
+        market,
+      ),
     );
-    head.append(logo);
-    // New players get a short path through the drills that matter (until finished or hidden),
-    // right under the logo so it is the first thing they see on any window size.
-    this.pathEl = h('div', { class: 'mm-path' });
-    this.gpuWarnEl = h('div', { class: 'gpu-warn' });
+    // Shown only when something is wrong with how the game runs (one line; details on click).
+    this.gpuWarnEl = h('details', { class: 'gpu-warn' });
     this.gpuWarnEl.style.display = 'none';
-    head.append(this.gpuWarnEl, this.pathEl);
+    panel.insertBefore(this.gpuWarnEl, body);
 
     setup.append(h('div', { class: 'section-title' }, 'Game mode'));
     const grid = h('div', { class: 'kit-grid' });
@@ -383,7 +397,9 @@ export class Menus {
       this.refreshMain();
     };
     this.ftValue = h('div', { class: 'ft-value' });
-    setup.append(
+    const options = h('div', { class: 'mm-options' });
+    setup.append(options);
+    options.append(
       h(
         'div',
         { class: 'ft-row', title: `Rounds against the same bot until one side has this many wins (up to ${MAX_FIRST_TO}). Win a series against a tier bot to earn that tier in My Tiers.` },
@@ -395,51 +411,39 @@ export class Menus {
     );
 
     setup.append(this.teamRow());
+    // The team row joins first-to on one line.
+    options.append(setup.lastElementChild!);
 
-    actions.append(this.button('Start Duel', () => this.cb.onStart(), 'big start-btn'));
-    // The rest in two labelled groups — getting better, and other ways to play — then the extras.
-    const group = (label: string, ...btns: HTMLElement[]) =>
-      h('div', { class: 'mm-group' }, h('span', { class: 'mm-group-label' }, label), h('div', { class: `btn-row n${btns.length}` }, ...btns));
-    actions.append(
+    setup.append(this.button('Start Duel', () => this.cb.onStart(), 'big start-btn'));
+    this.recordEl = h('div', { class: 'record' });
+    setup.append(this.recordEl);
+
+    // New players get a short path through the drills that matter (until finished or hidden).
+    this.pathEl = h('div', { class: 'mm-path' });
+    side.append(this.pathEl);
+    const group = (label: string, ...btns: HTMLElement[]) => h('div', { class: 'mm-group' }, h('span', { class: 'mm-group-label' }, label), ...btns);
+    side.append(
       group(
-        'Improve',
-        this.button('Trainer', () => this.show('trainer'), 'trainer-btn'),
-        this.button('Replays & Coach', () => this.show('replays'), 'replay-btn'),
-        Object.assign(this.button('Progress', () => this.show('progress'), 'progress-btn'), {
+        'Get better',
+        this.button('Trainer', () => this.show('trainer')),
+        this.button('Replays & Coach', () => this.show('replays')),
+        Object.assign(this.button('Progress', () => this.show('progress')), {
           title: 'Your aim, crits, combos and trades over your last duels — and what to practise next.',
         }),
       ),
       group(
-        'Play',
-        Object.assign(this.button('Gauntlet', () => this.cb.onGauntlet(), 'gauntlet-btn'), {
-          title: `Every tier from LT5 to HT1 in a row with ${GAUNTLET_LIVES} lives, in the kit picked above. How far can you get?`,
-        }),
-        Object.assign(this.button('Tournament', () => this.cb.onTournament(), 'tourney-btn'), {
+        'More modes',
+        this.button('Multiplayer', () => this.show('multiplayer')),
+        Object.assign(this.button('Tournament', () => this.cb.onTournament()), {
           title: '4 to 32 fighters, double elimination: ban a kit, pick a kit, and the decider is drawn at random.',
         }),
-        this.button('Multiplayer', () => this.show('multiplayer'), 'online'),
+        Object.assign(this.button('Gauntlet', () => this.cb.onGauntlet()), {
+          title: `Every tier from LT5 to HT1 in a row with ${GAUNTLET_LIVES} lives, in the kit picked here. How far can you get?`,
+        }),
+        this.button('Subtiers', () => this.show('subtiers')),
         this.button('Bot vs Bot', () => this.show('versus')),
-        this.button('Subtiers', () => this.show('subtiers'), 'subtier-btn'),
       ),
     );
-    const market = this.button('Marketplace', () => {
-      this.settingsReturn = 'main';
-      this.cb.onMarketplace();
-    }, 'market-btn');
-    this.marketBtns.push(market);
-    actions.append(
-      h(
-        'div',
-        { class: 'btn-row n5 mm-extras' },
-        this.button('Settings', () => this.openSettings('main')),
-        this.button('Controls', () => this.show('controls')),
-        this.button('My Tiers', () => this.show('tiers')),
-        this.button('Locker', () => this.show('locker'), 'locker-btn'),
-        market,
-      ),
-    );
-    this.recordEl = h('div', { class: 'record' });
-    actions.append(this.recordEl);
     root.append(panel);
     root.append(
       h(
@@ -623,7 +627,8 @@ export class Menus {
     panel.append(this.button('Back to Duel', () => this.cb.onResume(), 'big'));
     this.restartBtn = this.button('Restart Duel', () => this.cb.onRestart());
     panel.append(this.restartBtn);
-    panel.append(this.button('Settings', () => this.openSettings('pause')));
+    panel.append(this.quickOptions());
+    panel.append(this.button('All Options…', () => this.openSettings('pause')));
     const market = this.button('Marketplace', () => {
       this.settingsReturn = 'pause';
       this.cb.onMarketplace();
@@ -633,6 +638,52 @@ export class Menus {
     panel.append(this.button('Quit to Title', () => this.cb.onQuit()));
     root.append(panel);
     return root;
+  }
+
+  /** Repaints the pause menu's quick options when it opens (Options may have changed them). */
+  private readonly quickRepaint: (() => void)[] = [];
+
+  /** FOV and the in-fight HUD pieces, right in the pause menu. */
+  private quickOptions(): HTMLElement {
+    const box = h('div', { class: 'quick-options' });
+    const s = () => this.settings;
+    const input = h('input', { type: 'range', min: '30', max: '110', step: '1' });
+    const out = h('span', { class: 'slider-value' });
+    const fov = h('label', { class: 'mc-slider' }, input, out);
+    const paintFov = () => {
+      input.value = String(s().fov);
+      out.textContent = `FOV: ${s().fov === 70 ? 'Normal' : s().fov === 110 ? 'Quake Pro' : s().fov}`;
+      fov.style.setProperty('--p', String((s().fov - 30) / 80));
+    };
+    input.addEventListener('input', () => {
+      s().fov = Number(input.value);
+      paintFov();
+      this.saveAndApply();
+    });
+    this.quickRepaint.push(paintFov);
+    box.append(fov);
+    const row = h('div', { class: 'btn-row n3' });
+    const toggle = (label: string, key: 'showOpponentBar' | 'showRoundCounter' | 'showPracticePanel', hint: string) => {
+      const b = h('button', { class: 'mc-btn' });
+      b.title = hint;
+      const paint = () => {
+        b.textContent = `${label}: ${s()[key] ? 'ON' : 'OFF'}`;
+        b.classList.toggle('off', !s()[key]);
+      };
+      b.addEventListener('click', () => {
+        this.cb.onUiSound();
+        s()[key] = !s()[key];
+        paint();
+        this.saveAndApply();
+      });
+      this.quickRepaint.push(paint);
+      row.append(b);
+    };
+    toggle('Health Bar', 'showOpponentBar', 'The bar at the top with both players\u2019 health and the timer');
+    toggle('Rounds', 'showRoundCounter', 'The rounds won and the \u201cfirst to\u201d score at the top');
+    toggle('Info Panel', 'showPracticePanel', 'The box on the left: reach, combo, CPS, next hit, sprint KB');
+    box.append(row);
+    return box;
   }
 
   // ------------------------------------------------------------------ settings
@@ -926,13 +977,14 @@ export class Menus {
         break;
       }
       case 'hud': {
-        toggle('Practice Panel', () => s.showPracticePanel, (v) => (s.showPracticePanel = v), 'The box with reach, combo, CPS and the next-hit coach');
-        toggle('Reach Display', () => s.showReach, (v) => (s.showReach = v));
-        toggle('Combo Counter', () => s.showCombo, (v) => (s.showCombo = v));
-        toggle('CPS Counter', () => s.showCps, (v) => (s.showCps = v));
-        toggle('Next-hit Coach', () => s.showNextHit, (v) => (s.showNextHit = v));
+        toggle('Top Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v), 'The bar at the top with both players\u2019 health and the timer');
+        toggle('Round Counter', () => s.showRoundCounter, (v) => (s.showRoundCounter = v), 'The rounds won (\u25c6\u25c7) and the \u201cfirst to\u201d score at the top');
+        toggle('Left Info Panel', () => s.showPracticePanel, (v) => (s.showPracticePanel = v), 'The box on the left with reach, combo, CPS, next hit and sprint-KB readiness');
+        toggle('Panel: Reach', () => s.showReach, (v) => (s.showReach = v));
+        toggle('Panel: Combo', () => s.showCombo, (v) => (s.showCombo = v));
+        toggle('Panel: CPS', () => s.showCps, (v) => (s.showCps = v));
+        toggle('Panel: Next Hit & Sprint KB', () => s.showNextHit, (v) => (s.showNextHit = v));
         toggle('Hit Feedback', () => s.hitFeedback, (v) => (s.hitFeedback = v));
-        toggle('Versus Health Bar', () => s.showOpponentBar, (v) => (s.showOpponentBar = v));
         toggle('Opponent Nametag', () => s.showNametag, (v) => (s.showNametag = v));
         toggle('Effect List', () => s.showEffects, (v) => (s.showEffects = v));
         toggle(/Mac|iP(hone|ad)/.test(navigator.platform) ? 'Hitboxes (⌘M)' : 'Hitboxes (Ctrl+M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
@@ -1297,16 +1349,14 @@ export class Menus {
     if (!el) return;
     el.style.display = '';
     const parts: (Node | string)[] = [
-      h('b', {}, 'You\u2019re running the Intel version on an ARM PC'),
-      ' \u2014 Windows has to translate it, which makes the game several times slower. ',
-      h('span', {}, 'Fix: download PvP-Trainer-Setup.exe again and run it: it installs the native ARM version (your settings and replays stay).'),
+      'Windows has to translate the Intel version on an ARM PC, which makes the game several times slower. Download PvP-Trainer-Setup.exe again and run it: it installs the native ARM version (your settings and replays stay).',
     ];
     if (onDownload) {
       const b = h('button', { class: 'mc-btn small' }, 'Download');
       b.onclick = onDownload;
       parts.push(' ', b);
     }
-    el.replaceChildren(...parts);
+    el.replaceChildren(h('summary', {}, h('b', {}, 'Running the Intel version on an ARM PC'), ' — slow. ', h('u', {}, 'How to fix')), h('div', { class: 'gpu-warn-body' }, ...parts));
   }
 
   setGpuWarning(gpu: string | null) {
@@ -1315,12 +1365,12 @@ export class Menus {
     el.style.display = gpu ? '' : 'none';
     if (!gpu) return;
     el.replaceChildren(
-      h('b', {}, 'Your graphics card isn\u2019t being used'),
-      ` — the game is drawn by the processor (${gpu}), so it runs at about 20 FPS (the clouds and the trees outside the arena are left out to help). `,
+      h('summary', {}, h('b', {}, 'Your graphics card isn\u2019t being used'), ' — about 20 FPS. ', h('u', {}, 'How to fix')),
       h(
-        'span',
-        {},
-        'Fix: in Chrome or Edge open Settings → System, turn on \u201cUse graphics acceleration when available\u201d and restart the browser. In the desktop app, update your graphics driver. On a laptop, plug it in and pick High performance in Windows Settings → Display → Graphics.',
+        'div',
+        { class: 'gpu-warn-body' },
+        `The game is drawn by the processor (${gpu}); the clouds and the trees outside the arena are left out to help. `,
+        'In Chrome or Edge open Settings → System, turn on \u201cUse graphics acceleration when available\u201d and restart the browser. In the desktop app, update your graphics driver. On a laptop, plug it in and pick High performance in Windows Settings → Display → Graphics.',
       ),
     );
   }

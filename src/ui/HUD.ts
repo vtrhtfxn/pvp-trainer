@@ -203,9 +203,12 @@ export class HUD {
 
   /** The "first to" score under the opponent's bar; null hides it (a single duel). */
   setSeries(text: string | null) {
-    this.seriesEl.textContent = text ?? '';
-    this.seriesEl.style.display = text ? '' : 'none';
+    this.seriesText = text ?? '';
+    this.seriesEl.textContent = this.seriesText;
+    this.seriesEl.style.display = text && this.roundCounter ? '' : 'none';
   }
+  private seriesText = '';
+  private roundCounter = true;
 
   /** /title: a big title (with its subtitle), the action bar above the hotbar, or clear. */
   showTitle(kind: TitleKind, text: string) {
@@ -442,6 +445,13 @@ export class HUD {
     if (this.practiceHtml !== html) {
       this.practiceHtml = html;
       this.practice.innerHTML = html;
+    }
+
+    // ---- round counter (pips in the bar, and the "first to" line)
+    if (this.roundCounter !== settings.showRoundCounter) {
+      this.roundCounter = settings.showRoundCounter;
+      this.vsPips.style.visibility = this.roundCounter ? '' : 'hidden';
+      this.seriesEl.style.display = this.seriesText && this.roundCounter ? '' : 'none';
     }
 
     // ---- versus bar

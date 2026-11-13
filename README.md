@@ -687,9 +687,12 @@ each launched with one button — the Full-charge hits, Sprint hits (W-tap) and 
 first duel against the Practice bot (win or lose), the Spacing (S-tap) drill, and a win against an
 LT5 bot. The dots fill in as you pass each one (from your drill results and duel records), and the
 Trainer opens on the next drill, marked **Start here**. **Hide** puts it away; **Trainer → Show
-Getting started** brings it back. The rest of the title screen is grouped: **Start Duel**, then
-**Team** (1v1 or 2v2), **Improve** (Trainer, Replays & Coach, Progress), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
-(Settings, Controls, My Tiers, Marketplace).
+Getting started** brings it back. The title screen has three parts: a top bar (logo, then Settings,
+Controls, My Tiers, Locker and Marketplace); the duel setup (game mode, bot tier, first to, team) ending in
+**Start Duel**; and a side column with the beginner card, **Get better** (Trainer, Replays & Coach,
+Progress) and **More modes** (Multiplayer, Tournament, Gauntlet, Subtiers, Bot vs Bot). A problem with how
+the game runs (no graphics acceleration, the Intel build on an ARM PC) shows as one line; click it for the fix.
+On a narrow window everything stacks in one column.
 
 ### Trainer
 
@@ -737,8 +740,10 @@ on the right, the fight clock between. Each side has a tier badge, the name, a b
 a slanted health bar split into hearts, coloured green → yellow → red with the health left. A hit
 leaves a white trail that drains after a beat, healing flashes green, absorption is a gold stripe and
 a bar under 30% pulses. Under each bar: the current combo, totems left (totem kits) and the bot's
-status. Options → HUD → Versus Health Bar turns it off. In a "first to" series, the pips between the
-bars show the score (◆ won, ◇ to go).
+status. In a "first to" series, the pips between the bars show the score (◆ won, ◇ to go).
+**Health Bar**, **Rounds** and **Info Panel** (the left box with reach, combo, CPS, next hit and
+sprint-KB readiness) each switch off from the pause menu, next to an **FOV** slider, or in Options → HUD
+(Top Health Bar, Round Counter, Left Info Panel, and each line of the panel on its own).
 
 After a duel the results screen is a **Match Breakdown**, styled after the PvP Champs tournament
 broadcast (PvPHQ / Tubbo Events): the matchup, a WINNER or DEFEAT plate, the stats side by side with
