@@ -1242,6 +1242,11 @@ Decisions every tier now makes, without any change to aim, reactions or clicking
   unless it's about to die.
 - **UHC**: every tier picks its lava back up and puts itself out with its water bucket.
 - **2v2**: it peels an enemy off a low teammate and finishes a nearly dead enemy first.
+- **Your shield**: it reacts to a raise only after its reaction time (HT3 0.35 s, HT2 0.5 s, LT2
+  0.55 s, LT1/HT1 0.4 s), then swaps to the axe (HT2 from the sword: about 1.1 s in all). If you
+  tap the shield up and down, it expects the next raise and meets it a little sooner (reaction −
+  3 ticks, never under 0.25 s) — never on the tick it rises, and it never swings an axe it is
+  already holding into a shield it hasn't had time to see.
 
 These cut the bots' own mistakes (in UHC at LT5/LT3, burn damage fell from ~100 to ~15–40 per four
 games, and hits taken while eating by about half at LT5). Measured against the old bots with the

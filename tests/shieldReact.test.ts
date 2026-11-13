@@ -40,10 +40,10 @@ function tapping(kit: KitId, tier: TierId, seed: number): number[] {
 }
 
 describe('bots react to a raised shield, not to one they saw earlier', () => {
-  it('tapping the shield never gets it disabled faster than the tier’s reaction time', () => {
+  it('tapping the shield never gets it disabled the moment it rises (reaction − 3 ticks, at least 5)', () => {
     for (const kit of ['dia_smp', 'smp', 'axe'] as KitId[]) {
       for (const tier of ['ht3', 'ht2', 'lt2'] as TierId[]) {
-        const react = DIFFICULTIES[tier].axe.shieldReact;
+        const react = Math.max(5, DIFFICULTIES[tier].axe.shieldReact - 3);
         const all = [1, 2].flatMap((s) => tapping(kit, tier, s));
         expect(all.length, `${kit} ${tier}`).toBeGreaterThan(0);
         expect(Math.min(...all), `${kit} ${tier}: ${all.join(',')}`).toBeGreaterThanOrEqual(react);
