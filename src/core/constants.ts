@@ -48,6 +48,7 @@ export const MAX_KNOCKBACK_Y = 0.4;
 export const SHIELD_SWAP_LAUNCH_Y = 0.42;
 export const CRIT_MULTIPLIER = 1.5;
 export const STRONG_ATTACK_SCALE = 0.9; // cooldown needed for crits / sprint-knockback
+export const SWEEP_MOVE_FACTOR = 2.5; // a sweep needs less than speed × 2.5 of movement per tick
 export const SPRINT_HIT_SLOWDOWN = 0.6;
 export const SWING_DURATION = 6;
 export const FIST_DAMAGE = 1;

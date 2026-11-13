@@ -383,7 +383,7 @@ export class Match {
       this.queuedClicks.length = 0; // clicks are swallowed while an item is in use
       this.queuedUse = 0;
     } else {
-      // A click on a block starts mining it (and is not an attack: no cooldown reset); holding
+      // A click on a block starts mining it (not an attack, though its swing still resets the cooldown); holding
       // the button keeps mining. Anything else is a swing at the opponent.
       let mined = false;
       for (const picked of this.queuedClicks) {

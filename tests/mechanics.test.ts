@@ -148,7 +148,7 @@ describe('damage', () => {
     expect(Math.hypot(b.vel.x, b.vel.z)).toBeGreaterThan(0.3);
   });
 
-  it('stacks knockback across a combo (the server keeps the previous impulse)', () => {
+  it('does not stack knockback across a combo (the server puts its copy back after a hit)', () => {
     const { a, b } = setup();
     step(a, b);
     const push = () => {
@@ -160,12 +160,14 @@ describe('damage', () => {
       expect(r.hit).toBe(true);
       return Math.hypot(b.vel.x, b.vel.z);
     };
+    const before = b.serverVel.clone();
     const first = push();
+    // Player.causeExtraKnockback: the victim is sent the push, the server's copy is restored.
+    expect(b.serverVel.x).toBe(before.x);
+    expect(b.serverVel.z).toBe(before.z);
     for (let i = 0; i < 13; i++) step(b);
     const second = push();
-    // The server's decayed copy of the last knockback feeds the `velocity / 2` term.
-    expect(b.serverVel.z).not.toBe(0);
-    expect(second).toBeGreaterThan(first);
+    expect(second).toBeCloseTo(first, 5);
   });
 
   it('only allows crits while falling and not (server-)sprinting', () => {

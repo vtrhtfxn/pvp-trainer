@@ -120,13 +120,15 @@ describe('online duel', () => {
         d.fighters[0].attackStrengthTicker = 100;
         d.queueAttack(0);
       }
+      const serverCopy = d.fighters[1].serverVel.clone();
       const motion = step(d).motion;
       if (t === 3) {
         expect(motion, 'the hit should land').toBeDefined();
         // The knockback handed back must keep the climb, not the server's own falling guess.
         expect(motion!.vy).toBeCloseTo(rising, 5);
         expect(motion!.vy).toBeGreaterThan(0);
-        expect(d.fighters[1].serverVel.y).toBeGreaterThan(0);
+        // The server's copy is put back as it was (Player.causeExtraKnockback).
+        expect(Math.hypot(d.fighters[1].serverVel.x - serverCopy.x, d.fighters[1].serverVel.z - serverCopy.z)).toBeLessThan(0.05);
         expect(Math.hypot(motion!.vx, motion!.vz)).toBeCloseTo(0.4, 2);
       }
       y += vy;
