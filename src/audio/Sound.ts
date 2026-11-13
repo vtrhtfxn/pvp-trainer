@@ -30,7 +30,76 @@ export type HitKind = 'weak' | 'strong' | 'crit' | 'knockback';
 /** Options → Sound sliders: players (hits, hurt, bows, blasts), footsteps, blocks & items, UI. */
 export type SoundCategory = 'players' | 'steps' | 'blocks' | 'ui';
 
+/** Sound Changer mod: the groups whose volume can be set on their own. */
+export type SoundGroup = 'hits' | 'arrows' | 'explosions' | 'teleports' | 'shields' | 'eating' | 'totems' | 'items' | 'blocks' | 'steps';
+
+/** Which group each sound belongs to (anything not listed is left alone). */
+const GROUP_OF: Record<string, SoundGroup> = {
+  hit: 'hits',
+  hurt: 'hits',
+  sweep: 'hits',
+  swing: 'hits',
+  smash: 'hits',
+  lunge: 'hits',
+  bowShoot: 'arrows',
+  crossbowShoot: 'arrows',
+  crossbowLoad: 'arrows',
+  arrowHit: 'arrows',
+  arrowDing: 'arrows',
+  explosion: 'explosions',
+  crystalPlace: 'explosions',
+  anchorCharge: 'explosions',
+  windBurst: 'explosions',
+  lightning: 'explosions',
+  thunder: 'explosions',
+  firework: 'explosions',
+  pearl: 'teleports',
+  shieldBlock: 'shields',
+  shieldBreak: 'shields',
+  shieldRaise: 'shields',
+  eat: 'eating',
+  burp: 'eating',
+  totem: 'totems',
+  pickup: 'items',
+  throwItem: 'items',
+  glassBreak: 'items',
+  xp: 'items',
+  itemBreak: 'items',
+  equipArmor: 'items',
+  equip: 'items',
+  bucket: 'items',
+  fizz: 'items',
+  sizzle: 'items',
+  block: 'blocks',
+  dig: 'blocks',
+  step: 'steps',
+  land: 'steps',
+};
+
 export class Sound {
+  /** Sound Changer: each group's volume (1 = as normal). */
+  readonly groups: Record<SoundGroup, number> = { hits: 1, arrows: 1, explosions: 1, teleports: 1, shields: 1, eating: 1, totems: 1, items: 1, blocks: 1, steps: 1 };
+  /** The group of the sound being played right now (set around each sound method). */
+  private group: SoundGroup | null = null;
+
+  constructor() {
+    // Every sound method runs with its group set, so out() can apply that group's volume.
+    const self = this as unknown as Record<string, (...a: unknown[]) => unknown>;
+    for (const [name, group] of Object.entries(GROUP_OF)) {
+      const fn = self[name];
+      if (typeof fn !== 'function') continue;
+      self[name] = (...a: unknown[]) => {
+        const was = this.group;
+        this.group = group;
+        try {
+          return fn.apply(this, a);
+        } finally {
+          this.group = was;
+        }
+      };
+    }
+  }
+
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
@@ -60,7 +129,7 @@ export class Sound {
   private out(pos?: { x: number; y: number; z: number }, gain = 1, cat: SoundCategory = 'players'): AudioNode | null {
     if (!this.ctx || !this.master || this.muted) return null;
     this.master.gain.value = this.volume;
-    let vol = gain * this.categories[cat];
+    let vol = gain * this.categories[cat] * (this.group ? this.groups[this.group] : 1);
     if (vol <= 0.001) return null;
     const g = this.ctx.createGain();
     let pan = 0;

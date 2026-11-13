@@ -152,10 +152,10 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | Damage Indicator | Damage numbers (hearts or points, gold for crits) floating off whoever got hit |
 | Keystrokes | W A S D, mouse buttons with CPS, space bar |
 | ToggleSprint Display · Coordinates | Sprint/sneak/fly state; XYZ and facing |
-| Zoom | Hold C to zoom (scroll for more), with slower mouse while zoomed |
+| Zoom | OptiFine-style: hold C to zoom, smoothly at a set speed (scroll for more or less), with slower mouse while zoomed |
 | Custom Crosshair | Cross, plus, dot, circle or T; size, gap, thickness, colour, outline. **New:** or **draw your own** on a 15×15 pixel grid in its settings (the middle pixel is where you aim; left button draws, right button or Erase rubs out, drag to paint, Mirror copies each stroke four ways, Clear, and ready-made starting points: cross, dot, ring, ring + dot, chevron, corners, X), with previews at real size. **On target:** while it is on an opponent within reach it can turn another colour (red by default), and also grow or pulse |
 | Low Fire · Low Shield | The burning overlay and a raised shield drawn lower |
-| Hit Color | The hurt flash in any colour and strength |
+| Hit Color | The hurt flash in any colour and strength, on every player and bot (2v2 and party games too) |
 | Particles+ | More crit and sharpness sparks |
 | Freelook | Hold Left Alt to swing the camera around yourself while you keep running the same way |
 | **New:** Target HUD | Your opponent's health bar and hearts (absorption in gold), armor points and pieces, held item, distance |
@@ -170,6 +170,13 @@ downloaded. Each is PvP Trainer's own take on the mod it is named after.
 | **New:** FastXP | Holding right click throws Bottles o' Enchanting faster than vanilla's 5 a second: choose 20 (every tick), 10 or 7 a second. Online your setting is sent to the host, which throws them just as fast |
 | **New:** BactroMod | Brightness boost up to fullbright; night vision no longer brightens the world; no distance / blindness / darkness fog; no water / lava overlay; low fire and low shield; first-person sizes for totems, potions, food, weapons and tools, blocks and other items. (Its boat-map, riptide and gamemode-switcher parts have nothing to do here) |
 | **New:** Voice Chat | Based on Simple Voice Chat: talk to the people in your online room. Push to talk (**B**, rebind in Key Binds → Mods), voice activation (with a level slider) or muted; microphone and voices volume; proximity (voices fade out over a set range); "who is talking" in the top left. Audio goes straight between players (WebRTC calls through PeerJS); the room only passes around call addresses. Everyone you hear needs the mod on. The desktop app needs its newest version for the microphone |
+| **New:** Damage Tint | A red glow creeps in from the screen edges once your health (with absorption) drops below a set amount (8 by default), stronger the lower you go, with a heartbeat pulse in the last quarter; strength and colour |
+| **New:** Arrow Counter | Arrows left (tipped ones too, or counted separately) beside the crosshair while you hold a bow or crossbow (or always); turns red at a set count |
+| **New:** Memory Usage | The page's memory: in use / allocated MB and the percentage (optionally the most it may use). Chrome, Edge and the desktop app report it; Safari and Firefox don't, and it says so |
+| **New:** Motion Blur | Fast turns smear the picture along the turn: the last frame is laid over the new one, more the faster you turn above a set speed (°/s), up to the strength. Hands and crosshair stay sharp; off while still |
+| **New:** Glint Colorizer | The enchantment glint on armor, weapons and items (3D and in the hotbar) in any colour, or an RGB cycle at a set speed; brightness |
+| **New:** Shiny Pots | Potions with their colour filling the whole bottle (lighter towards the top) and an optional shine — in the hotbar, in your hand and in the air |
+| **New:** Sound Changer | Separate volumes (0–200%) for hits and swings, bows/crossbows/arrows, explosions (crystals, anchors, wind, thunder), ender pearl teleports, shields, eating, totem pops, items/XP/armor, blocks and footsteps |
 
 **Edit HUD Layout** lets you drag the HUD widgets anywhere (they snap to edges and the
 centre). In a duel, widgets that land on the practice panel or on each other are pushed down
