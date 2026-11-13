@@ -294,8 +294,11 @@ the duel. Whoever hosts picks the kit in the **Kit** list on the Multiplayer scr
 
 ### 2v2
 
-Ten kits play 2v2: **Sword, Diamond Pot, NethPot, UHC, Axe, Mace, Crystal, Spear Mace, Bed Wars
-and SkyWars**. Teammates can't hurt each other — hits, arrows and thrown items pass through them,
+Every game mode plays 2v2 against bots: all the duel kits (Sword, 1.8 Sword, Axe, UHC, Diamond Pot,
+NethPot, Crystal, SMP, Diamond SMP, Mace, Spear Mace, Cart), your custom kits, Bed Wars, SkyWars, and
+the party minigames **Sumo, Crumble and Hot Potato** as two teams of two (last team standing wins; in
+Hot Potato the potato can only be passed to an enemy). Whodunit stays every one for themselves — its
+roles are secret, so teams can't apply. Tournaments are always 1v1, and so is the Gauntlet. Teammates can't hurt each other — hits, arrows and thrown items pass through them,
 and their explosions don't damage you — and the game ends when a whole team is down (in Bed Wars,
 when both of a team are out for good; in SkyWars, the last team standing). Bed Wars teams share a
 bed, forge, shop and upgrades and spawn side by side; SkyWars teammates share an island and a cage
@@ -306,14 +309,15 @@ finish, and play the mode's objectives as usual.
   Duel: you and a bot ally against two bots of the tier picked. Your clicks go to whichever enemy
   is under your crosshair; your ally has a green nametag. Down while your ally still fights, you
   watch through their eyes. A 2v2 is one game and earns no tier (it's kept in Progress as 2v2).
-- **Online:** on the Multiplayer screen pick a bot tier and **Host online 2v2**, then read out the
+- **Online:** 2v2 rooms take any duel kit, Bed Wars and SkyWars (not custom kits, which live on one
+  computer; party minigames online are rooms of their own). On the Multiplayer screen pick a bot tier and **Host online 2v2**, then read out the
   code. Up to three friends join with it; each can move to the other team with **Join** (two a
   team). The host presses **Start 2v2** and server-run bots of that tier take every empty place —
   so you and a friend against two bots, or two against two. Someone who leaves mid-game is
   replaced by a bot. Rematch needs everyone still in the room.
 
-`tests/teams.test.ts` plays every 2v2 kit to a finish and checks friendly fire and click
-targeting; `tests/onlineTeams.test.ts` runs a server 2v2 with two clients and two bots, and the room
+`tests/teams.test.ts` plays every 2v2 kit to a finish (party minigames until one team is out) and
+checks friendly fire and click targeting; `tests/onlineTeams.test.ts` runs a server 2v2 with two clients and two bots, and the room
 (teams, start, a leaver replaced, a full room).
 
 ### Same network (LAN server)

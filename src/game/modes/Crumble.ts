@@ -1,7 +1,7 @@
 import { B } from '../Blocks';
 import type { Fighter } from '../Fighter';
 import type { BotControl, GameMode, ModeHost as Match, ScoreLine } from './GameMode';
-import { EMPTY_KIT, alive, fill, freeForAll, noDamage, place, ring } from './party';
+import { EMPTY_KIT, alive, fill, freeForAll, lastStanding, noDamage, place, ring } from './party';
 
 /** The TNT floors, top to bottom (the cell layer each one sits in). */
 const LAYERS = [-1, -7, -13, -19];
@@ -92,7 +92,8 @@ export class Crumble implements GameMode {
 
   winner(m: Match): Fighter | null {
     const left = alive(m);
-    if (left.length === 1) return left[0];
+    const last = lastStanding(m);
+    if (last) return last;
     // Everyone out on the same tick: the last one to drop wins.
     if (!left.length) return this.out[this.out.length - 1] ?? null;
     return null;

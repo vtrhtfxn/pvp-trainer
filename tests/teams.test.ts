@@ -4,8 +4,8 @@ import { DIFFICULTIES } from '../src/ai/difficulty';
 import { yawTowards } from '../src/core/math';
 import { Rng } from '../src/core/rng';
 import { performAttack, hurt } from '../src/game/combat';
-import { kitById, type KitId } from '../src/game/kits';
-import { Match, TEAM_KITS } from '../src/game/Match';
+import { KITS, kitById, type KitId } from '../src/game/kits';
+import { Match, PARTY_TEAM_KITS, TEAM_KITS, teamKit } from '../src/game/Match';
 
 /** A 2v2 with the player played by a bot too, run until a team is down (or the time is up). */
 function teamGame(kit: KitId, seed: number, maxTicks = 20 * 60 * 4) {
@@ -78,4 +78,30 @@ describe('2v2', () => {
     }
     expect(ended).toBeGreaterThanOrEqual(3);
   }, 300_000);
+});
+
+describe('2v2 in every game mode', () => {
+  it('every kit but Whodunit has 2v2, custom kits too', () => {
+    for (const k of KITS) expect(teamKit(k.id), k.id).toBe(k.id !== 'whodunit');
+    expect(teamKit('custom:abc')).toBe(true);
+  });
+
+  it('party minigames play as two teams of two, and the last team standing wins', () => {
+    for (const kit of PARTY_TEAM_KITS) {
+      const m = teamGame(kit as KitId, 4, 20 * 60 * 6);
+      expect(m.partyTeams, kit).toBe(true);
+      expect(m.fighters.map((f) => f.team), kit).toEqual([0, 1, 0, 1]);
+      expect(m.fighters[2].name, kit).toMatch(/Ally/);
+      expect(m.phase, kit).toBe('ended');
+      const w = m.winner!;
+      // Nobody on the losing side is still in.
+      expect(m.fighters.filter((f) => f.team !== w.team).every((f) => f.dead), kit).toBe(true);
+    }
+  }, 300_000);
+
+  it('a 1v1-only setup (no teams) keeps party games every one for themselves', () => {
+    const m = new Match(kitById('sumo'), DIFFICULTIES.lt3, 1, undefined, 4);
+    expect(m.partyTeams).toBe(false);
+    expect(new Set(m.fighters.map((f) => f.team)).size).toBe(4);
+  });
 });

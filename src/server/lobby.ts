@@ -6,7 +6,7 @@
 
 import { Duel } from '../net/Duel';
 import { SHIELD_RAISE_TICKS } from '../core/constants';
-import { PREP_TICKS, teamKit } from '../game/Match';
+import { PREP_TICKS, TEAM_KITS } from '../game/Match';
 import { DIFFICULTIES, type DifficultyId } from '../ai/difficulty';
 import { KITS, kitById, partySize, type KitId } from '../game/kits';
 import { CHAT_MAX, NET_TPS, PROTOCOL_VERSION, cleanChat, cleanName, normalizeRoom, roomCode, type ClientMsg, type ServerMsg } from '../net/protocol';
@@ -695,7 +695,7 @@ export class Lobby {
         } else if (!existing && !room.tour && Object.hasOwn(DIFFICULTIES, sqTier)) {
           room.makeSquad(sqTier as DifficultyId);
           const kit = String(msg.kit ?? 'sword');
-          room.kit = teamKit(kit) ? (kit as KitId) : 'sword';
+          room.kit = (TEAM_KITS as readonly string[]).includes(kit) ? (kit as KitId) : 'sword';
         }
         if (room.squad) {
           const err = room.joinSquad(client);

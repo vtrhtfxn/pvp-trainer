@@ -529,6 +529,8 @@ export class Menus {
       this.settings.teams = teams;
       saveSettings(this.settings);
       this.refreshTeamRows();
+      // A party minigame's screen swaps its player count for the 2v2 line.
+      if (this.screens.subtiers.style.display !== 'none' && kitById(this.settings.kit).party) this.renderSubtiers();
     };
     const one = this.button('1v1', () => pick(false), 'team-btn');
     const two = Object.assign(this.button('2v2', () => pick(true), 'team-btn'), { title: 'You and a bot ally against two bots of the tier picked above.' });
@@ -548,7 +550,7 @@ export class Menus {
         b.classList.toggle('selected', two === (this.settings.teams && ok));
         b.disabled = two && !ok;
       });
-      row.querySelector('.team-note')!.textContent = ok ? (this.settings.teams ? 'You + bot ally vs 2 bots' : '') : `No 2v2 in ${kit.name}`;
+      row.querySelector('.team-note')!.textContent = ok ? (this.settings.teams ? 'You + bot ally vs 2 bots' : '') : kit.id === 'whodunit' ? 'Whodunit is hidden roles: every one for themselves' : `No 2v2 in ${kit.name}`;
     }
   }
 
@@ -1828,8 +1830,13 @@ export class Menus {
       const more = this.button('+', () => step(1), 'ft-btn');
       less.disabled = n <= kit.party.min;
       more.disabled = n >= kit.party.max;
-      panel.append(h('div', { class: 'ft-row' }, h('span', { class: 'ft-label' }, 'Players'), less, h('span', { class: 'ft-value' }, `${n} — you and ${n - 1} ${d.name} bot${n === 2 ? '' : 's'}`), more));
-      panel.append(h('div', { class: 'tiers-sub' }, `Every one for themselves · First to ${s.firstTo} · play it with friends in Multiplayer`));
+      const duo = s.teams && teamKit(kit.id);
+      if (duo) panel.append(h('div', { class: 'tiers-sub' }, `2v2: you and a ${d.name} ally against two ${d.name} bots · last team standing wins`));
+      else {
+        panel.append(h('div', { class: 'ft-row' }, h('span', { class: 'ft-label' }, 'Players'), less, h('span', { class: 'ft-value' }, `${n} — you and ${n - 1} ${d.name} bot${n === 2 ? '' : 's'}`), more));
+        panel.append(h('div', { class: 'tiers-sub' }, `Every one for themselves · First to ${s.firstTo} · play it with friends in Multiplayer`));
+      }
+      panel.append(this.teamRow());
       panel.append(this.button('Play', () => this.cb.onStart(), 'big'));
     } else {
       panel.append(h('div', { class: 'tiers-sub' }, `Your ${kit.name} tier: ${held ? DIFFICULTIES[held].name : 'Unranked'} · First to ${s.firstTo} (change it on the title screen)`));

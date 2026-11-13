@@ -179,11 +179,16 @@ describe('2v2 room', () => {
     vi.useRealTimers();
   });
 
-  it('a kit without 2v2 falls back to Sword; a fifth person is turned away', () => {
+  it('a kit that can\u2019t be played 2v2 online falls back to Sword; a fifth person is turned away', () => {
     const lobby = new Lobby();
+    const cart = conn();
+    lobby.connect(cart);
+    cart.say({ t: 'join', room: 'CART', name: 'C', v: PROTOCOL_VERSION, kit: 'cart', squad: { tier: 'ht3' } });
+    expect(last(cart, 'squad')!.kit).toBe('cart');
     const cs = [conn(), conn(), conn(), conn(), conn()];
     for (const c of cs) lobby.connect(c);
-    cs[0].say({ t: 'join', room: 'FIVE', name: 'A', v: PROTOCOL_VERSION, kit: 'cart', squad: { tier: 'ht3' } });
+    // A custom kit lives on one person's computer only: it can't be a room's kit.
+    cs[0].say({ t: 'join', room: 'FIVE', name: 'A', v: PROTOCOL_VERSION, kit: 'custom:abc', squad: { tier: 'ht3' } });
     for (const [k, c] of cs.slice(1).entries()) c.say({ t: 'join', room: 'FIVE', name: `P${k}`, v: PROTOCOL_VERSION });
     expect(last(cs[0], 'squad')!.kit).toBe('sword');
     expect(last(cs[0], 'squad')!.members.map((m) => m.team).sort()).toEqual([0, 0, 1, 1]);

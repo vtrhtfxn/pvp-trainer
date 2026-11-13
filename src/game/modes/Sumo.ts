@@ -1,7 +1,7 @@
 import { B } from '../Blocks';
 import type { Fighter } from '../Fighter';
 import type { BotControl, GameMode, ModeHost as Match, ScoreLine } from './GameMode';
-import { EMPTY_KIT, alive, disc, freeForAll, noDamage, place, ring } from './party';
+import { EMPTY_KIT, alive, disc, enemiesLeft, freeForAll, lastStanding, noDamage, place, ring } from './party';
 
 /** The four ways out to the outposts. */
 const DIRS: [number, number][] = [
@@ -101,8 +101,7 @@ export class Sumo implements GameMode {
   }
 
   winner(m: Match): Fighter | null {
-    const left = alive(m);
-    return left.length === 1 ? left[0] : null;
+    return lastStanding(m);
   }
 
   scoreboard(m: Match, viewer: Fighter): ScoreLine[] {
@@ -128,8 +127,7 @@ export class Sumo implements GameMode {
   /** The bot boxes the nearest opponent and keeps itself off the edge. */
   botTick(m: Match, c: BotControl): boolean {
     const me = c.bot;
-    const target = alive(m)
-      .filter((f) => f !== me)
+    const target = enemiesLeft(m, me)
       .sort((a, b) => Math.hypot(a.pos.x - me.pos.x, a.pos.z - me.pos.z) - Math.hypot(b.pos.x - me.pos.x, b.pos.z - me.pos.z))[0];
     if (!target) return false;
     c.setLabel('Sumo');
