@@ -2,7 +2,7 @@ import { B } from '../Blocks';
 import type { Fighter } from '../Fighter';
 import type { Loadout } from '../kits';
 import type { BotControl, GameMode, ModeHost as Match, ScoreLine } from './GameMode';
-import { EMPTY_KIT, alive, fill, freeForAll, noDamage, place, ring } from './party';
+import { EMPTY_KIT, alive, enemiesLeft, fill, freeForAll, lastStanding, noDamage, place, ring } from './party';
 
 /** Heights of the parkour loop's platforms, one after another (the cell layer of each). */
 const LOOP_HEIGHTS = [2, 2, 3, 2, 3, 3, 2, 3];
@@ -164,7 +164,7 @@ export class HotPotato implements GameMode {
       return;
     }
     const left = alive(m);
-    if (left.length < 2) return;
+    if (left.length < 2 || lastStanding(m)) return;
     this.round++;
     this.light(this.pick(left));
     this.left = 20 * Math.max(MIN_ROUND, FIRST_ROUND - (this.round - 1) * 3);
@@ -175,6 +175,8 @@ export class HotPotato implements GameMode {
     const left = alive(m);
     if (left.length === 1 && !this.it) return left[0];
     if (left.length === 1 && this.it === left[0]) return left[0];
+    // 2v2: one team left (a lit potato among them can only go to an enemy, and there are none).
+    if (m.partyTeams && left.length > 1) return lastStanding(m);
     return null;
   }
 
@@ -213,15 +215,16 @@ export class HotPotato implements GameMode {
       c.setLabel('IT!');
       // Whoever is nearest; someone up on the parkour course only if nobody on the ground is close.
       const reach = (f: Fighter) => Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z) + (f.pos.y > 1.5 ? 12 : 0);
-      const near = alive(m)
-        .filter((f) => f !== me && !(f === this.passedBy && this.ticks - this.passedAt < 20))
+      const near = enemiesLeft(m, me)
+        .filter((f) => !(f === this.passedBy && this.ticks - this.passedAt < 20))
         .sort((a, b) => reach(a) - reach(b))[0];
       if (near) c.fight(near);
       return false;
     }
     c.setLabel('Running');
     c.emptyHand();
-    if (!it || it.dead) {
+    // A teammate holding it can't pass it to you (hits between teammates do nothing).
+    if (!it || it.dead || it.team === me.team) {
       // Between rounds: drift toward the middle.
       c.walkTo(0.5, 0.5, 4, false);
       return false;

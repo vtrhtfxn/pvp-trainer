@@ -1649,7 +1649,7 @@ export class Game {
     }
     const squad = party ? { tier: this.settings.difficulty, size: partySize(kitById(kit), this.settings.partyPlayers[kit]) } : squadTier ? { tier: squadTier } : undefined;
     if (squadTier && !party && !teamKit(kit)) {
-      this.menus.setNetStatus('error', `${kitById(kit).name} has no 2v2. Pick Sword, Diamond Pot, NethPot, UHC, Axe, Mace, Crystal, Spear Mace, Bed Wars or SkyWars in the Kit list above.`, '');
+      this.menus.setNetStatus('error', `${kitById(kit).name} has no 2v2 online. Pick a duel kit in the Kit list above.`, '');
       return;
     }
     const attempt = ++this.onlineAttempt;

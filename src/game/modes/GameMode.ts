@@ -22,6 +22,8 @@ export interface ModeHost {
   readonly fighters: readonly Fighter[];
   readonly phase: string;
   readonly fightTicks: number;
+  /** A party minigame played 2v2: you and an ally (every other fighter) against the rest. */
+  readonly partyTeams?: boolean;
   /** A fighter came back to life (the offline bot resets its plan). */
   onRespawn?(f: Fighter): void;
 }

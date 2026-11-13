@@ -70,6 +70,8 @@ export interface Settings {
   showNextHit: boolean;
   hitFeedback: boolean;
   showOpponentBar: boolean;
+  /** The round score (◆◇ pips and the "first to" line) at the top. */
+  showRoundCounter: boolean;
   showHitboxes: boolean;
   showNametag: boolean;
   showEffects: boolean;
@@ -138,6 +140,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showNextHit: true,
   hitFeedback: true,
   showOpponentBar: true,
+  showRoundCounter: true,
   showHitboxes: false,
   showNametag: true,
   showEffects: true,

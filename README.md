@@ -294,8 +294,11 @@ the duel. Whoever hosts picks the kit in the **Kit** list on the Multiplayer scr
 
 ### 2v2
 
-Ten kits play 2v2: **Sword, Diamond Pot, NethPot, UHC, Axe, Mace, Crystal, Spear Mace, Bed Wars
-and SkyWars**. Teammates can't hurt each other — hits, arrows and thrown items pass through them,
+Every game mode plays 2v2 against bots: all the duel kits (Sword, 1.8 Sword, Axe, UHC, Diamond Pot,
+NethPot, Crystal, SMP, Diamond SMP, Mace, Spear Mace, Cart), your custom kits, Bed Wars, SkyWars, and
+the party minigames **Sumo, Crumble and Hot Potato** as two teams of two (last team standing wins; in
+Hot Potato the potato can only be passed to an enemy). Whodunit stays every one for themselves — its
+roles are secret, so teams can't apply. Tournaments are always 1v1, and so is the Gauntlet. Teammates can't hurt each other — hits, arrows and thrown items pass through them,
 and their explosions don't damage you — and the game ends when a whole team is down (in Bed Wars,
 when both of a team are out for good; in SkyWars, the last team standing). Bed Wars teams share a
 bed, forge, shop and upgrades and spawn side by side; SkyWars teammates share an island and a cage
@@ -306,14 +309,15 @@ finish, and play the mode's objectives as usual.
   Duel: you and a bot ally against two bots of the tier picked. Your clicks go to whichever enemy
   is under your crosshair; your ally has a green nametag. Down while your ally still fights, you
   watch through their eyes. A 2v2 is one game and earns no tier (it's kept in Progress as 2v2).
-- **Online:** on the Multiplayer screen pick a bot tier and **Host online 2v2**, then read out the
+- **Online:** 2v2 rooms take any duel kit, Bed Wars and SkyWars (not custom kits, which live on one
+  computer; party minigames online are rooms of their own). On the Multiplayer screen pick a bot tier and **Host online 2v2**, then read out the
   code. Up to three friends join with it; each can move to the other team with **Join** (two a
   team). The host presses **Start 2v2** and server-run bots of that tier take every empty place —
   so you and a friend against two bots, or two against two. Someone who leaves mid-game is
   replaced by a bot. Rematch needs everyone still in the room.
 
-`tests/teams.test.ts` plays every 2v2 kit to a finish and checks friendly fire and click
-targeting; `tests/onlineTeams.test.ts` runs a server 2v2 with two clients and two bots, and the room
+`tests/teams.test.ts` plays every 2v2 kit to a finish (party minigames until one team is out) and
+checks friendly fire and click targeting; `tests/onlineTeams.test.ts` runs a server 2v2 with two clients and two bots, and the room
 (teams, start, a leaver replaced, a full room).
 
 ### Same network (LAN server)
@@ -687,9 +691,12 @@ each launched with one button — the Full-charge hits, Sprint hits (W-tap) and 
 first duel against the Practice bot (win or lose), the Spacing (S-tap) drill, and a win against an
 LT5 bot. The dots fill in as you pass each one (from your drill results and duel records), and the
 Trainer opens on the next drill, marked **Start here**. **Hide** puts it away; **Trainer → Show
-Getting started** brings it back. The rest of the title screen is grouped: **Start Duel**, then
-**Team** (1v1 or 2v2), **Improve** (Trainer, Replays & Coach, Progress), **Play** (Gauntlet, Tournament, Multiplayer, Bot vs Bot, Subtiers), and the extras
-(Settings, Controls, My Tiers, Marketplace).
+Getting started** brings it back. The title screen has three parts: a top bar (logo, then Settings,
+Controls, My Tiers, Locker and Marketplace); the duel setup (game mode, bot tier, first to, team) ending in
+**Start Duel**; and a side column with the beginner card, **Get better** (Trainer, Replays & Coach,
+Progress) and **More modes** (Multiplayer, Tournament, Gauntlet, Subtiers, Bot vs Bot). A problem with how
+the game runs (no graphics acceleration, the Intel build on an ARM PC) shows as one line; click it for the fix.
+On a narrow window everything stacks in one column.
 
 ### Trainer
 
@@ -737,8 +744,10 @@ on the right, the fight clock between. Each side has a tier badge, the name, a b
 a slanted health bar split into hearts, coloured green → yellow → red with the health left. A hit
 leaves a white trail that drains after a beat, healing flashes green, absorption is a gold stripe and
 a bar under 30% pulses. Under each bar: the current combo, totems left (totem kits) and the bot's
-status. Options → HUD → Versus Health Bar turns it off. In a "first to" series, the pips between the
-bars show the score (◆ won, ◇ to go).
+status. In a "first to" series, the pips between the bars show the score (◆ won, ◇ to go).
+**Health Bar**, **Rounds** and **Info Panel** (the left box with reach, combo, CPS, next hit and
+sprint-KB readiness) each switch off from the pause menu, next to an **FOV** slider, or in Options → HUD
+(Top Health Bar, Round Counter, Left Info Panel, and each line of the panel on its own).
 
 After a duel the results screen is a **Match Breakdown**, styled after the PvP Champs tournament
 broadcast (PvPHQ / Tubbo Events): the matchup, a WINNER or DEFEAT plate, the stats side by side with
@@ -1233,6 +1242,11 @@ Decisions every tier now makes, without any change to aim, reactions or clicking
   unless it's about to die.
 - **UHC**: every tier picks its lava back up and puts itself out with its water bucket.
 - **2v2**: it peels an enemy off a low teammate and finishes a nearly dead enemy first.
+- **Your shield**: it reacts to a raise only after its reaction time (HT3 0.35 s, HT2 0.5 s, LT2
+  0.55 s, LT1/HT1 0.4 s), then swaps to the axe (HT2 from the sword: about 1.1 s in all). If you
+  tap the shield up and down, it expects the next raise and meets it a little sooner (reaction −
+  3 ticks, never under 0.25 s) — never on the tick it rises, and it never swings an axe it is
+  already holding into a shield it hasn't had time to see.
 
 These cut the bots' own mistakes (in UHC at LT5/LT3, burn damage fell from ~100 to ~15–40 per four
 games, and hits taken while eating by about half at LT5). Measured against the old bots with the

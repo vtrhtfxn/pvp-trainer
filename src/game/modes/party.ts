@@ -11,9 +11,21 @@ export function fill(b: Blocks, x0: number, y0: number, z0: number, x1: number, 
       for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) b.set(x, y, z, id, data);
 }
 
-/** Everyone for themselves: each fighter on a team of their own. */
+/** Everyone for themselves (each on a team of their own), or two teams in a 2v2. */
 export function freeForAll(m: ModeHost) {
-  m.fighters.forEach((f, i) => (f.team = i));
+  m.fighters.forEach((f, i) => (f.team = m.partyTeams ? i % 2 : i));
+}
+
+/** The last one standing — or in a 2v2, someone from the last team standing. */
+export function lastStanding(m: ModeHost): Fighter | null {
+  const left = alive(m);
+  if (!left.length) return null;
+  return left.every((f) => f.team === left[0].team) ? left[0] : null;
+}
+
+/** Everyone still in who is on the other side from `f`. */
+export function enemiesLeft(m: ModeHost, f: Fighter): Fighter[] {
+  return alive(m).filter((g) => g !== f && g.team !== f.team);
 }
 
 /** `n` spawn points on a circle of radius `r` around the middle, facing in. */

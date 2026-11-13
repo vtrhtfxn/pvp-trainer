@@ -19,11 +19,13 @@ export const SPAWN_DISTANCE = 12;
 /** 2v2: how far apart teammates start (blocks, side by side). */
 export const TEAM_SPREAD = 3;
 
-/** Kits that can be played 2v2. */
-export const TEAM_KITS = ['sword', 'diamond_pot', 'neth_pot', 'uhc', 'spear_mace', 'bedwars', 'skywars', 'axe', 'mace', 'crystal'] as const;
+/** Duel kits played 2v2 (you and a bot ally against two bots). Custom kits can be too. */
+export const TEAM_KITS = ['sword', 'sword18', 'axe', 'uhc', 'diamond_pot', 'neth_pot', 'crystal', 'smp', 'dia_smp', 'mace', 'spear_mace', 'cart', 'bedwars', 'skywars'] as const;
+/** Party minigames played as two teams of two (Whodunit's hidden roles don't fit teams). */
+export const PARTY_TEAM_KITS = ['sumo', 'crumble', 'hotpotato'] as const;
 
 export function teamKit(id: string): boolean {
-  return (TEAM_KITS as readonly string[]).includes(id);
+  return (TEAM_KITS as readonly string[]).includes(id) || (PARTY_TEAM_KITS as readonly string[]).includes(id) || id.startsWith('custom:');
 }
 
 /** A bot in the match besides the main opponent (2v2: your ally and the second opponent). */
@@ -51,6 +53,8 @@ export class Match {
   tickCount = 0;
   fightTicks = 0;
   winner: Fighter | null = null;
+  /** A party minigame played 2v2. */
+  readonly partyTeams: boolean;
   /** Bed Wars / SkyWars rules on top of the duel, or null for a plain duel. */
   readonly mode: GameMode | null;
   /** Everyone in the game: you, the bot, and in a 2v2 your ally and the second opponent. */
@@ -96,7 +100,9 @@ export class Match {
     players?: number,
   ) {
     // A party minigame is you and bots, every one for themselves.
-    const party = kit.party ? partySize(kit, players) : 0;
+    // 2v2 in a party minigame: four players, every other one on your team.
+    this.partyTeams = !!(kit.party && teams && (PARTY_TEAM_KITS as readonly string[]).includes(kit.id));
+    const party = kit.party ? (this.partyTeams ? 4 : partySize(kit, players)) : 0;
     if (party) teams = undefined;
     this.seed = seed ?? (Math.random() * 2 ** 32) >>> 0;
     this.rng = new Rng(this.seed);
@@ -120,9 +126,9 @@ export class Match {
       this.fighters.push(ally, bot2);
     }
     for (let i = 2; i < party; i++) {
-      const f = new Fighter('bot', `${profile.name} Bot ${i}`, this.world);
-      // (The mode puts everyone on a team of their own.)
-      f.team = i;
+      const f = new Fighter('bot', this.partyTeams ? (i % 2 === 0 ? `${profile.name} Ally` : `${profile.name} Bot ${Math.ceil(i / 2)}`) : `${profile.name} Bot ${i}`, this.world);
+      // (The mode puts everyone on a team of their own, or on two teams in a 2v2.)
+      f.team = this.partyTeams ? i % 2 : i;
       partyBots.push(f);
       this.fighters.push(f);
     }
