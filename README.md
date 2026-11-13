@@ -890,8 +890,13 @@ nametag reads *Passive*.
 
 ## Mechanics (all simulated at 20 ticks/second)
 
-- **Attack cooldown**: damage × (0.2 + 0.8·charge²); a sword fully charges in 12 ticks
-  (0.6 s). Every click, including a miss, resets the cooldown. Switching items resets it too.
+- **Attack cooldown**: damage × (0.2 + 0.8·charge²); a sword fully charges in 12.5 ticks
+  (0.6 s), and a click counts half a tick ahead. Every swing the server hears about resets it:
+  a hit, a miss, a click on or digging at a block, placing a block or crystal, throwing a pearl,
+  potion or wind charge, emptying a bucket. Switching to a different item resets it too.
+  A crit or sprint hit needs more than 90% — on a sword that is at most one tick early (84% is
+  two ticks early and is just a weak hit, as in Minecraft). Holding jump gives a 12-tick jump, so
+  hitting at the same point of every jump lands every hit at full charge.
   Under the crosshair, vanilla's **attack indicator** shows it with Minecraft's own sprites (or a
   resource pack's): the little sword filling up in 16 steps while it charges, and the full-strength
   sign when a fully charged hit is on an opponent in reach — drawn inverted over whatever is behind
@@ -916,13 +921,14 @@ nametag reads *Passive*.
   takes horizontal knockback only** (15w49a) — their vertical motion is left completely alone, so
   being hit mid-jump keeps the full arc and jump-resets work. Online, the client reports its
   vertical velocity in every move packet precisely so the server can leave it untouched.
-  Horizontal knockback is computed from a server-side velocity copy that keeps the previous
-  impulse (decaying with friction), which is what makes knockback build through a combo instead
-  of resetting to the same push on every hit.
+  Horizontal knockback starts from the server's own copy of the victim's velocity (halved). A
+  melee hit sends the victim their new velocity and then puts the server's copy back as it was
+  (Player.causeExtraKnockback), so hits of a combo don't build on each other.
 - **Sprint knockback and W-tap**: a sprint hit cancels your sprint and slows you to 60%. If you
   keep holding sprint, the client sprints again but the server never learns about it. You get no
   more sprint knockback until you W-tap or S-tap, and you can crit while still sprinting.
-- **Hurt immunity**: 10 ticks; a stronger hit during immunity deals only the extra damage and no knockback.
+- **Hurt immunity**: 10 ticks; a stronger hit during immunity deals only the extra damage and no knockback
+  (a sprint hit's extra push only reaches the server's copy, never the victim).
 - **Jump-reset / hit-select**: jumping on the tick you get hit adds the sprint-jump boost
   toward your opponent. Sprint-hitting right after getting hit cuts your own velocity by 40%.
 - **Movement**: walk 4.317 m/s, sprint 5.612 m/s, sprint-jump boost 0.2, jump 0.42, gravity
@@ -1039,9 +1045,10 @@ nametag reads *Passive*.
 - **Netherite Axe**: 10 damage, 1.0 attack speed, disables shields like any axe.
 - **Shield durability** (336): blocking a hit of 3+ damage costs 1 + that damage (Unbreaking applies,
   Mending repairs it); at 0 it breaks.
-- **Sweeping Edge**: a full-charge sword hit on the ground — no crit, no sprint knockback, barely moving
-  — is a sweep (arc and sound). It would also hit anyone within a block of your target; in a duel there
-  is no one else, so it changes nothing else.
+- **Sweeping Edge**: a full-charge sword hit on the ground — no crit, no sprint knockback, moving less
+  than 2.5 × your speed per tick (walking still sweeps) — is a sweep. Every other enemy within a block of
+  your target and 3 blocks of you (2v2, party games) takes (1 + damage × level/(level+1) + Sharpness) ×
+  charge and a 0.4 push along your facing. Teammates are never swept.
 - **Swift Sneak III**: sneaking at 75% of walking speed instead of 30%.
 - **Mace**: 6 damage, 0.6 attack speed. A hit while falling more than 1.5 blocks (and not gliding)
   is a **smash**: +4 per block for the first 3 blocks, +2 per block up to 8, then +1 per block,

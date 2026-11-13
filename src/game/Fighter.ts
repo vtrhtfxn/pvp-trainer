@@ -965,6 +965,23 @@ export class Fighter {
     this.attackStrengthTicker = 0;
   }
 
+  /**
+   * The swing of a use that worked (a block or crystal placed, a pearl or potion thrown, a bucket
+   * emptied). The server resets the attack cooldown on every swing it hears about
+   * (ServerPlayer.swingAndResetAttackStrength), with either hand, so hitting right after one
+   * is a weak hit.
+   */
+  useSwing(hand: Hand) {
+    this.resetAttackStrength();
+    if (hand === 'main') this.swing();
+  }
+
+  /** A swing at a block: like any swing the server hears about, it resets the attack cooldown. */
+  private punch() {
+    this.resetAttackStrength();
+    this.swing();
+  }
+
   swing() {
     this.swingCount++;
     if (!this.swinging || this.swingTime >= C.SWING_DURATION / 2 || this.swingTime < 0) {
@@ -1059,7 +1076,7 @@ export class Fighter {
           if (!canPlaceCrystal(this.world, hit.x, hit.y, hit.z)) return false;
           placeCrystal(this.world, this, hit.x, hit.y, hit.z);
           this.consume(s, hand);
-          if (hand === 'main') this.swing();
+          this.useSwing(hand);
           ok = true;
         }
       } else if (def.use === 'cart') {
@@ -1069,7 +1086,7 @@ export class Fighter {
           if (!canPlaceCart(this.world, hit.x, hit.y, hit.z)) return false;
           placeCart(this.world, this, hit.x, hit.y, hit.z);
           this.consume(s, hand);
-          if (hand === 'main') this.swing();
+          this.useSwing(hand);
           ok = true;
         }
       } else if (def.use === 'tnt') {
@@ -1085,7 +1102,7 @@ export class Fighter {
           if (!this.world.canPlace(this, tx, ty, tz)) return false;
           spawnPrimedTnt(this.world, this, tx + 0.5, ty, tz + 0.5);
           this.consume(s, hand);
-          if (hand === 'main') this.swing();
+          this.useSwing(hand);
           ok = true;
         }
       } else if (def.use === 'ignite') {
@@ -1100,7 +1117,7 @@ export class Fighter {
           this.world.blocks.set(fx, fy, fz, B.FIRE);
           this.world.emit({ type: 'blockPlace', x: fx, y: fy, z: fz, block: B.FIRE });
           this.damageItem(this.handSlot(hand), 1);
-          if (hand === 'main') this.swing();
+          this.useSwing(hand);
           ok = true;
         }
       } else if (def.use === 'bucket') ok = this.mayBuild() && this.useBucket(s, hand);
@@ -1127,7 +1144,7 @@ export class Fighter {
     const worn = this.armorSlots[slot];
     this.setSlot(SLOT_ARMOR + slot, s);
     this.setSlot(this.handSlot(hand), worn);
-    if (hand === 'main') this.swing();
+    this.useSwing(hand);
     this.events.push({ type: 'equip', id: s.id });
     return true;
   }
@@ -1147,7 +1164,7 @@ export class Fighter {
     const chargeWith = (s: ItemStack, hand: Hand) => {
       blocks.setAnchorCharge(x, y, z, charge + 1);
       this.consume(s, hand);
-      if (hand === 'main') this.swing();
+      this.useSwing(hand);
       this.world.emit({ type: 'anchorCharge', x, y, z, charge: charge + 1 });
       return true;
     };
@@ -1155,7 +1172,7 @@ export class Fighter {
     // Main hand without glowstone but glowstone in the off hand: the off hand charges it.
     if (!fuel(main) && fuel(off) && charge < 4) return chargeWith(off!, 'off');
     if (charge > 0) {
-      this.swing();
+      this.useSwing('main');
       detonateAnchor(this.world, x, y, z, this);
       return true;
     }
@@ -1205,7 +1222,7 @@ export class Fighter {
       moved++;
     }
     blocks.setShulkerCarts(x, y, z, left);
-    this.swing();
+    this.useSwing('main');
     this.events.push({ type: 'shulkerOpen', taken: moved });
     return moved;
   }
@@ -1272,7 +1289,7 @@ export class Fighter {
         given++;
       }
     }
-    this.swing();
+    this.useSwing('main');
     this.events.push({ type: 'shulkerOpen', taken: given });
     return given;
   }
@@ -1366,7 +1383,7 @@ export class Fighter {
     blocks.set(x, y, z, id, extra);
     blocks.markPlaced(x, y, z);
     this.consume(s, hand);
-    if (hand === 'main') this.swing();
+    this.useSwing(hand);
     this.world.emit({ type: 'blockPlace', x, y, z, block: id });
     return true;
   }
@@ -1393,7 +1410,7 @@ export class Fighter {
         // A full inventory drops it at our feet, as vanilla does.
         if (!this.addItem(full)) this.world.items.push(new DroppedItem(full, this.pos.x, this.pos.y + 0.5, this.pos.z, this.world.rng));
       }
-      if (hand === 'main') this.swing();
+      this.useSwing(hand);
       this.events.push({ type: 'bucket', fluid: hit.id, fill: true });
       return true;
     }
@@ -1410,7 +1427,7 @@ export class Fighter {
     if (cur !== B.AIR && !isFluid(cur)) return false;
     blocks.placeSource(x, y, z, fluid as typeof B.WATER | typeof B.LAVA);
     if (!this.instabuild()) this.setSlot(slot, { id: 'bucket', count: 1 });
-    if (hand === 'main') this.swing();
+    this.useSwing(hand);
     this.events.push({ type: 'bucket', fluid, fill: false });
     return true;
   }
@@ -1462,13 +1479,16 @@ export class Fighter {
     const breakable = !!BLOCK_PROPS[hit.id] && this.world.canBreak(this, hit.x, hit.y, hit.z, hit.id);
     // A fresh click (startDestroyBlock) ignores the delay; only holding the button waits it out.
     if (click) this.destroyDelay = 0;
+    // Every tick spent on a block swings, and each swing tells the server, which resets the
+    // attack cooldown (ServerboundPunchPacket): digging between hits costs you charge.
     if (this.destroyDelay > 0) {
       this.destroyDelay--;
+      this.punch();
       return true;
     }
     if (!breakable) {
       this.mining = null;
-      if (click) this.swing();
+      if (click) this.punch();
       return true;
     }
     const m = this.mining;
@@ -1478,7 +1498,7 @@ export class Fighter {
       this.mineProgress = 0;
     }
     this.mineProgress += this.destroyProgress(hit.id);
-    this.swing();
+    this.punch();
     this.events.push({ type: 'mineHit', block: hit.id });
     if (this.mineProgress >= 1) {
       this.breakBlock(hit.x, hit.y, hit.z, hit.id);
@@ -1579,7 +1599,7 @@ export class Fighter {
       t.throwFrom(this, C.WIND_CHARGE_SPEED, this.world.rng, 0);
       this.world.spawnThrown(t);
       this.consume(s, hand);
-      if (hand === 'main') this.swing();
+      this.useSwing(hand);
       this.cooldowns.set('wind_charge', { ticks: 10, total: 10 });
       this.stats.windCharges++;
       this.events.push({ type: 'throw', kind: 'wind' });
@@ -1591,7 +1611,7 @@ export class Fighter {
       t.throwFrom(this, kind === 'fireball' ? 1.1 : 1.5, this.world.rng, 0);
       this.world.spawnThrown(t);
       this.consume(s, hand);
-      if (hand === 'main') this.swing();
+      this.useSwing(hand);
       if (kind === 'fireball') this.cooldowns.set('fire_charge', { ticks: 10, total: 10 });
       this.events.push({ type: 'throw', kind: 'pearl' });
       return;
@@ -1601,7 +1621,7 @@ export class Fighter {
       t.throwFrom(this, C.PEARL_THROW_SPEED, this.world.rng, 0);
       this.world.spawnThrown(t);
       this.consume(s, hand);
-      if (hand === 'main') this.swing();
+      this.useSwing(hand);
       this.cooldowns.set('ender_pearl', { ticks: 20, total: 20 });
       this.stats.pearlsThrown++;
       this.events.push({ type: 'throw', kind: 'pearl' });
@@ -1612,7 +1632,7 @@ export class Fighter {
     t.throwFrom(this, xp ? C.XP_BOTTLE_THROW_SPEED : C.POTION_THROW_SPEED, this.world.rng);
     this.world.spawnThrown(t);
     this.consume(s, hand);
-    if (hand === 'main') this.swing();
+    this.useSwing(hand);
     if (xp) this.stats.xpBottles++;
     else this.stats.potsThrown++;
     this.events.push({ type: 'throw', kind: xp ? 'xp' : 'potion' });

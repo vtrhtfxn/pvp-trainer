@@ -355,17 +355,16 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
     );
   }
   if (kbLevel > 0) {
-    if (res.fullHit) {
-      // Pushes along the attacker's facing (Minecraft passes sin(yaw), -cos(yaw)).
-      applyKnockback(
-        kbVel,
-        kbLevel * C.KNOCKBACK_PER_LEVEL * resist,
-        Math.sin(attacker.yaw),
-        Math.cos(attacker.yaw),
-        target.onGround,
-        target.world.rng,
-      );
-    }
+    // Pushes along the attacker's facing (Minecraft passes sin(yaw), -cos(yaw)). A hit inside
+    // hurt immunity still pushes, but only the server's copy: nothing is sent to the victim.
+    applyKnockback(
+      res.fullHit ? kbVel : target.serverVel,
+      kbLevel * C.KNOCKBACK_PER_LEVEL * resist,
+      Math.sin(attacker.yaw),
+      Math.cos(attacker.yaw),
+      target.onGround,
+      target.world.rng,
+    );
     attacker.vel.x *= C.SPRINT_HIT_SLOWDOWN;
     attacker.vel.z *= C.SPRINT_HIT_SLOWDOWN;
     attacker.serverVel.x *= C.SPRINT_HIT_SLOWDOWN;
@@ -379,20 +378,18 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
     // makes jump-resets work. Only a grounded victim gets the upward component.
     const vy = target.onGround ? kbVel.y : target.vel.y;
     target.vel.set(kbVel.x, vy, kbVel.z);
-    // LivingEntity.knockback keeps the result on the server entity too, where it decays with
-    // friction. The next hit's `vel / 2` term starts from it, which is what makes knockback
-    // stack through a combo instead of resetting to the same push every time.
-    target.serverVel.set(kbVel.x, vy, kbVel.z);
+    // Player.causeExtraKnockback sends the victim this velocity and then puts the server's copy
+    // back to what it was before the hit, so a melee hit never builds on the previous one: every
+    // hit of a combo is the same push from where the server thinks they are going.
   }
 
-  // Player.attack's sweep: a full-charge sword hit with no crit, no sprint knockback, on the
-  // ground and barely moving. It would also hit anyone else within a block of the target (for
-  // 1 + damage × level/(level+1) with Sweeping Edge) — in a duel there is no one else, so it is
-  // just the sweep arc and sound.
+  // Player.isSweepAttack: a full-charge sword hit with no crit and no sprint knockback, on the
+  // ground, moving less than 2.5 × your speed attribute per tick (walking still sweeps).
   const moved = Math.hypot(attacker.pos.x - attacker.prevPos.x, attacker.pos.z - attacker.prevPos.z);
-  if (strong && !crit && !sprint && attacker.onGround && moved < attacker.movementSpeed() && defOf(weapon).tool === 'sword') {
+  if (strong && !crit && !sprint && attacker.onGround && moved < attacker.movementSpeed() * C.SWEEP_MOVE_FACTOR && defOf(weapon).tool === 'sword') {
     const d = attacker.look(new V3());
     attacker.events.push({ type: 'sweep', x: attacker.pos.x + d.x, y: attacker.pos.y + attacker.height() * 0.5, z: attacker.pos.z + d.z });
+    sweep(attacker, target, base, scale);
   }
 
   // Wind Burst (post-attack, after the hit's knockback): a radius-3.5 gust at the attacker's feet
@@ -425,6 +422,55 @@ export function performAttack(attacker: Fighter, target: Fighter, picked?: numbe
     swap,
   });
   return { hit: true, reach, crit, sprint, scale, damage: res.dealt, blocked: false, disabled: false, swap };
+}
+
+/**
+ * Player.doSweepAttack: everyone else within a block of the target (its box grown 1 sideways,
+ * 0.25 up and down) and within 3 blocks of you takes 1 + Sweeping Edge's share of the hit's
+ * damage, plus Sharpness, all times the charge — and a 0.4 push along your facing. Teammates
+ * are left alone. Only matters with more than two people (2v2, party games).
+ */
+function sweep(attacker: Fighter, target: Fighter, base: number, scale: number) {
+  const weapon = attacker.heldStack();
+  const lvl = weapon?.ench?.sweepingEdge ?? 0;
+  const amount = (1 + (lvl / (lvl + 1)) * base + sharpnessBonus(weapon?.ench?.sharpness ?? 0)) * scale;
+  const area: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
+  target.aabbInto(area);
+  area.minX -= 1;
+  area.maxX += 1;
+  area.minZ -= 1;
+  area.maxZ += 1;
+  area.minY -= 0.25;
+  area.maxY += 0.25;
+  const other: AABB = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
+  for (const o of attacker.world.fighters) {
+    if (o === attacker || o === target || o.dead || o.gameMode === 'spectator' || !o.isEnemy(attacker)) continue;
+    o.aabbInto(other);
+    if (other.maxX <= area.minX || other.minX >= area.maxX || other.maxY <= area.minY || other.minY >= area.maxY || other.maxZ <= area.minZ || other.minZ >= area.maxZ) continue;
+    const dx = o.pos.x - attacker.pos.x;
+    const dy = o.pos.y - attacker.pos.y;
+    const dz = o.pos.z - attacker.pos.z;
+    if (dx * dx + dy * dy + dz * dz >= 9) continue;
+    // A raised shield facing you takes the sweep like any other hit.
+    if (o.isBlocking() && shieldFaces(o, attacker.pos.x, attacker.pos.z)) {
+      o.damageShield(amount);
+      o.events.push({ type: 'shieldBlock', attacker });
+      continue;
+    }
+    const kbVel = o.serverVel.clone();
+    const res = hurt(o, amount, attacker, false);
+    if (!res.damaged) continue;
+    const resist = 1 - o.armor.knockbackResistance;
+    // The usual push away from you (full hits only), then the sweep's own push along your facing.
+    if (res.fullHit) applyKnockback(kbVel, C.BASE_KNOCKBACK * resist, attacker.pos.x - o.pos.x, attacker.pos.z - o.pos.z, o.onGround, o.world.rng);
+    applyKnockback(res.fullHit ? kbVel : o.serverVel, C.BASE_KNOCKBACK * resist, Math.sin(attacker.yaw), Math.cos(attacker.yaw), o.onGround, o.world.rng);
+    if (res.fullHit) {
+      const vy = o.onGround ? kbVel.y : o.vel.y;
+      o.vel.set(kbVel.x, vy, kbVel.z);
+      o.serverVel.set(kbVel.x, vy, kbVel.z);
+    }
+    attacker.stats.damageDealt += res.dealt;
+  }
 }
 
 /**

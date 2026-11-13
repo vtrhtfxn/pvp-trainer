@@ -68,13 +68,16 @@ describe('trainer drills can be completed', () => {
       if (!p.onGround && p.fallDistance > 0 && p.attackStrengthScale(0.5) >= 1) m.queueClick();
     });
     expect(run.result?.passed).toBe(true);
-    const sprinting = play('crit', (_run, m) => {
+    // The feed only keeps the last few lines, so remember every one.
+    const said = new Set<string>();
+    const sprinting = play('crit', (run, m) => {
+      for (const f of run.feed) said.add(f.text);
       lookAt(m);
       walkTo(m, 2.2, true);
       if (m.player.attackStrengthScale(0.5) >= 1) m.queueClick();
     }, 20 * 15);
     expect(sprinting.successes).toBe(0);
-    expect(sprinting.feed.some((f) => f.text.includes('Sprint hit'))).toBe(true);
+    expect([...said].some((t) => t.includes('Sprint hit'))).toBe(true);
   });
 
   it('sprint hits (W-tap)', () => {
