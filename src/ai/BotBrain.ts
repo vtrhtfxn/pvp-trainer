@@ -915,6 +915,18 @@ export class BotBrain {
   }
 
   /**
+   * Their shield has been up the whole of the last `ticks` ticks — i.e. we have had our reaction
+   * time to notice *this* raise. (Looking only at the frame `ticks` ago let a shield that went
+   * down and straight back up count as already seen, and got disabled the tick it rose.)
+   */
+  private shieldSeenFor(ticks: number): boolean {
+    const n = this.seen.length;
+    if (n <= ticks) return false;
+    for (let i = n - 1 - ticks; i < n; i++) if (!this.seen[i].shield) return false;
+    return true;
+  }
+
+  /**
    * The Axe-kit game. Priorities, in order: shoot at range; break a raised shield with the axe
    * (attribute-swapping on Hard+); block while the opponent's weapon is charged and ours is not;
    * otherwise fight with the sword exactly like the Sword kit — W-taps, crits, spacing.
@@ -941,7 +953,7 @@ export class BotBrain {
     const inReach = reach >= 0 && reach <= this.maxReach;
 
     // ---- 1. Their shield is up and facing us: the axe disables it for 5 seconds.
-    const wantsBreak = !P.passive && seen.shield && facingUs && !targetDown && b.slotOf(this.axe) >= 0;
+    const wantsBreak = !P.passive && this.shieldSeenFor(A.shieldReact) && facingUs && !targetDown && b.slotOf(this.axe) >= 0;
     if (wantsBreak || this.axeCommit > 0) {
       if (this.axeCommit > 0) this.axeCommit--;
       this.shieldPlan = false;
@@ -984,8 +996,10 @@ export class BotBrain {
       }
       if (!inReach) return;
       // Still blocking: any axe hit disables. Shield dropped: wait for a strong axe hit instead of
-      // throwing away the cooldown by switching straight back.
-      if (wantsBreak || b.attackStrengthScale(0.5) >= 0.95) {
+      // throwing away the cooldown by switching straight back — but not into a shield that has
+      // only just come back up: we haven't had time to see it yet, so we don't get to punish it.
+      const freshShield = T.raisingShield() && !wantsBreak;
+      if (wantsBreak || (b.attackStrengthScale(0.5) >= 0.95 && !freshShield)) {
         this.afterAxeSwing(this.doAttack());
         this.axeWait = -1;
         this.axeCommit = 0;
