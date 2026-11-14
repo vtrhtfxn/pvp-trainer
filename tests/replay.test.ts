@@ -115,6 +115,21 @@ describe('replays', () => {
     expect(rerun(data).trace).not.toEqual(trace);
   });
 
+  it('your look turns smoothly between ticks in POV (it used to jump 20 times a second)', () => {
+    const { data } = play('sword', 'lt3', 7, 300);
+    const w = new ReplayWatch(data);
+    const p = w.match.player;
+    let turning = 0;
+    for (let i = 0; i < 100; i++) {
+      const before = p.yaw;
+      w.tick();
+      // The previous look is last tick's, so the camera can be drawn in between.
+      expect(p.prevYaw).toBe(before);
+      if (Math.abs(p.yaw - p.prevYaw) > 1e-6) turning++;
+    }
+    expect(turning).toBeGreaterThan(20);
+  });
+
   it('the recording is small', () => {
     const { data } = play('sword', 'ht3', 4, 20 * 60);
     // A minute of play, with the mouse moving every tick.

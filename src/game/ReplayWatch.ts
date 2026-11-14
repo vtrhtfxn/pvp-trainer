@@ -130,8 +130,16 @@ export class ReplayWatch implements Watch {
   private step(): boolean {
     const d = this.data;
     if (this.t >= d.frames.length) return false;
+    const p = this.match.player;
+    const yaw = p.yaw;
+    const pitch = p.pitch;
     this.feeder.apply(this.match, d.frames[this.t]);
     this.match.tick();
+    // The frame set this tick's look before the tick saved the "previous" one, so both came out
+    // the same and your POV turned in 20 jumps a second. Between ticks the camera goes from the
+    // last tick's look to this one, as it did on your screen.
+    p.prevYaw = yaw;
+    p.prevPitch = pitch;
     this.t++;
     if (this.t % CHECK_EVERY === 0) {
       const want = d.checks[this.t / CHECK_EVERY - 1];
