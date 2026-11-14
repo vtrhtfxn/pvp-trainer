@@ -571,13 +571,14 @@ const TIERS: { id: TierId; name: string; tagline: string; color: string }[] = [
 ];
 
 /**
- * Hand adjustments on top of the blend. LT2 and HT2 broke a raised shield too fast for their tier
- * (about 0.55 s and 0.4 s in the Axe kit): they now take longer to notice it and to swing (about 0.75 s and 0.6 s).
+ * Hand adjustments on top of the blend. A shield held up next to them: LT2 disables it in about
+ * 0.7 s and HT2 in about 0.55 s (notice it, then swap and swing within a few ticks) — between HT3
+ * (about 0.9 s) and LT1/HT1 (about 0.45 s), never on the tick it rises.
  */
 function tweak(id: TierId, p: BotProfile): BotProfile {
   // Mending sense comes in at tier 2 (reading your mending) and tier 1 (mending piece by piece).
-  if (id === 'lt2') return { ...p, axe: { ...p.axe, shieldReact: 11, axeDelay: [10, 15] }, sense: { ...p.sense, mendRead: 0.6 } };
-  if (id === 'ht2') return { ...p, axe: { ...p.axe, shieldReact: 10, axeDelay: [8, 12] }, sense: { ...p.sense, mendRead: 0.8 } };
+  if (id === 'lt2') return { ...p, axe: { ...p.axe, shieldReact: 8, axeDelay: [4, 6] }, sense: { ...p.sense, mendRead: 0.6 } };
+  if (id === 'ht2') return { ...p, axe: { ...p.axe, shieldReact: 7, axeDelay: [2, 4] }, sense: { ...p.sense, mendRead: 0.8 } };
   if (id === 'lt1') return { ...p, sense: { ...p.sense, mendFocus: 1, mendRead: 0.9 } };
   if (id === 'ht1') return { ...p, sense: { ...p.sense, mendFocus: 1, mendRead: 1 } };
   return p;
