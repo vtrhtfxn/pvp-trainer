@@ -26,6 +26,8 @@ export interface ParsedPack {
   atlases: { icons?: PackFile; widgets?: PackFile };
   /** Undyed leather armor (item and model layers) the team colours are dyed from. */
   leather: Map<string, PackFile>;
+  /** Sounds (path under assets/minecraft/sounds/ without .ogg, e.g. "damage/hit1") → the pack file. */
+  sounds: Map<string, PackFile>;
 }
 
 /** 1.8–1.12 names (after items/ → item/, blocks/ → block/) for today's. */
@@ -125,18 +127,20 @@ function describe(v: unknown): string {
  * keys: only those (and the atlases and leather the game derives textures from) are kept.
  * A pack zipped with its folder inside ("MyPack/assets/…") works too.
  */
-export async function parsePack(files: PackFile[], known: ReadonlySet<string>): Promise<ParsedPack> {
+export async function parsePack(files: PackFile[], known: ReadonlySet<string>, knownSounds: ReadonlySet<string> = new Set()): Promise<ParsedPack> {
   const marker = 'assets/minecraft/textures/';
+  const soundMarker = 'assets/minecraft/sounds/';
   // Where the pack's root is: the folder holding assets/ (and pack.mcmeta).
   let root = '';
   for (const f of files) {
-    const i = f.name.toLowerCase().indexOf(marker);
+    const lower = f.name.toLowerCase();
+    const i = Math.max(lower.indexOf(marker), lower.indexOf(soundMarker));
     if (i >= 0) {
       root = f.name.slice(0, i);
       break;
     }
   }
-  const pack: ParsedPack = { description: '', icon: null, textures: new Map(), atlases: {}, leather: new Map() };
+  const pack: ParsedPack = { description: '', icon: null, textures: new Map(), atlases: {}, leather: new Map(), sounds: new Map() };
   for (const f of files) {
     if (!f.name.startsWith(root)) continue;
     const rest = f.name.slice(root.length);
@@ -148,6 +152,9 @@ export async function parsePack(files: PackFile[], known: ReadonlySet<string>): 
       } catch {
         // A broken pack.mcmeta only loses the description.
       }
+    } else if (rest.toLowerCase().startsWith(soundMarker) && /\.ogg$/i.test(rest)) {
+      const key = rest.slice(soundMarker.length).toLowerCase().replace(/\.ogg$/, '');
+      if (knownSounds.has(key)) pack.sounds.set(key, f);
     } else if (rest.toLowerCase().startsWith(marker) && /\.png$/i.test(rest)) {
       const key = mapPath(rest.slice(marker.length).toLowerCase());
       if (key === 'gui/icons') pack.atlases.icons = f;
@@ -166,9 +173,9 @@ export async function parsePack(files: PackFile[], known: ReadonlySet<string>): 
 }
 
 /** A pack in a .zip file. */
-export async function parseZipPack(bytes: Uint8Array, known: ReadonlySet<string>): Promise<ParsedPack> {
+export async function parseZipPack(bytes: Uint8Array, known: ReadonlySet<string>, knownSounds?: ReadonlySet<string>): Promise<ParsedPack> {
   const entries: ZipEntry[] = readZip(bytes);
-  return parsePack(entries, known);
+  return parsePack(entries, known, knownSounds);
 }
 
 /**

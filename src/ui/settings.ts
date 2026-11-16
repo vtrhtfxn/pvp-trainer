@@ -26,6 +26,8 @@ export interface Settings {
   // ---- video
   fov: number;
   fovEffects: number;
+  /** Which one-time setting moves have run (see loadSettings). */
+  settingsRev: number;
   /** FOV of the first-person hand and held item (vanilla draws them at 70). */
   handFov: number;
   /** Third-person camera distance in blocks (vanilla: 4). */
@@ -109,7 +111,8 @@ export const DEFAULT_SETTINGS: Settings = {
   fullscreenLock: true,
   mainHand: 'right',
   fov: 85,
-  fovEffects: 0.5,
+  fovEffects: 1,
+  settingsRev: 1,
   handFov: 70,
   thirdPersonDistance: 4,
   viewBobbing: true,
@@ -174,6 +177,10 @@ export function loadSettings(): Settings {
         if (typeof s[k] !== typeof DEFAULT_SETTINGS[k]) (s as unknown as Record<string, unknown>)[k] = DEFAULT_SETTINGS[k];
       }
       s.firstTo = clampFirstTo(s.firstTo);
+      // Rev 1: FOV Effects' default went from 50% to Minecraft's 100% (sprinting widens the view
+      // as much as it does there); a save still on the old default moves with it.
+      if ((saved.settingsRev ?? 0) < 1 && saved.fovEffects === 0.5) s.fovEffects = 1;
+      s.settingsRev = DEFAULT_SETTINGS.settingsRev;
       if (!s.partyPlayers || Array.isArray(s.partyPlayers)) s.partyPlayers = {};
       // Custom kits are checked again once they have loaded (Game drops one that is gone).
       if (!KITS.some((kit) => kit.id === s.kit) && !/^custom:[a-z0-9]{1,16}$/.test(s.kit)) s.kit = DEFAULT_SETTINGS.kit;

@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import playerUrl from '../assets/models/player.glb?url';
 import { registerGoldenHead, registerSpearMace } from './itemIcons';
 import { applyResourcePack, loadPack, packKeys } from './pack';
+import { setPackSounds } from '../audio/packSounds';
 import { loadActivePack } from './packStore';
 
 /** The resource pack in use (null: the default textures), and how many textures it replaced. */
@@ -149,7 +150,10 @@ export async function loadAssets(): Promise<Assets> {
   // A resource pack replaces textures before anything is built from them.
   try {
     const active = await loadActivePack(packKeys());
-    if (active) resourcePackApplied = { name: active.ref.name, textures: await applyResourcePack(active.pack) };
+    if (active) {
+      resourcePackApplied = { name: active.ref.name, textures: await applyResourcePack(active.pack) };
+      setPackSounds(active.pack.sounds);
+    }
   } catch (e) {
     console.warn('Resource pack not loaded:', e);
   }

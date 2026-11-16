@@ -237,11 +237,17 @@ shown as one of:
   armor, hunger, crosshair — cut from `gui/icons.png` / `gui/widgets.png` in old packs) and the
   team leather armor (the pack's leather, dyed red and blue). Old names (`items/`, `blocks/`,
   `apple_golden`, `web`, `gold_layer_1` …) and 1.21.2+ armor (`entity/equipment`) are mapped
-  for you; HD textures stay sharp in the world and the HUD is drawn at its normal size. Not used:
-  sounds, fonts, custom item models (JSON), OptiFine/CIT extras and the sky. Inventory icons are
-  drawn at 16×16. (`src/render/resourcePack.ts`, `zip.ts`, `packStore.ts`; tests:
+  for you; HD textures stay sharp in the world and the HUD is drawn at its normal size.
+  **Sounds** in a pack (`assets/minecraft/sounds/…ogg`, the paths 1.9+ uses) replace the game's:
+  hurt (`damage/hit1–3`), strong / weak / crit / knockback / sweep hits
+  (`entity/player/attack/…`), footsteps (`step/grass`), landing (`damage/fallsmall`), eating
+  and burping, bow and arrow hits, the totem, explosions, shield blocks and breaks, the crossbow,
+  mace smashes, wind bursts and thunder — one variant at random each time, with the game's pitch
+  wobble. A pack with only sounds is fine. Not used: fonts, music, custom item models (JSON),
+  OptiFine/CIT extras and the sky. Inventory icons are drawn at 16×16. (`src/audio/packSounds.ts`) (`src/render/resourcePack.ts`, `zip.ts`, `packStore.ts`; tests:
   `tests/resourcePack.test.ts`.)
-- **Video** — FOV, FOV effects, a separate **hand FOV**, third-person distance, brightness,
+- **Video** — FOV, FOV effects (100% by default, as in Minecraft: sprinting and Speed widen
+  the view), a separate **hand FOV**, third-person distance, brightness,
   GUI scale, damage tilt, view bobbing; **Max Framerate**, **Render Scale** (Auto lowers the
   resolution only while frames are slow), particles (All / Decreased / Minimal), smooth edges
   (MSAA; Auto keeps it on ordinary screens and on high-density ones when the computer has 8 cores or more, such as any Apple Silicon Mac, and skips it on low-end machines), entity shadows, clouds, fog, the title-screen
@@ -952,7 +958,9 @@ nametag reads *Passive*.
 - **Jump-reset / hit-select**: jumping on the tick you get hit adds the sprint-jump boost
   toward your opponent. Sprint-hitting right after getting hit cuts your own velocity by 40%.
 - **Movement**: walk 4.317 m/s, sprint 5.612 m/s, sprint-jump boost 0.2, jump 0.42, gravity
-  0.08, drag 0.98, ground friction 0.546, air friction 0.91.
+  0.08, drag 0.98, ground friction 0.546, air friction 0.91. Sprinting on the ground kicks up
+  bits of the block underfoot behind you every tick, and landing from more than 3 blocks throws
+  up a ring of them (more the further you fell), as in Minecraft.
 - **Hunger**: exhaustion from sprinting (0.1/m), jumping (0.05 / 0.2 sprint-jump), attacking
   and taking damage (0.1). Full hunger with saturation heals 1 HP every 0.5 s. At 18+ hunger
   you heal 1 HP every 4 s. You can't sprint at 6 hunger or below.
@@ -1295,4 +1303,5 @@ The UI font is Minecraft's own, built from the pack's glyph sheets by `scripts/b
 Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005.
 Sounds: crits, knockback, sweeps, the totem pop, the mace smash, explosions and the spear lunge are Minecraft's own
 sound effects (`src/assets/sounds/`, trimmed and converted to mono Ogg) — © Mojang; the rest are
-synthesised in `src/audio/Sound.ts`. Not affiliated with Mojang or Microsoft.
+synthesised in `src/audio/Sound.ts` (hurt is a short voiced grunt, hits a thump with a slap and a
+crack, footsteps a double crunch) — or come from your resource pack. Not affiliated with Mojang or Microsoft.

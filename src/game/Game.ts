@@ -3079,10 +3079,24 @@ export class Game {
     this.damage.spawn(f.pos.x, f.pos.y + (f.sneaking ? 1.6 : 1.9), f.pos.z, text, crit && !!mods.cfg('damageindicator', 'crits'), Number(mods.cfg('damageindicator', 'scale')));
   }
 
+  /** The colour of what `f` stands on (the arena's grass when it's the floor, not a block). */
+  private groundColor(f: Fighter): number {
+    const b = f.world.blocks;
+    const x = Math.floor(f.pos.x);
+    const y = Math.floor(f.pos.y - 0.2);
+    const z = Math.floor(f.pos.z);
+    const id = b.inside(x, y, z) ? b.get(x, y, z) : B.AIR;
+    return id !== B.AIR ? (BLOCK_COLORS[id] ?? 0x888888) : 0x6b8f3e;
+  }
+
   private handleEvents(f: Fighter, live: boolean) {
     const m = this.match;
     const isPlayer = f === m.player;
     const fx = this.view.particles;
+    // Sprinting on the ground kicks up bits of the ground behind you, every tick.
+    if (f.sprinting && f.onGround && !f.inWater && !f.dead && f.gameMode !== 'spectator') {
+      fx.sprintDust(f.pos.x, f.pos.y, f.pos.z, f.pos.x - f.prevPos.x, f.pos.z - f.prevPos.z, this.groundColor(f));
+    }
     for (const e of f.events as FighterEvent[]) {
       switch (e.type) {
         case 'attack': {
@@ -3238,6 +3252,7 @@ export class Game {
           break;
         case 'land':
           if (live) this.sound.land(f.pos, isPlayer);
+          fx.landDust(f.pos.x, f.pos.y, f.pos.z, e.fall, this.groundColor(f));
           break;
         default:
           break;

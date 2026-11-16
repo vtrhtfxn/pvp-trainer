@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { KNOWN_SOUND_KEYS } from '../src/audio/packSounds';
 import { mapPath, parseZipPack } from '../src/render/resourcePack';
 import { readZip } from '../src/render/zip';
 import { zip } from './zipWriter';
@@ -53,6 +54,23 @@ describe('resource packs', () => {
     expect(p.atlases.widgets).toBeDefined();
     expect([...p.leather.keys()]).toEqual(['item/leather_helmet']);
     expect([...(await p.textures.get('item/golden_apple')!.read())]).toEqual([...png]);
+  });
+
+  it('takes the sounds the game can play from a pack (and nothing else)', async () => {
+    const ogg = new Uint8Array([79, 103, 103, 83]);
+    const bytes = zip({
+      'PvP Sounds/pack.mcmeta': JSON.stringify({ pack: { pack_format: 34, description: 'hit sounds' } }),
+      'PvP Sounds/assets/minecraft/sounds/damage/hit1.ogg': ogg,
+      'PvP Sounds/assets/minecraft/sounds/damage/hit2.ogg': ogg,
+      'PvP Sounds/assets/minecraft/sounds/entity/player/attack/strong1.ogg': ogg,
+      'PvP Sounds/assets/minecraft/sounds/step/grass3.ogg': ogg,
+      'PvP Sounds/assets/minecraft/sounds/music/game/calm1.ogg': ogg,
+      'PvP Sounds/assets/minecraft/sounds/sounds.txt': ogg,
+    });
+    const p = await parseZipPack(bytes, KNOWN, KNOWN_SOUND_KEYS);
+    expect([...p.sounds.keys()].sort()).toEqual(['damage/hit1', 'damage/hit2', 'entity/player/attack/strong1', 'step/grass3']);
+    expect(p.textures.size).toBe(0);
+    expect([...(await p.sounds.get('damage/hit1')!.read())]).toEqual([...ogg]);
   });
 
   it('reads a modern pack (text-component description, HUD sprites as files)', async () => {
