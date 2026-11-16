@@ -34,3 +34,21 @@ export class LookSmoother {
     this.who = null;
   }
 }
+
+/**
+ * The value between p1 (t = 0) and p2 (t = 1) on a smooth curve through four samples in a row
+ * (Fritsch–Carlson monotone cubic): it passes through every sample, its speed never jumps at a
+ * sample, and it never swings past one — a flick that stops dead stops dead.
+ */
+export function monotoneCubic(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const s0 = p1 - p0;
+  const s1 = p2 - p1;
+  const s2 = p3 - p2;
+  if (s1 === 0) return p1;
+  const tangent = (a: number, b: number) => (a * b <= 0 ? 0 : Math.sign(b) * Math.min((Math.abs(a) + Math.abs(b)) / 2, 3 * Math.min(Math.abs(a), Math.abs(b))));
+  const m1 = tangent(s0, s1);
+  const m2 = tangent(s1, s2);
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * p1 + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * p2 + (t3 - t2) * m2;
+}

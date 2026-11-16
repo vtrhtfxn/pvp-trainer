@@ -2648,6 +2648,7 @@ export class Game {
       // Your own eyes in your own replay stay exact (1:1 with what you saw); a bot's are steadied.
       const exact = pov && spec instanceof ReplayWatch && spec.cam === 'povA';
       this.view.extras.lerpLook = exact;
+      this.view.extras.povLook = exact ? (spec as ReplayWatch).look(alpha) : null;
       this.view.extras.smoothLook = !exact;
       this.view.extras.cinematic = pov && !exact;
       const [cp, cb] = onB ? [m.bot, m.player] : [m.player, m.bot];
@@ -2695,6 +2696,7 @@ export class Game {
     } else {
       this.view.extras.smoothLook = false;
       this.view.extras.lerpLook = false;
+      this.view.extras.povLook = null;
       this.view.extras.cinematic = false;
       this.view.extras.freeCam = null;
       this.view.cameraMode = this.state === 'menu' ? 'orbit' : this.cameraMode;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LookSmoother } from '../src/render/lookSmooth';
+import { LookSmoother, monotoneCubic } from '../src/render/lookSmooth';
 
 /** A bot that snaps its aim by `snap` radians every tick, drawn at `fps` frames per second. */
 function frames(snap: number, fps: number, seconds: number, smooth: boolean) {
@@ -60,5 +60,28 @@ describe('bot-eye camera smoothing', () => {
     sm.update({}, 2, 2, 0.3, 0.3, 1, 0.016);
     expect(sm.yaw).toBeCloseTo(2, 5);
     expect(sm.pitch).toBeCloseTo(0.3, 5);
+  });
+});
+
+describe('monotoneCubic (your own replay POV)', () => {
+  it('passes through the samples and never swings past them', () => {
+    expect(monotoneCubic(0, 1, 3, 4, 0)).toBe(1);
+    expect(monotoneCubic(0, 1, 3, 4, 1)).toBeCloseTo(3, 12);
+    // A flick that stops dead: no overshoot past where it stopped.
+    for (let t = 0; t <= 1; t += 0.05) {
+      const v = monotoneCubic(0, 0, 2, 2, t);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(2 + 1e-12);
+    }
+    expect(monotoneCubic(5, 2, 2, 9, 0.5)).toBe(2);
+  });
+
+  it('turning speed is continuous across a tick (no 20-a-second jolts)', () => {
+    const s = [0, 0.3, 1.1, 1.4, 2.6, 2.7, 2.7];
+    const speed = (i: number, t: number) => {
+      const f = (x: number) => monotoneCubic(s[i - 1], s[i], s[i + 1], s[i + 2], x);
+      return (f(t + 1e-5) - f(t - 1e-5)) / 2e-5;
+    };
+    for (let i = 1; i + 2 < s.length - 1; i++) expect(speed(i, 1 - 1e-4)).toBeCloseTo(speed(i + 1, 1e-4), 2);
   });
 });
