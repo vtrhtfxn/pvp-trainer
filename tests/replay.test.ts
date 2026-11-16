@@ -1,3 +1,4 @@
+import { wrapAngle } from '../src/core/math';
 import { describe, expect, it } from 'vitest';
 import { DIFFICULTIES, type DifficultyId } from '../src/ai/difficulty';
 import { Rng } from '../src/core/rng';
@@ -128,6 +129,15 @@ describe('replays', () => {
       if (Math.abs(p.yaw - p.prevYaw) > 1e-6) turning++;
     }
     expect(turning).toBeGreaterThan(20);
+    // The smoothed POV look still lands exactly on each tick's recorded look.
+    for (let i = 0; i < 40; i++) {
+      w.tick();
+      const at0 = w.look(0);
+      const at1 = w.look(1);
+      expect(Math.abs(wrapAngle(at0.yaw - p.prevYaw))).toBeLessThan(1e-9);
+      expect(Math.abs(wrapAngle(at1.yaw - p.yaw))).toBeLessThan(1e-9);
+      expect(at1.pitch).toBeCloseTo(p.pitch, 9);
+    }
   });
 
   it('the recording is small', () => {

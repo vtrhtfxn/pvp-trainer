@@ -212,6 +212,68 @@ export class Particles {
     }
   }
 
+  /**
+   * Entity.spawnSprintParticle: a bit of the block under your feet kicked up behind you while you
+   * sprint (one a tick). `vx`/`vz` is how you are moving.
+   */
+  sprintDust(x: number, y: number, z: number, vx: number, vz: number, color: number) {
+    if (Math.random() > this.density) return;
+    const len = Math.hypot(vx, vz) || 1;
+    const shade = 0.8 + Math.random() * 0.35;
+    // TerrainParticle: lives 4 / (random · 0.9 + 0.1) ticks, at most a couple of seconds.
+    const life = Math.min(1.6, 4 / (Math.random() * 0.9 + 0.1) / 20);
+    this.squares.spawn({
+      x: x + (Math.random() - 0.5) * 0.6,
+      y: y + 0.1,
+      z: z + (Math.random() - 0.5) * 0.6,
+      vx: (-vx / len) * 0.04 + (Math.random() - 0.5) * 0.03,
+      vy: 0.1 + Math.random() * 0.05,
+      vz: (-vz / len) * 0.04 + (Math.random() - 0.5) * 0.03,
+      r: (((color >> 16) & 255) / 255) * shade,
+      g: (((color >> 8) & 255) / 255) * shade,
+      b: ((color & 255) / 255) * shade,
+      size: 0.05 + Math.random() * 0.05,
+      life,
+      maxLife: life,
+      gravity: 0.04,
+      drag: 0.98,
+      grow: 0,
+    });
+  }
+
+  /**
+   * LivingEntity.checkFallDamage: landing from more than 3 blocks throws up a ring of bits of the
+   * block landed on — 150 × min(0.2 + (blocks over 3) / 15, 2.5) of them.
+   */
+  landDust(x: number, y: number, z: number, fall: number, color: number) {
+    const over = Math.ceil(fall - 3);
+    if (over <= 0) return;
+    const n = this.amount(Math.round(150 * Math.min(0.2 + over / 15, 2.5) * 0.5));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = Math.random() * 0.15;
+      const shade = 0.8 + Math.random() * 0.35;
+      const life = Math.min(1.6, 4 / (Math.random() * 0.9 + 0.1) / 20);
+      this.squares.spawn({
+        x,
+        y: y + 0.05,
+        z,
+        vx: Math.cos(a) * sp,
+        vy: 0.05 + Math.random() * 0.15,
+        vz: Math.sin(a) * sp,
+        r: (((color >> 16) & 255) / 255) * shade,
+        g: (((color >> 8) & 255) / 255) * shade,
+        b: ((color & 255) / 255) * shade,
+        size: 0.05 + Math.random() * 0.05,
+        life,
+        maxLife: life,
+        gravity: 0.04,
+        drag: 0.98,
+        grow: 0,
+      });
+    }
+  }
+
   poof(x: number, y: number, z: number) {
     for (let i = 0, n = this.amount(22); i < n; i++) {
       const life = 0.6 + Math.random() * 0.5;

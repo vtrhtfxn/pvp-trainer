@@ -101,12 +101,12 @@ export function renderResourcePacks(body: HTMLElement, sound: () => void) {
           ? 'The game’s own textures (Minecraft’s default look).'
           : info.error
             ? info.error
-            : `${info.description || 'Resource pack'} · ${info.source === 'folder' ? 'pack folder' : 'added here'} · ${info.textures ? `${info.textures} textures` : 'nothing this game uses'}`,
+            : `${info.description || 'Resource pack'} · ${info.source === 'folder' ? 'pack folder' : 'added here'} · ${info.textures || info.sounds ? [info.textures ? `${info.textures} textures` : '', info.sounds ? `${info.sounds} sounds` : ''].filter(Boolean).join(', ') : 'nothing this game uses'}`,
       ),
     );
     el.append(icon, text);
     if (on) el.append(h('div', 'rp-tag', 'IN USE'));
-    else if (!info?.error && (!info || info.textures > 0)) {
+    else if (!info?.error && (!info || info.textures > 0 || (info.sounds ?? 0) > 0)) {
       const b = h('button', 'mc-btn small', 'Use');
       b.addEventListener('click', () => use(ref));
       el.append(b);

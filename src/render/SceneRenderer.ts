@@ -78,6 +78,8 @@ export interface ViewExtras {
    * (in your own duel the mouse turns the camera every frame; a replay only has it per tick).
    */
   lerpLook: boolean;
+  /** Your own replay POV: the look for this frame, already smoothed along the recording (see ReplayWatch.look). */
+  povLook: { yaw: number; pitch: number } | null;
   /**
    * Through a bot's eyes: its look is steadied like a broadcast camera (a bot re-aims up to 45° a
    * tick, which through its eyes is a jerky mess); `lerpLook` stays exact for your own replays.
@@ -199,6 +201,7 @@ export class SceneRenderer {
     sky: { dayTime: 6000, rain: 0, thunder: 0, flash: 0 },
     smoothLook: false,
     lerpLook: false,
+    povLook: null,
     cinematic: false,
     freeCam: null,
     others: [],
@@ -519,7 +522,11 @@ export class SceneRenderer {
     const free = this.extras.freelook;
     let yaw = p.yaw;
     let pitch = p.pitch;
-    if (this.extras.lerpLook) {
+    if (this.extras.povLook) {
+      yaw = this.extras.povLook.yaw;
+      pitch = this.extras.povLook.pitch;
+      this.look.reset();
+    } else if (this.extras.lerpLook) {
       yaw = lerpAngle(p.prevYaw, p.yaw, a);
       pitch = lerp(p.prevPitch, p.pitch, a);
       this.look.reset();

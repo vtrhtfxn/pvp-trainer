@@ -53,6 +53,16 @@ describe('corrupted saves', () => {
     expect(s.volume).toBe(0.3);
   });
 
+  it('FOV Effects moves from the old 50% default to Minecraft’s 100% once, and a chosen value stays', () => {
+    store.set('pvp-trainer.settings.v1', JSON.stringify({ fovEffects: 0.5 }));
+    expect(loadSettings().fovEffects).toBe(1);
+    store.set('pvp-trainer.settings.v1', JSON.stringify({ fovEffects: 0.7 }));
+    expect(loadSettings().fovEffects).toBe(0.7);
+    // After the move has run, 50% is a choice and is kept.
+    store.set('pvp-trainer.settings.v1', JSON.stringify({ fovEffects: 0.5, settingsRev: 1 }));
+    expect(loadSettings().fovEffects).toBe(0.5);
+  });
+
   it('mod settings saved as null do not stop the game from starting', () => {
     store.set('pvp-trainer.mods.v1', 'null');
     for (const k of [...store.keys()]) if (k.includes('mod')) store.set(k, 'null');

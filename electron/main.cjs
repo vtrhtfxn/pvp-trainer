@@ -289,7 +289,7 @@ ipcMain.handle('pvp:packs-read', (e, name) => {
   if (!p || !fs.existsSync(p)) return null;
   const st = fs.statSync(p);
   if (st.isFile()) return st.size <= PACK_LIMIT ? { zip: fs.readFileSync(p) } : null;
-  // An unzipped pack: just the files the game can use (pack.mcmeta, pack.png, textures).
+  // An unzipped pack: just the files the game can use (pack.mcmeta, pack.png, textures, sounds).
   const files = [];
   let total = 0;
   const walk = (dir, rel) => {
@@ -297,7 +297,7 @@ ipcMain.handle('pvp:packs-read', (e, name) => {
       const full = path.join(dir, d.name);
       const r = rel ? `${rel}/${d.name}` : d.name;
       if (d.isDirectory()) walk(full, r);
-      else if (d.isFile() && (/^(pack\.mcmeta|pack\.png)$/i.test(r) || (/\.png$/i.test(r) && /textures\//i.test(r)))) {
+      else if (d.isFile() && (/^(pack\.mcmeta|pack\.png)$/i.test(r) || (/\.png$/i.test(r) && /textures\//i.test(r)) || (/\.ogg$/i.test(r) && /sounds\//i.test(r)))) {
         total += fs.statSync(full).size;
         if (total > PACK_LIMIT) return;
         files.push({ name: r, data: fs.readFileSync(full) });

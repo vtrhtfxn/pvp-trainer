@@ -1,3 +1,4 @@
+import { PACK_SOUNDS, packSoundFiles, type PackSound } from './packSounds';
 import critUrl from '../assets/sounds/crit.ogg?url';
 import knockbackUrl from '../assets/sounds/knockback.ogg?url';
 import sweepUrl from '../assets/sounds/sweep.ogg?url';
@@ -104,6 +105,8 @@ export class Sound {
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private readonly samples: Partial<Record<SampleName, AudioBuffer>> = {};
+  /** A resource pack's sounds, decoded: every variant of each event. */
+  private readonly packBufs: Partial<Record<PackSound, AudioBuffer[]>> = {};
   volume = 0.8;
   /** Silences new sounds (during /tick sprint, when thousands of ticks run per second). */
   muted = false;
@@ -155,7 +158,50 @@ export class Sound {
     return g;
   }
 
+  /** The active resource pack's sounds (read and decoded once audio may start). */
+  private loadPackSounds() {
+    const ctx = this.ctx!;
+    const files = packSoundFiles();
+    if (!files.size) return;
+    for (const [event, keys] of Object.entries(PACK_SOUNDS) as [PackSound, readonly string[]][]) {
+      for (const key of keys) {
+        const f = files.get(key);
+        if (!f) continue;
+        f.read()
+          .then((bytes) => ctx.decodeAudioData(bytes.slice().buffer))
+          .then((buf) => (this.packBufs[event] ??= []).push(buf))
+          .catch(() => {
+            /* a file that won't decode: the game's own sound stays */
+          });
+      }
+    }
+  }
+
+  /**
+   * Plays one of the resource pack's variants for `event` (picked at random, like the game);
+   * false when the pack has none, so the caller plays the game's own sound.
+   */
+  private pack(event: PackSound, dest: AudioNode, peak = 1, pitch = 1): boolean {
+    const list = this.packBufs[event];
+    if (!list?.length) return false;
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = list[Math.floor(Math.random() * list.length)];
+    src.playbackRate.value = pitch;
+    const g = ctx.createGain();
+    g.gain.value = peak;
+    src.connect(g).connect(dest);
+    src.start();
+    return true;
+  }
+
+  /** The game's usual random pitch for player sounds: 1 ± up to 0.2. */
+  private static jitter(range = 0.2): number {
+    return 1 + (Math.random() - Math.random()) * range;
+  }
+
   private loadSamples() {
+    this.loadPackSounds();
     const ctx = this.ctx!;
     const list = [
       ['crit', critUrl],
@@ -231,56 +277,105 @@ export class Sound {
   hit(kind: HitKind, pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 1);
     if (!d) return;
+    if (this.pack(kind === 'weak' ? 'hitWeak' : kind === 'strong' ? 'hitStrong' : kind === 'crit' ? 'hitCrit' : 'hitKnockback', d)) return;
     const t = this.ctx!.currentTime;
     switch (kind) {
       case 'weak':
-        this.noiseBurst(d, t, 0.06, 'lowpass', 900, 400, 0.7, 0.35);
+        // A soft, dull tap.
+        this.thump(d, t, 95, 0.5, 0.07);
+        this.noiseBurst(d, t, 0.05, 'lowpass', 1100, 500, 0.8, 0.35);
         break;
       case 'strong':
-        this.noiseBurst(d, t, 0.09, 'bandpass', 1500, 500, 0.9, 0.9);
-        this.tone(d, t, 0.1, 'sine', 170, 55, 0.7);
+        // A solid punch: a low thump, a cloth-and-leather slap, and a short crack on top.
+        this.thump(d, t, 120, 0.95, 0.11);
+        this.noiseBurst(d, t, 0.07, 'bandpass', 1300, 600, 1.1, 0.8);
+        this.noiseBurst(d, t, 0.025, 'highpass', 3500, 2500, 0.7, 0.45);
         break;
       case 'knockback':
         if (this.sample('knockback', d)) break;
+        this.thump(d, t, 115, 0.95, 0.12);
         this.noiseBurst(d, t, 0.16, 'bandpass', 500, 2400, 1.2, 0.6);
         this.noiseBurst(d, t, 0.08, 'bandpass', 1400, 500, 0.9, 0.75);
-        this.tone(d, t, 0.11, 'sine', 160, 50, 0.7);
         break;
       case 'crit':
         if (this.sample('crit', d)) break;
+        this.thump(d, t, 125, 0.8, 0.1);
         this.noiseBurst(d, t, 0.11, 'highpass', 2600, 1200, 0.8, 0.9);
         this.tone(d, t, 0.05, 'square', 1900, 700, 0.18);
-        this.tone(d, t, 0.1, 'sine', 190, 60, 0.6);
         break;
     }
   }
 
+  /** A short low "body" hit: a sine dropping fast in pitch, with a click at the start. */
+  private thump(dest: AudioNode, t0: number, f0: number, peak: number, dur: number) {
+    this.tone(dest, t0, dur, 'sine', f0, f0 * 0.38, peak);
+    this.noiseBurst(dest, t0, 0.012, 'lowpass', 2400, 1200, 0.7, peak * 0.5);
+  }
+
+  /**
+   * Getting hurt: a short voiced grunt rather than a beep — a buzzy source pitched down, shaped by
+   * two vowel-like resonances, with a breath of noise. Each one is pitched a little differently.
+   */
   hurt(pos: { x: number; y: number; z: number }, self: boolean) {
     const d = this.out(self ? undefined : pos, self ? 0.75 : 0.9);
     if (!d) return;
-    const t = this.ctx!.currentTime;
-    const base = self ? 210 : 240 + Math.random() * 30;
-    this.tone(d, t, 0.16, 'triangle', base, base * 0.62, 0.55);
-    this.tone(d, t + 0.005, 0.12, 'sawtooth', base * 1.5, base * 0.8, 0.08);
+    if (this.pack('hurt', d, 1, Sound.jitter())) return;
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const p = Sound.jitter(0.25);
+    const dur = 0.19;
+    const src = ctx.createOscillator();
+    src.type = 'sawtooth';
+    src.frequency.setValueAtTime(150 * p, t);
+    src.frequency.exponentialRampToValueAtTime(96 * p, t + dur);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.55, t + 0.012);
+    env.gain.setValueAtTime(0.55, t + 0.05);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    // "uh": resonances around 650 Hz and 1150 Hz, sliding down a little as the voice drops.
+    for (const [f, q, g] of [
+      [650, 6, 1],
+      [1150, 8, 0.55],
+    ] as const) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = q;
+      bp.frequency.setValueAtTime(f * p, t);
+      bp.frequency.exponentialRampToValueAtTime(f * p * 0.8, t + dur);
+      const gg = ctx.createGain();
+      gg.gain.value = g;
+      src.connect(bp).connect(gg).connect(env);
+    }
+    env.connect(d);
+    src.start(t);
+    src.stop(t + dur + 0.05);
+    this.noiseBurst(d, t, 0.08, 'bandpass', 1800, 900, 1, 0.18);
+    this.thump(d, t, 90, 0.35, 0.08);
   }
 
   /** entity.player.attack.sweep: a longer, airy whoosh. */
   sweep(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.6);
     if (!d) return;
+    if (this.pack('sweep', d)) return;
     if (this.sample('sweep', d, 1.4)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.22, 'bandpass', 600, 2600, 1.1, 0.45);
   }
 
+  /** A swing that hits nothing: a quick, quiet swish of air. */
   swing(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.5);
-    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.13, 'bandpass', 380, 1300, 1.4, 0.35);
+    if (!d) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(d, t, 0.12, 'bandpass', 700, 2200, 1.6, 0.22);
   }
 
   eat(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.7, 'blocks');
     if (!d) return;
+    if (this.pack('eat', d, 0.7, 1 + (Math.random() - Math.random()) * 0.2)) return;
     const t = this.ctx!.currentTime;
     for (let i = 0; i < 3; i++) {
       const f = 900 + Math.random() * 1600;
@@ -291,6 +386,7 @@ export class Sound {
   burp(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.7, 'blocks');
     if (!d) return;
+    if (this.pack('burp', d, 0.6, 0.9 + Math.random() * 0.1)) return;
     const ctx = this.ctx!;
     const t = ctx.currentTime;
     const o = ctx.createOscillator();
@@ -316,14 +412,26 @@ export class Sound {
     lfo.stop(t + 0.35);
   }
 
+  /** A footstep on grass: two quick crunches (heel, then toe) and a soft thud under them. */
   step(pos: { x: number; y: number; z: number }, self: boolean) {
     const d = this.out(self ? undefined : pos, self ? 0.18 : 0.25, 'steps');
-    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.07, 'lowpass', 700, 250, 0.7, 0.5);
+    if (!d) return;
+    if (this.pack('step', d, 0.9, 1)) return;
+    const t = this.ctx!.currentTime;
+    const f = 1800 + Math.random() * 1400;
+    this.noiseBurst(d, t, 0.045, 'bandpass', f, f * 0.6, 1.4, 0.55);
+    this.noiseBurst(d, t + 0.03 + Math.random() * 0.02, 0.05, 'bandpass', f * 0.8, f * 0.5, 1.4, 0.4);
+    this.thump(d, t, 80, 0.25, 0.06);
   }
 
+  /** Landing: a heavier thud with a crunch of grass. */
   land(pos: { x: number; y: number; z: number }, self: boolean) {
     const d = this.out(self ? undefined : pos, self ? 0.25 : 0.3, 'steps');
-    if (d) this.noiseBurst(d, this.ctx!.currentTime, 0.09, 'lowpass', 500, 150, 0.7, 0.6);
+    if (!d) return;
+    if (this.pack('landSmall', d, 0.9)) return;
+    const t = this.ctx!.currentTime;
+    this.thump(d, t, 85, 0.7, 0.1);
+    this.noiseBurst(d, t, 0.08, 'bandpass', 1600, 700, 1.2, 0.5);
   }
 
   /** item.shield.block: a hit (or an arrow) landing on a raised shield. */
@@ -331,6 +439,7 @@ export class Sound {
     const d = this.out(pos, 0.9);
     if (!d) return;
     // Vanilla varies the pitch a little per block (0.8–1.2).
+    if (this.pack('shieldBlock', d, 1, 0.8 + Math.random() * 0.4)) return;
     if (this.sample('shieldBlock', d, 1, 0.85 + Math.random() * 0.3)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.09, 'lowpass', 700, 180, 1.2, 0.9);
@@ -341,6 +450,7 @@ export class Sound {
   shieldBreak(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 1);
     if (!d) return;
+    if (this.pack('itemBreak', d, 0.8, 0.8 + Math.random() * 0.4)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.22, 'bandpass', 1800, 300, 0.8, 1);
     this.noiseBurst(d, t + 0.04, 0.14, 'lowpass', 600, 150, 1, 0.7);
@@ -356,6 +466,7 @@ export class Sound {
   crossbowShoot(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.9);
     if (!d) return;
+    if (this.pack('crossbowShoot', d, 1, 1 + (Math.random() - 0.5) * 0.2)) return;
     if (this.sample('crossbowShoot', d)) return;
     this.bowShoot(pos, 1);
   }
@@ -363,6 +474,8 @@ export class Sound {
   bowShoot(pos: { x: number; y: number; z: number }, power: number) {
     const d = this.out(pos, 0.8);
     if (!d) return;
+    // ArrowItem: pitch 1 / (random · 0.4 + 1.2) + power / 2.
+    if (this.pack('bow', d, 1, 1 / (Math.random() * 0.4 + 1.2) + power * 0.5)) return;
     const t = this.ctx!.currentTime;
     this.tone(d, t, 0.12, 'triangle', 420 + power * 200, 180, 0.35);
     this.noiseBurst(d, t, 0.18, 'bandpass', 2500, 700, 1.2, 0.4);
@@ -381,6 +494,7 @@ export class Sound {
   arrowHit(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.9);
     if (!d) return;
+    if (this.pack('arrowHit', d, 1, 1.2 / (Math.random() * 0.2 + 0.9))) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.07, 'bandpass', 2200, 900, 1.5, 0.7);
     this.tone(d, t, 0.06, 'sine', 900, 500, 0.25);
@@ -389,12 +503,12 @@ export class Sound {
   /** The little "ding" when you hit someone with an arrow (vanilla's arrow hit-player sound). */
   arrowDing() {
     const d = this.out(undefined, 0.45, 'ui');
-    if (d) this.tone(d, this.ctx!.currentTime, 0.16, 'sine', 1250, 1240, 0.3);
+    if (d && !this.pack('arrowDing', d, 0.6, 0.5)) this.tone(d, this.ctx!.currentTime, 0.16, 'sine', 1250, 1240, 0.3);
   }
 
   pickup(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.4, 'blocks');
-    if (d) this.tone(d, this.ctx!.currentTime, 0.07, 'sine', 1400 + Math.random() * 400, 1800, 0.2);
+    if (d && !this.pack('pickup', d, 0.5, (Math.random() - Math.random()) * 1.4 + 2)) this.tone(d, this.ctx!.currentTime, 0.07, 'sine', 1400 + Math.random() * 400, 1800, 0.2);
   }
 
   /** Throwing a splash potion or XP bottle (entity.splash_potion.throw). */
@@ -407,6 +521,7 @@ export class Sound {
   glassBreak(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.8, 'blocks');
     if (!d) return;
+    if (this.pack('glass', d, 1, 0.9 + Math.random() * 0.1)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.18, 'highpass', 5000, 2500, 0.8, 0.7);
     for (let i = 0; i < 3; i++) this.tone(d, t + i * 0.025, 0.07, 'sine', 2600 + Math.random() * 1800, 2000, 0.12);
@@ -416,6 +531,7 @@ export class Sound {
   totem(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 1);
     if (!d) return;
+    if (this.pack('totem', d)) return;
     if (this.sample('totem', d, 0.7)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.9, 'bandpass', 400, 3200, 2, 0.5);
@@ -426,13 +542,14 @@ export class Sound {
   /** entity.experience_orb.pickup: a high random chime. */
   xp(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.25, 'blocks');
-    if (d) this.tone(d, this.ctx!.currentTime, 0.09, 'sine', 1600 + Math.random() * 1200, 2400, 0.18);
+    if (d && !this.pack('orb', d, 0.5, 0.55 + Math.random() * 0.9)) this.tone(d, this.ctx!.currentTime, 0.09, 'sine', 1600 + Math.random() * 1200, 2400, 0.18);
   }
 
   /** entity.item.break */
   itemBreak(pos: { x: number; y: number; z: number }) {
     const d = this.out(pos, 0.8);
     if (!d) return;
+    if (this.pack('itemBreak', d, 0.8, 0.8 + Math.random() * 0.4)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.2, 'bandpass', 1200, 400, 1, 0.8);
     this.tone(d, t, 0.15, 'square', 300, 120, 0.15);
@@ -483,6 +600,7 @@ export class Sound {
   windBurst(pos: { x: number; y: number; z: number }, power: number) {
     const d = this.out(pos, 0.8);
     if (!d) return;
+    if (this.pack('windBurst', d, 1, 0.9 + Math.random() * 0.2)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.35 + power * 0.05, 'bandpass', 250, 1400, 0.9, 0.8);
     this.tone(d, t, 0.18, 'sine', 140, 60, 0.5);
@@ -496,6 +614,7 @@ export class Sound {
     const d = this.out(pos, 1);
     if (!d) return;
     const t = this.ctx!.currentTime;
+    if (this.pack(!ground ? 'smashAir' : heavy ? 'smashHeavy' : 'smashGround', d)) return;
     if (!ground && this.sample('smash', d, 1, 1)) return;
     if (ground && this.sample('smashGround', d, 1, heavy ? 0.85 : 1)) {
       if (heavy) this.tone(d, t, 0.35, 'sine', 90, 35, 0.6);
@@ -516,6 +635,7 @@ export class Sound {
   explosion(pos: { x: number; y: number; z: number }, power: number) {
     const d = this.out(pos, 1.4);
     if (!d) return;
+    if (this.pack('explode', d, 0.8, (1 + (Math.random() - Math.random()) * 0.2) * 0.7)) return;
     // The recorded blast: bigger explosions (crystals, power 6) a touch deeper than anchors or TNT.
     if (this.sample('explode', d, 0.8, power >= 6 ? 0.92 : 1)) return;
     const t = this.ctx!.currentTime;
@@ -555,6 +675,7 @@ export class Sound {
   thunder() {
     const d = this.out(undefined, 0.9, 'blocks');
     if (!d) return;
+    if (this.pack('thunder', d, 1, 0.8 + Math.random() * 0.2)) return;
     const t = this.ctx!.currentTime;
     this.noiseBurst(d, t, 0.25, 'highpass', 2500, 900, 0.7, 0.5);
     this.noiseBurst(d, t + 0.05, 2.6, 'lowpass', 260, 60, 0.8, 1);

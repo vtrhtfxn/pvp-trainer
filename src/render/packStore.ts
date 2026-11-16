@@ -1,3 +1,4 @@
+import { KNOWN_SOUND_KEYS } from '../audio/packSounds';
 import { parsePack, parseZipPack, type PackFile, type ParsedPack } from './resourcePack';
 
 /**
@@ -26,6 +27,8 @@ export interface PackInfo extends PackRef {
   icon: string;
   /** Textures it would replace (0: nothing the game uses). */
   textures: number;
+  /** Sound files it would replace. */
+  sounds?: number;
   /** Why it can't be read (then it can't be picked). */
   error?: string;
 }
@@ -103,9 +106,9 @@ async function savedBytes(name: string): Promise<Uint8Array | null> {
 /** Keeps a chosen .zip in the browser's storage. Returns its name. Throws if it isn't a pack. */
 export async function addSavedPack(file: File, known: ReadonlySet<string>): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const pack = await parseZipPack(bytes, known);
-  if (!pack.textures.size && !pack.atlases.icons && !pack.atlases.widgets && !pack.leather.size) {
-    throw new Error('That .zip has no textures this game uses (is it a Minecraft resource pack?)');
+  const pack = await parseZipPack(bytes, known, KNOWN_SOUND_KEYS);
+  if (!pack.textures.size && !pack.atlases.icons && !pack.atlases.widgets && !pack.leather.size && !pack.sounds.size) {
+    throw new Error('That .zip has no textures or sounds this game uses (is it a Minecraft resource pack?)');
   }
   const name = file.name.replace(/\.zip$/i, '');
   await tx('readwrite', (s) => s.put({ name, bytes: bytes.buffer, added: Date.now() }));
@@ -123,15 +126,15 @@ export async function removeSavedPack(name: string) {
 async function read(ref: PackRef, known: ReadonlySet<string>): Promise<ParsedPack | null> {
   if (ref.source === 'saved') {
     const bytes = await savedBytes(ref.name);
-    return bytes ? parseZipPack(bytes, known) : null;
+    return bytes ? parseZipPack(bytes, known, KNOWN_SOUND_KEYS) : null;
   }
   const native = window.pvpNative?.packs;
   if (!native) return null;
   const got = await native.read(ref.name);
   if (!got) return null;
-  if (got.zip) return parseZipPack(got.zip, known);
+  if (got.zip) return parseZipPack(got.zip, known, KNOWN_SOUND_KEYS);
   const files: PackFile[] = (got.files ?? []).map((f) => ({ name: f.name, read: async () => f.data }));
-  return parsePack(files, known);
+  return parsePack(files, known, KNOWN_SOUND_KEYS);
 }
 
 function dataUrl(bytes: Uint8Array): Promise<string> {
@@ -162,7 +165,7 @@ export async function listPacks(known: ReadonlySet<string>): Promise<PackInfo[]>
         if (!p) return { ...ref, description: '', icon: '', textures: 0, error: 'Could not be read' };
         const icon = p.icon ? await dataUrl(await p.icon.read()) : '';
         const textures = p.textures.size + (p.atlases.icons ? 1 : 0) + (p.atlases.widgets ? 1 : 0) + (p.leather.size ? 1 : 0);
-        return { ...ref, description: p.description, icon, textures };
+        return { ...ref, description: p.description, icon, textures, sounds: p.sounds.size };
       } catch (e) {
         return { ...ref, description: '', icon: '', textures: 0, error: (e as Error).message || 'Could not be read' };
       }
