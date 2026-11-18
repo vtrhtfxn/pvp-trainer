@@ -181,3 +181,48 @@ describe('Item Sumo', () => {
     }
   }, 600_000);
 });
+
+describe('duel arenas', () => {
+  it('a box with a floor and a wall becomes an arena: floor at ground level, spawns facing each other in the open', async () => {
+    const { makeArena } = await import('../src/maps/arena');
+    const w = 40;
+    const h = 12;
+    const l = 40;
+    const palette = ['air', 'grass_block', 'stone_bricks', 'oak_planks'];
+    const data = new Uint16Array(w * h * l);
+    const set = (x: number, y: number, z: number, i: number) => (data[x + z * w + y * w * l] = i);
+    for (let z = 0; z < l; z++) for (let x = 0; x < w; x++) for (let y = 0; y <= 3; y++) set(x, y, z, 1);
+    // A hut in the very middle: spawns must not end up inside it.
+    for (let y = 4; y < 8; y++) for (let z = 17; z < 23; z++) for (let x = 17; x < 23; x++) set(x, y, z, x === 17 || x === 22 || z === 17 || z === 22 || y === 7 ? 3 : 0);
+    const m = makeArena({ w, h, l, palette, data, format: 'test' }, { id: 't', name: 'T', credit: '' });
+    const [a, b] = m.spawns;
+    expect(a[1]).toBe(0);
+    expect(b[1]).toBe(0);
+    expect(Math.hypot(a[0] - b[0], a[2] - b[2])).toBeGreaterThanOrEqual(8);
+    for (const s of [a, b]) expect(Math.max(Math.abs(s[0]), Math.abs(s[2])) > 3.5 || Math.min(Math.abs(s[0]), Math.abs(s[2])) > 3.5).toBe(true);
+    expect(() => makeArena({ w: 4, h: 4, l: 4, palette: ['air'], data: new Uint16Array(64), format: 'test' }, { id: 'e', name: 'E', credit: '' })).toThrow();
+  });
+
+  it('a duel on each built-in arena: both on solid ground, and the bots fight it out', async () => {
+    const { BUILTIN_ARENAS } = await import('../src/maps/builtinArenas');
+    expect(BUILTIN_ARENAS.length).toBeGreaterThanOrEqual(5);
+    for (const arena of BUILTIN_ARENAS) {
+      expect(arena.license).toBe('CC BY-SA 4.0');
+      const m = new Match(kitById('sword'), DIFFICULTIES.ht3, 3, undefined, undefined, arena);
+      expect(m.arena).toBe(arena);
+      for (const f of [m.player, m.bot]) expect(m.world.blocks.get(Math.floor(f.pos.x), Math.floor(f.pos.y) - 1, Math.floor(f.pos.z)), arena.id).not.toBe(B.AIR);
+      const pb: BotBrain = new BotBrain(m.player, m.bot, m.world, DIFFICULTIES.ht3, new Rng(7), () => performAttack(m.player, m.bot));
+      pb.resetRound();
+      while (m.phase !== 'ended' && m.tickCount < 20 * 120) {
+        if (m.phase === 'fight') {
+          pb.tick();
+          m.useHeld = pb.useHeld;
+        }
+        m.tick();
+        for (const f of m.fighters) f.events.length = 0;
+        m.world.events.length = 0;
+      }
+      expect(m.phase, arena.id).toBe('ended');
+    }
+  }, 300_000);
+});

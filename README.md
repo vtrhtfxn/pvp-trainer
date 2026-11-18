@@ -259,6 +259,8 @@ shown as one of:
   sprint, toggle sneak, double-tap-W sprint, invert hotbar scroll.
 - **Key Binds** — every action, including mouse buttons 4/5.
 - **Sound** — master, players, footsteps, blocks & world, menus.
+- **Arenas** — fight your offline duels on a real Minecraft map instead of the flat arena (see
+  **Arenas** below).
 - **HUD** — the practice panel and each of its lines, the versus bar (both fighters' health) and nametag, effect list,
   hitboxes, and **Bots Look Like Players** (on by default; see below).
 - **Chat** — shown / commands only / hidden, text and background opacity, size, width.
@@ -507,10 +509,23 @@ leaves mid-game.
 | Game | Players (usual) |
 |---|---|
 | Sumo | 2–8 (2) |
+| Item Sumo | 2–12 (6) |
 | Crumble | 2–12 (6) |
 | Hot Potato | 3–12 (6) |
 | Whodunit | 3–15 (8) |
 
+- **Item Sumo** — played on real community maps: **Atomic, Atomic II, Calima, Gjöll and Weald**
+  by zzuf from Overcast Community (CC BY-SA 4.0; one picked at random, the same one again in a
+  replay and for everyone online). Everyone starts on a pillar of their own around a floating
+  centre with 48 wool to bridge out. No damage, only knockback; every 8 s everyone gets a random
+  item — a Knockback II stick, snowballs, eggs, wind charges, an ender pearl, fireballs, jump or
+  speed potions, more wool — and 8 more wool to build with. **Three lives**: fall into the void and
+  you're back on a pillar 3 s later (one the edge hasn't taken). Stand on the centre (the
+  emerald) **20 s in a row** and you win outright; otherwise the last one with lives wins. At 2:30
+  the edge starts crumbling toward the middle, a block every 1.5 s; at 5:00 time is up and the most
+  lives wins (then the most knock-offs). Bots bridge out with their wool, drop onto the centre
+  when it's safe, throw what they have at whoever's in range, use the stick up close and go
+  straight for anyone about to win on the centre. (`src/game/modes/ItemSumo.ts`)
 - **Sumo** — bare hands on a big round platform over the void (radius 9 + the number of players),
   1.8 knockback and no damage: knock the others off, last one on wins. Four **outposts** float off
   the edge, each up a parkour run of three rising stepping stones (two-block gaps). After 75 s the
@@ -742,6 +757,37 @@ The technique list comes from Minecraft Wiki mechanics, PvP guides and tier-list
 tricks (block-hitting — play the 1.8 Sword kit for those) and macros are left out. Each drill's page explains the steps and the mechanic
 behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and checks it can be passed
 (and that the wrong technique is called out).
+
+### Arenas
+
+Options → **Arenas** picks where offline 1v1 duels are fought (not 2v2, drills, the Gauntlet,
+tournaments or minigames, which have their own maps):
+
+- **Classic Arena** — the flat walled arena (and each kit's own, like Crystal's dirt).
+- **Built-in maps** from Overcast Community (CC BY-SA 4.0): **La Piazza** (an Italian square, by
+  Technodono and Tundren), **Deadwood** (a western town, zzuf and Metacognitive), **Frostbite RAGE**
+  (a snowy village, Tundren, Mewzzy and zzuf), **Jurassic Attack FFA** (a jungle canyon, Tundren,
+  Mewzzy, Ruediger_LP and Strangey) and **Paladin Banners** (castle ruins, Tywnis).
+- **Import Map…** — any map from the internet: a schematic (`.schem` from WorldEdit/FAWE, Sponge
+  versions 1–3; `.schematic` from MCEdit and old WorldEdit; `.litematic` from Litematica; structure
+  block `.nbt`) or a **world save** (`.zip` of a world folder, 1.8 to today: the area around its
+  spawn is used). It's kept in the browser's storage on that computer, in this game's compact form.
+
+Whatever the source, the map is cut to at most 112 × 112 blocks and 64 high around the middle; its
+commonest ground height becomes the floor, and two spawns are found automatically: open spots
+(sky above, or headroom), 8–12 blocks apart with a clear walkable line between them, as near the
+middle as the map allows. The map can't be broken (blocks you place can) and falling off its edge
+is a void death. Bots fight as usual and don't walk off edges by accident (they sneak there, like
+people). Duels on an imported map aren't recorded as replays.
+
+**How blocks look.** The blocks the game has stay themselves (stone, cobblestone, oak planks and
+logs, wool, glass, obsidian, dirt, grass…); every other block (~1000 names, and the old numeric ids
+of 1.8–1.12 worlds) becomes a **map block**: one of a few textures (planks, bricks, rough or smooth
+stone, wool, sand, logs, leaves) in that block's own colour, so terracotta, concrete, quartz,
+spruce, prismarine or deepslate still look like themselves. Decoration you walk through (flowers,
+grass, torches, carpets, signs, rails, buttons) and floor slabs are left out; top slabs, stairs,
+fences, walls and panes become full blocks. (`src/maps/`: `nbt.ts`, `formats.ts`, `legacy.ts`,
+`blocks.ts`, `gameMap.ts`, `arena.ts`, `mapStore.ts`.)
 
 ### Versus bar
 
@@ -1291,7 +1337,11 @@ src/game      Fighter (movement/inventory/items/effects/durability/mining), comb
               Explosion, EndCrystal, crystals (placing, hitting, anchors),
               Match (tick order), Game (glue), kits, customKits (kit editor data), items
 src/game/modes  minigames on void maps: GameMode interface, maps, Bed Wars (+ shop), SkyWars (+ loot)
-src/ai        BotBrain + difficulty profiles; SkyPlanner (Bed Wars / SkyWars: shop, loot, bridge, beds)
+src/ai        BotBrain + difficulty profiles; SkyPlanner (Bed Wars / SkyWars: shop, loot, bridge, beds);
+              disguise (bot usernames + generated skins); edgeGuard (bots on imported arenas)
+src/maps      map files: NBT reader, schematics / Litematica / structures / world regions, old block ids,
+              block names → this game's blocks, the compact map format, arenas, imported-map storage
+src/assets/maps  shipped maps (Item Sumo, arenas) from Overcast Community, CC BY-SA 4.0 (see LICENSE.md)
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
               first-person hands, item meshes from the resource pack, arrows, particles, custom skins (skins.ts)
 src/ui        HUD, chat, Marketplace, inventory screen, menus, kit editor, settings, pixel-art sprites,
@@ -1305,7 +1355,8 @@ src/assets/pack  the resource-pack textures the game uses (items, armor, shield,
 src/render/Hitboxes.ts   F3+B-style debug boxes
 src/net       protocol, authoritative Duel, client NetMatch/NetClient, online play (p2p, relay)
 src/server    Node multiplayer server + dependency-free WebSocket implementation
-scripts/      pack-server.mjs builds the standalone server folder
+scripts/      pack-server.mjs builds the standalone server folder; convert-occ-maps.ts / convert-occ-arenas.ts
+              rebuild the shipped maps from Overcast Community's CommunityMaps
 electron/     macOS app shell (main + preload), icon generator, packager script
 tests/        mechanics + bot-vs-bot duel tests (npm test)
 ```
@@ -1321,6 +1372,9 @@ HUD sprites in `src/assets/pack/`; team leather armor is dyed the vanilla way) �
 for private practice; Mojang's terms don't allow redistributing their assets.
 The UI font is Minecraft's own, built from the pack's glyph sheets by `scripts/build-font.py`.
 Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005.
+Maps: Item Sumo maps (Atomic, Atomic II, Calima, Gjöll, Weald by zzuf) and duel arenas (La Piazza,
+Deadwood, Frostbite RAGE, Jurassic Attack FFA, Paladin Banners) from Overcast Community's
+CommunityMaps, CC BY-SA 4.0 — authors and changes in `src/assets/maps/LICENSE.md`.
 Sounds: crits, knockback, sweeps, the totem pop, the mace smash, explosions and the spear lunge are Minecraft's own
 sound effects (`src/assets/sounds/`, trimmed and converted to mono Ogg) — © Mojang; the rest are
 synthesised in `src/audio/Sound.ts` (hurt is a short voiced grunt, hits a thump with a slap and a

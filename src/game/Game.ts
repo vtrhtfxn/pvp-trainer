@@ -17,6 +17,8 @@ import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
 import { VoiceChat, type VoiceSettings } from '../net/voice';
 import { FramePacer } from './FramePacer';
 import { botUsernames, generateSkin } from '../ai/disguise';
+import { getMap } from '../maps/mapStore';
+import type { GameMap } from '../maps/gameMap';
 import { pictureTexture } from '../render/shieldStatus';
 import { setIconGlint, setShinyPots } from '../render/itemIcons';
 import { attackIndicatorFor } from '../render/Crosshair';
@@ -195,6 +197,8 @@ export class Game {
   private disguised = false;
   /** The seed of this series' bot names and skins. */
   private disguiseSeed = 0;
+  /** The imported map duels are fought on (Options → Arenas), once loaded; null: the classic arena. */
+  private arenaMap: GameMap | null = null;
   private voiceRoom = '';
   private voiceHtml = '';
   private readonly voiceEl: HTMLDivElement;
@@ -254,6 +258,12 @@ export class Game {
     const lowEnd = (nav.deviceMemory ?? 8) < 8 || cores < 4;
     const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && !lowEnd && ((window.devicePixelRatio || 1) < 2 || cores >= 8));
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
+    // The arena picked in Options → Arenas (it's ready by the time anyone starts a duel).
+    if (settings.arena)
+      void getMap(settings.arena).then((m) => {
+        this.arenaMap = m;
+        if (!m) settings.arena = '';
+      });
     this.view.skinOf = (f) => {
       // Online, everyone is known by name; offline, you are the match's player (not when watching bots).
       if (f.networked || this.netMatch?.spectator) return this.netSkins.get(f.name) ?? null;
@@ -382,6 +392,7 @@ export class Game {
       onMarketplace: () => this.openMarket(),
       installedMods: () => this.mods.installedCount,
       skin: () => this.mySkin,
+      onArena: (map) => (this.arenaMap = map),
       onSkin: (sk) => {
         this.mySkin = sk;
         saveSkin(sk);
@@ -1352,7 +1363,9 @@ export class Game {
     this.hud.setPips(!tg && !g && !drillDef && sr.target > 1 ? { you: sr.you, them: sr.bot, target: sr.target } : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
     this.hudName = loadPlayerName();
-    this.match = new Match(kit, profile, seed, teams ? {} : undefined, kit.party ? this.settings.partyPlayers[kit.id] : undefined);
+    // An imported arena: plain 1v1 duels only (minigames have their own maps).
+    const arena = !kit.mode && !teams && !drillDef && !tg && !g ? this.arenaMap : null;
+    this.match = new Match(kit, profile, seed, teams ? {} : undefined, kit.party ? this.settings.partyPlayers[kit.id] : undefined, arena);
     if (tg) this.match.bot.name = tg.name;
     // Offline bots look like players (not in drills, the Gauntlet's tier ladder, or a tournament
     // where they have names of their own).
@@ -1369,7 +1382,8 @@ export class Game {
     this.state = 'playing';
     this.applySession(true);
     this.cheated = sessionModified(this.session);
-    if (!drillDef && !this.cheated && !teams) this.startRecording(this.match as Match, seed);
+    // (A duel on an imported arena isn't recorded: the replay couldn't rebuild the map.)
+    if (!drillDef && !this.cheated && !teams && !arena) this.startRecording(this.match as Match, seed);
     this.sprinting = null;
     this.stepTicks = 0;
     this.sound.muted = false;

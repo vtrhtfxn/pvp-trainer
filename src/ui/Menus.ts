@@ -1,5 +1,7 @@
 import { DIFFICULTIES, DIFFICULTY_ORDER, type DifficultyId } from '../ai/difficulty';
 import { renderResourcePacks } from './ResourcePacks';
+import { renderArenas } from './Arenas';
+import type { GameMap } from '../maps/gameMap';
 import { renderSkinPicker } from './SkinPicker';
 import type { Skin } from '../render/skins';
 import type { FighterStats } from '../game/Fighter';
@@ -46,6 +48,8 @@ export interface MenuCallbacks {
   onRestart(): void;
   onQuit(): void;
   onSettingsChanged(): void;
+  /** The duel arena was picked (null: the classic one). */
+  onArena(map: GameMap | null): void;
   onUiSound(): void;
   /** Your skin, and changing it (null: the default player). */
   skin(): Skin | null;
@@ -81,11 +85,12 @@ export interface MenuCallbacks {
 /** Title-screen card that stands for all custom kits. */
 const CUSTOM_CARD = 'custom';
 
-type SettingsTab = 'video' | 'skin' | 'packs' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
+type SettingsTab = 'video' | 'skin' | 'packs' | 'arenas' | 'controls' | 'keys' | 'sound' | 'hud' | 'chat';
 const TAB_LABELS: Record<SettingsTab, string> = {
   video: 'Video',
   skin: 'Skin',
   packs: 'Resource Packs',
+  arenas: 'Arenas',
   controls: 'Controls',
   keys: 'Key Binds',
   sound: 'Sound',
@@ -1012,6 +1017,18 @@ export class Menus {
       }
       case 'packs':
         renderResourcePacks(body, () => this.cb.onUiSound());
+        break;
+      case 'arenas':
+        renderArenas(
+          body,
+          () => this.cb.onUiSound(),
+          () => s.arena,
+          (id, map) => {
+            s.arena = id;
+            this.cb.onArena(map);
+            this.cb.onSettingsChanged();
+          },
+        );
         break;
       case 'skin':
         cycle<'right' | 'left'>(
