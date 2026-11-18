@@ -402,6 +402,8 @@ export class HUD {
       botStatus: string;
       /** Tier shown on the opponent's badge (LT5…HT1, or a short label online). */
       botTag: string;
+      /** The opponent's own face (a disguised bot's skin), instead of the tier-coloured one. */
+      botFace?: string;
       playerName: string;
       lastReach: number | null;
       now: number;
@@ -459,7 +461,7 @@ export class HUD {
     if (this.versus.style.display !== showVs) this.versus.style.display = showVs;
     if (settings.showOpponentBar) {
       this.you.update(player, info.playerName, 'YOU', '#55ffff', '', 'you');
-      this.them.update(bot, info.botName, info.botTag, info.botColor, info.botStatus, 'bot');
+      this.them.update(bot, info.botName, info.botTag, info.botColor, info.botStatus, 'bot', info.botFace);
       const secs = Math.floor(info.fightTicks / 20);
       const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
       if (clock !== this.timerText) {
@@ -808,19 +810,20 @@ class VersusSide {
     this.lastCombo = 0;
   }
 
-  update(f: Fighter, name: string, tag: string, color: string, status: string, kind: 'you' | 'bot') {
+  update(f: Fighter, name: string, tag: string, color: string, status: string, kind: 'you' | 'bot', face?: string) {
     const health = Math.max(0, f.health);
     const totems = (f.offhand?.id === 'totem_of_undying' ? 1 : 0) + f.countItem('totem_of_undying');
     const combo = f.stats.combo;
-    const key = `${name}|${tag}|${color}|${health.toFixed(2)}|${f.absorption}|${f.maxHealth}|${status}|${combo}|${totems}`;
+    const key = `${name}|${tag}|${color}|${face ? face.length : 0}|${health.toFixed(2)}|${f.absorption}|${f.maxHealth}|${status}|${combo}|${totems}`;
     if (key === this.key) return;
     this.key = key;
     const max = f.maxHealth || 20;
     const frac = Math.min(1, health / max);
     this.name.textContent = name;
     this.tag.textContent = tag;
+    this.tag.style.display = tag ? '' : 'none';
     this.badge.style.setProperty('--tier', color);
-    const src = faceUrl(kind, color);
+    const src = face ?? faceUrl(kind, color);
     if (this.face.getAttribute('src') !== src) this.face.src = src;
     this.hp.innerHTML = `${(health / 2).toFixed(1)}<i>❤</i>${f.absorption > 0 ? `<b>+${(f.absorption / 2).toFixed(1)}</b>` : ''}`;
     this.fill.style.width = `${frac * 100}%`;

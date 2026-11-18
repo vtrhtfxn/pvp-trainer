@@ -227,7 +227,7 @@ shown as one of:
   switched. The skin's outer layer (hat, jacket, sleeves, trousers) is drawn too, and your
   first-person arm wears it. Online, your skin is sent with your join, so the people in the room
   (opponents, 2v2 teammates, tournament players and spectators) see it; only PNG data of a
-  sensible size is accepted. Bots keep the default player.
+  sensible size is accepted. Offline bots wear skins of their own (see **Bots look like players** below).
 - **Resource Packs** — play with any Minecraft resource pack (PvP packs, 16× to 512×, made for
   1.8 up to the newest versions). In the desktop app: **Open Pack Folder**, drop the pack's .zip
   (or its unzipped folder) in, press **Refresh** and **Use** it. In the browser (or an app installed
@@ -260,7 +260,7 @@ shown as one of:
 - **Key Binds** — every action, including mouse buttons 4/5.
 - **Sound** — master, players, footsteps, blocks & world, menus.
 - **HUD** — the practice panel and each of its lines, the versus bar (both fighters' health) and nametag, effect list,
-  hitboxes.
+  hitboxes, and **Bots Look Like Players** (on by default; see below).
 - **Chat** — shown / commands only / hidden, text and background opacity, size, width.
 
 ## Multiplayer
@@ -1109,7 +1109,27 @@ nametag reads *Passive*.
 ## The bot
 
 The bot only presses keys, moves the mouse and clicks, with a reaction delay and aim error
-that depend on its tier. It plays with the same physics and combat rules you do. It:
+that depend on its tier. It plays with the same physics and combat rules you do.
+
+**Bots look like players** (offline duels, 2v2 and minigames; Options → HUD → Bots Look Like
+Players, on by default). Each bot gets a username of the kind people pick (`ShadowWolf`, `remy81`,
+`xXRavenXx` …) and a skin of its own drawn from scratch (skin tone, hair or a cap, shirt, sleeves,
+trousers and shoes in the standard 64×64 layout, `src/ai/disguise.ts`), shown on its model and as its
+face in the versus bar. During the fight nothing says it is a bot: no tier badge or colour, no
+"Fighting / Eating" status, a white nametag, and the round score uses its name. Some say `gl` in
+chat during the countdown and `gg` after the round, like people do. The same opponent (name and skin)
+stays for a whole "first to" series, and replays show it again. Not in drills, the Gauntlet or
+tournaments (their bots have names of their own), and never online: bots in an online room are
+always labelled, so nobody is misled about who they're playing. The results screen still shows the
+tier you beat.
+
+It moves its mouse like a person, too: a big turn is a flick that goes a little past you and comes
+back (a few degrees for HT1, up to ~15% of the turn for Practice), and it waits out the countdown
+looking around, glancing down at its hotbar and scrolling through it, before facing you on its
+starting slot for the 3-2-1. These habits use dice of their own (`Rng.fork`), so they don't shift
+what the fight's dice decide.
+
+It:
 
 - times hits to the cooldown (half-swings on LT1+), W-taps and S-taps after sprint hits
 - goes for jump crits, jump-resets, hit-selects and circle strafes

@@ -16,6 +16,10 @@ export class Rng {
   int(lo: number, hi: number): number {
     return Math.floor(this.range(lo, hi + 1));
   }
+  /** A separate generator seeded from this one's state, without drawing from it (its sequence stays the same). */
+  fork(salt: number): Rng {
+    return new Rng((this.s ^ salt) >>> 0);
+  }
   chance(p: number): boolean {
     return this.next() < p;
   }

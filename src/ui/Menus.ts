@@ -988,6 +988,7 @@ export class Menus {
         toggle('Panel: Next Hit & Sprint KB', () => s.showNextHit, (v) => (s.showNextHit = v));
         toggle('Hit Feedback', () => s.hitFeedback, (v) => (s.hitFeedback = v));
         toggle('Opponent Nametag', () => s.showNametag, (v) => (s.showNametag = v));
+        toggle('Bots Look Like Players', () => s.disguiseBots, (v) => (s.disguiseBots = v), 'Offline bots get usernames and skins of their own and chat a little; their tier and what they are doing stay hidden (new duels)');
         toggle('Effect List', () => s.showEffects, (v) => (s.showEffects = v));
         toggle(/Mac|iP(hone|ad)/.test(navigator.platform) ? 'Hitboxes (⌘M)' : 'Hitboxes (Ctrl+M)', () => s.showHitboxes, (v) => (s.showHitboxes = v));
         break;

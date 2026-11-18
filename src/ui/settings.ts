@@ -76,6 +76,8 @@ export interface Settings {
   showRoundCounter: boolean;
   showHitboxes: boolean;
   showNametag: boolean;
+  /** Offline bots look like players: usernames, skins of their own, no tier or state shown. */
+  disguiseBots: boolean;
   showEffects: boolean;
   showPracticePanel: boolean;
   // ---- chat
@@ -146,6 +148,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showRoundCounter: true,
   showHitboxes: false,
   showNametag: true,
+  disguiseBots: true,
   showEffects: true,
   showPracticePanel: true,
   chatVisibility: 'shown',

@@ -315,12 +315,13 @@ export class Match {
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
       if (this.phase === 'countdown') {
         b.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
-        b.yaw = Math.atan2(-(p.pos.x - b.pos.x), -(p.pos.z - b.pos.z));
+        // Bots wait like people do: looking around, at the hotbar, then at whoever they fight.
+        const left = this.countdownTicks - this.phaseTicks;
+        if (this.botDriver) b.yaw = Math.atan2(-(p.pos.x - b.pos.x), -(p.pos.z - b.pos.z));
+        else this.brain.warmup(left);
         for (const x of this.extras) {
-          const f = x.fighter;
-          const t = x.brain.opponent;
-          f.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
-          f.yaw = Math.atan2(-(t.pos.x - f.pos.x), -(t.pos.z - f.pos.z));
+          x.fighter.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
+          x.brain.warmup(left);
         }
       }
     }
