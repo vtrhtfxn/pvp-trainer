@@ -11,6 +11,27 @@ import type { Fighter } from '../game/Fighter';
 import { mcBox, packTexture, toGeometry, type Vec3 } from './itemMesh';
 import { packImage } from './pack';
 import { blockTexture } from './textures';
+import { MAP_MATERIALS } from '../maps/blocks';
+
+/** The grey map textures average about 80% white: a map block's colour is divided by that. */
+const MAP_GREY = Math.pow(0.81, 2.2);
+
+/** Vertex colour (linear) that turns a grey map texture into each map material's colour. */
+const MAP_TINTS: [number, number, number][] = MAP_MATERIALS.map((m) => {
+  // The exact textures (stone bricks, bedrock) are drawn as they are.
+  if (['stone_bricks', 'mossy_stone_bricks', 'cracked_stone_bricks', 'bedrock'].includes(m.family)) return [1, 1, 1];
+  const n = parseInt(m.color.slice(1), 16);
+  const c = (v: number) => Math.min(1.6, Math.pow(v / 255, 2.2) / MAP_GREY);
+  return [c((n >> 16) & 255), c((n >> 8) & 255), c(n & 255)];
+});
+
+/** Texture of one face of a map block. */
+function mapTexture(data: number, kind: 'top' | 'bottom' | 'side'): string {
+  const f = MAP_MATERIALS[data]?.family ?? 'rough';
+  if (f === 'stone_bricks' || f === 'mossy_stone_bricks' || f === 'cracked_stone_bricks' || f === 'bedrock') return f;
+  if (f === 'log') return kind === 'side' ? 'map_log' : 'map_log_top';
+  return `map_${f}`;
+}
 
 /** Minecraft's directional face shading: up 1, down 0.5, east/west 0.6, north/south 0.8. */
 const FACES: { n: [number, number, number]; shade: number; kind: 'top' | 'bottom' | 'side'; c: [number, number, number][] }[] = [
@@ -80,6 +101,8 @@ function faceTexture(id: number, kind: 'top' | 'bottom' | 'side', blocks: Blocks
       return kind === 'top' ? 'grass_top' : kind === 'side' ? 'grass_side' : 'dirt';
     case B.DIRT:
       return 'dirt';
+    case B.MAP:
+      return mapTexture(blocks.data(x, y, z), kind);
     case B.RESPAWN_ANCHOR: {
       const charge = blocks.anchorCharge(x, y, z);
       if (kind === 'top') return charge > 0 ? 'respawn_anchor_top' : 'respawn_anchor_top_off';
@@ -305,7 +328,7 @@ export class BlocksView {
               const tex = faceTexture(id, f.kind, blocks, x, y, z);
               let b = solids.get(tex);
               if (!b) solids.set(tex, (b = buf()));
-              this.quad(b, x, y, z, f.c, f.shade, 1);
+              this.quad(b, x, y, z, f.c, f.shade, 1, id === B.MAP ? MAP_TINTS[blocks.data(x, y, z)] : undefined);
             }
           } else if (id === B.COBWEB) this.cross(web, x, y, z, 0.15);
           else if (id === B.RAIL) this.rail(rails, x, y, z, blocks.railAxis(x, y, z));
@@ -346,14 +369,15 @@ export class BlocksView {
     this.chunks.set(key, { group, meshes });
   }
 
-  private quad(b: Buf, x: number, y: number, z: number, c: [number, number, number][], shade: number, top: number) {
+  private quad(b: Buf, x: number, y: number, z: number, c: [number, number, number][], shade: number, top: number, tint?: [number, number, number]) {
     const base = b.pos.length / 3;
     const l = lin(shade);
+    const [tr, tg, tb] = tint ?? [1, 1, 1];
     for (let i = 0; i < 4; i++) {
       const [cx, cy, cz] = c[i];
       b.pos.push(x + cx, y + cy * top, z + cz);
       b.uv.push(UV[i][0], cy === 1 && top < 1 && c[0][1] !== c[2][1] ? top : UV[i][1]);
-      b.col.push(l, l, l);
+      b.col.push(l * tr, l * tg, l * tb);
     }
     b.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }

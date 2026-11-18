@@ -94,8 +94,8 @@ describe('2v2 in every game mode', () => {
       expect(m.fighters[2].name, kit).toMatch(/Ally/);
       expect(m.phase, kit).toBe('ended');
       const w = m.winner!;
-      // Nobody on the losing side is still in.
-      expect(m.fighters.filter((f) => f.team !== w.team).every((f) => f.dead), kit).toBe(true);
+      // Nobody on the losing side is still in (Item Sumo can also be won on the centre or on time).
+      if (kit !== 'itemsumo') expect(m.fighters.filter((f) => f.team !== w.team).every((f) => f.dead), kit).toBe(true);
     }
   }, 300_000);
 

@@ -145,6 +145,7 @@ export class SkyPlanner {
         fight();
       },
       walkTo: (x, z, stop, sprint = true) => this.walk(x, z, input, stop, sprint),
+      goTo: (x, z, stop) => this.goTo(x, z, input, stop),
       aimAt: (x, y, z, gain) => this.h.aimAt(x, y, z, gain),
       equip: (id) => (b.slotOf(id) >= 0 ? this.h.equip(id) : false),
       emptyHand: () => {
@@ -767,7 +768,12 @@ export class SkyPlanner {
     const wx = -s * input.forward + c * input.strafe;
     const wz = -c * input.forward - s * input.strafe;
     const len = Math.hypot(wx, wz);
-    if (len < 1e-3) return;
+    if (len < 1e-3) {
+      // Stopping at an edge (still sliding toward it, or held up by a corner): crouch so it holds.
+      const v = Math.hypot(b.vel.x, b.vel.z);
+      if (!this.groundAt(b.pos.x, b.pos.z, 1) || (v > 0.003 && !this.groundAt(b.pos.x + (b.vel.x / v) * 0.5, b.pos.z + (b.vel.z / v) * 0.5, 6))) input.sneak = true;
+      return;
+    }
     if (!this.groundAt(b.pos.x + (wx / len) * 0.8, b.pos.z + (wz / len) * 0.8, 6)) {
       input.sneak = true;
       input.sprint = false;

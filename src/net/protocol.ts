@@ -311,7 +311,8 @@ export type ServerMsg =
   | { t: 'error'; message: string }
   | { t: 'lobby'; room: string; players: { i: number; name: string }[]; kit: string }
   /** A duel starts. `you`: your seat in it (tournaments seat whoever plays this match). */
-  | { t: 'start'; countdown: number; kit: string; you?: number; seats?: number }
+  /** `map`: which map the host built (a mode with several, e.g. Item Sumo). */
+  | { t: 'start'; countdown: number; kit: string; you?: number; seats?: number; map?: string }
   /** A 2v2 room before its game: who's in, on which team, and who is host. */
   /** `size`: a party minigame room — that many play, every one for themselves (no teams). */
   | { t: 'squad'; room: string; kit: string; tier: string; members: SquadMember[]; started: boolean; size?: number }

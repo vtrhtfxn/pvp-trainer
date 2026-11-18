@@ -280,6 +280,7 @@ export class Game {
     kitIcons.sumo = itemIcon({ id: 'stick', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.crumble = itemIcon({ id: 'tnt', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.hotpotato = itemIcon({ id: 'fire_charge', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.itemsumo = itemIcon({ id: 'snowball', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.whodunit = itemIcon({ id: 'iron_sword', count: 1 }) ?? makeKitIcon('sword');
     this.hud = new HUD(uiRoot, this.mods);
     this.voiceEl = document.createElement('div');
@@ -1890,8 +1891,9 @@ export class Game {
       }
       this.netWatch = null;
       const seats = msg.seats ?? 2;
-      if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView || seats > 2) {
-        this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId, seats);
+      const mapNow = (this.netMatch?.mode as { mapId?: string } | null | undefined)?.mapId;
+      if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView || seats > 2 || (msg.map !== undefined && msg.map !== mapNow)) {
+        this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId, seats, msg.map);
         this.series = null;
         this.hud.setSeries(this.tourView ? this.tourLine() : null);
         this.hud.setPips(null);

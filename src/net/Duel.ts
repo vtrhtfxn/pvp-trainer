@@ -176,6 +176,11 @@ export class Duel {
     return list.filter((i) => i >= 0);
   }
 
+  /** The map the mode built, for a mode with several (sent to the players in `start`). */
+  get map(): string | undefined {
+    return (this.mode as { mapId?: string } | null)?.mapId;
+  }
+
   /** Seats in this game (2, 4, or a party minigame's player count). */
   get seats(): number {
     return this.fighters.length;

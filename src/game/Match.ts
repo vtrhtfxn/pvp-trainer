@@ -22,7 +22,7 @@ export const TEAM_SPREAD = 3;
 /** Duel kits played 2v2 (you and a bot ally against two bots). Custom kits can be too. */
 export const TEAM_KITS = ['sword', 'sword18', 'axe', 'uhc', 'diamond_pot', 'neth_pot', 'crystal', 'smp', 'dia_smp', 'mace', 'spear_mace', 'cart', 'bedwars', 'skywars'] as const;
 /** Party minigames played as two teams of two (Whodunit's hidden roles don't fit teams). */
-export const PARTY_TEAM_KITS = ['sumo', 'crumble', 'hotpotato'] as const;
+export const PARTY_TEAM_KITS = ['sumo', 'itemsumo', 'crumble', 'hotpotato'] as const;
 
 export function teamKit(id: string): boolean {
   return (TEAM_KITS as readonly string[]).includes(id) || (PARTY_TEAM_KITS as readonly string[]).includes(id) || id.startsWith('custom:');
@@ -106,7 +106,8 @@ export class Match {
     if (party) teams = undefined;
     this.seed = seed ?? (Math.random() * 2 ** 32) >>> 0;
     this.rng = new Rng(this.seed);
-    this.mode = createMode(kit);
+    // The map (of a mode with several) comes from the seed, so a replay has the same one.
+    this.mode = createMode(kit, { pick: new Rng(this.seed ^ 0x3a9).next() });
     this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
     if (this.mode) {
       // A floating map over the void: no floor, no walls.
