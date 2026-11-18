@@ -4,11 +4,11 @@ import calima from '../../assets/maps/calima.json';
 import gjoll from '../../assets/maps/gjoll.json';
 import weald from '../../assets/maps/weald.json';
 import { placeMap, type GameMap } from '../../maps/gameMap';
-import { B, isSolid } from '../Blocks';
+import { isSolid } from '../Blocks';
 import type { Fighter } from '../Fighter';
 import type { ItemStack } from '../items';
 import type { BotControl, GameMode, ModeHost as Match, ScoreLine } from './GameMode';
-import { EMPTY_KIT, alive, enemiesLeft, freeForAll, noDamage, place } from './party';
+import { EMPTY_KIT, alive, crumbleBeyond, enemiesLeft, freeForAll, noDamage, place } from './party';
 
 /**
  * Item Sumo, on Overcast Community's Item Sumo maps (by zzuf, CC BY-SA 4.0): everyone starts on
@@ -208,16 +208,7 @@ export class ItemSumo implements GameMode {
 
   /** Drops every block further than `r` from the middle. */
   private crumble(m: Match, r: number) {
-    const b = m.world.blocks;
-    const R = r + 1.5;
-    const y0 = this.map.oy;
-    const y1 = this.map.oy + this.map.h + 4;
-    for (let x = -Math.ceil(R); x <= Math.ceil(R); x++)
-      for (let z = -Math.ceil(R); z <= Math.ceil(R); z++) {
-        const d = Math.hypot(x + 0.5, z + 0.5);
-        if (d <= r || d > R + 1) continue;
-        for (let y = y0; y < y1; y++) if (b.get(x, y, z) !== B.AIR) b.set(x, y, z, B.AIR);
-      }
+    crumbleBeyond(m.world.blocks, r, this.map.oy, this.map.oy + this.map.h + 4);
   }
 
   winner(m: Match): Fighter | null {

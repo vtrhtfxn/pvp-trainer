@@ -1,3 +1,4 @@
+import { crumbleBeyond } from './party';
 import { B } from '../Blocks';
 import { DroppedItem } from '../DroppedItem';
 import type { Fighter } from '../Fighter';
@@ -7,7 +8,13 @@ import { TEAM_COLORS, TEAM_NAMES, isTeams, members, teamOf, teamSlot, type GameM
 import { buildSkywarsMap, type SkywarsLayout, type Spot } from './maps';
 
 /** Chests refill this far into the game (Hypixel refills around then). */
-export const REFILL_TICKS = 20 * 60 * 4;
+/** Chest refills (Hypixel refills every chest, more than once). */
+export const REFILL_TICKS = 20 * 60 * 3;
+const REFILL_TIMES = [REFILL_TICKS, 20 * 60 * 6];
+/** Sudden death: the edge crumbles toward the middle island, a block every 1.5 s. */
+const CRUMBLE_TICKS = 20 * 60 * 8;
+const CRUMBLE_EVERY = 30;
+const CRUMBLE_MIN = 8;
 export const CHEST_SLOTS = 27;
 
 type Pick = () => ItemStack | null;
@@ -107,7 +114,9 @@ export class Skywars implements GameMode {
   /** Chests each player has opened (the bot uses this to plan its route). */
   readonly opened = [new Set<string>(), new Set<string>()];
   private cagesOpen = false;
-  private refilled = false;
+  /** Refills done so far. */
+  private refills = 0;
+  private edge: number | null = null;
   private announcements: ScoreLine[] = [];
   private deathsSeen = new Set<Fighter>();
 
@@ -118,7 +127,8 @@ export class Skywars implements GameMode {
     this.opened[0].clear();
     this.opened[1].clear();
     this.cagesOpen = false;
-    this.refilled = false;
+    this.refills = 0;
+    this.edge = null;
     this.announcements = [];
     this.deathsSeen.clear();
     w.protectMap = false;
@@ -209,10 +219,19 @@ export class Skywars implements GameMode {
       this.announcements.push({ text: 'Cages opened! FIGHT!', color: '#ffff55' });
     }
     if (m.phase !== 'fight') return;
-    if (!this.refilled && m.fightTicks >= REFILL_TICKS) {
-      this.refilled = true;
+    if (this.refills < REFILL_TIMES.length && m.fightTicks >= REFILL_TIMES[this.refills]) {
+      this.refills++;
       this.fill(m);
-      this.announcements.push({ text: 'All chests have been refilled!', color: '#ffaa00' });
+      this.announcements.push({ text: this.refills < REFILL_TIMES.length ? 'All chests have been refilled!' : 'All chests have been refilled — the last time!', color: '#ffaa00' });
+    }
+    // Sudden death: nobody gets to hide out on a far island.
+    if (m.fightTicks === CRUMBLE_TICKS) {
+      this.edge = 50;
+      this.announcements.push({ text: 'SUDDEN DEATH! The islands are crumbling from the edges!', color: '#ff5555' });
+    }
+    if (this.edge !== null && m.fightTicks > CRUMBLE_TICKS && (m.fightTicks - CRUMBLE_TICKS) % CRUMBLE_EVERY === 0 && this.edge > CRUMBLE_MIN) {
+      this.edge--;
+      crumbleBeyond(w.blocks, this.edge, -12, 15);
     }
     // A chest broken with things inside spills them.
     for (const [k, items] of this.chests) {
@@ -233,10 +252,11 @@ export class Skywars implements GameMode {
 
   scoreboard(m: Match, viewer: Fighter): ScoreLine[] {
     const lines: ScoreLine[] = [{ text: 'SKYWARS', color: '#ffff55' }];
-    if (m.phase === 'fight' && !this.refilled) {
-      const left = Math.max(0, Math.ceil((REFILL_TICKS - m.fightTicks) / 20));
-      lines.push({ text: `Refill in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` });
-    } else if (this.refilled) lines.push({ text: 'Chests refilled' });
+    const next: [string, number] | null = this.refills < REFILL_TIMES.length ? ['Refill', REFILL_TIMES[this.refills]] : m.fightTicks < CRUMBLE_TICKS ? ['Sudden death', CRUMBLE_TICKS] : null;
+    if (next) {
+      const left = Math.max(0, Math.ceil((next[1] - m.fightTicks) / 20));
+      lines.push({ text: `${next[0]} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, color: next[0] === 'Sudden death' ? '#ff5555' : undefined });
+    } else lines.push({ text: 'SUDDEN DEATH', color: '#ff5555' });
     for (const team of [0, 1] as const) {
       const all = members(m, team);
       const alive = all.filter((f) => !f.dead).length;
