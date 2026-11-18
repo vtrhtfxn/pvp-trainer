@@ -188,3 +188,17 @@ export class NavGrid {
     return out;
   }
 }
+
+/**
+ * Sudden death's shrinking map: drops every block between `r` and `r + 2.5` from (cx, cz)
+ * horizontally, at heights y0..y1 (call it with r one smaller each step).
+ */
+export function crumbleBeyond(b: Blocks, r: number, y0: number, y1: number, cx = 0, cz = 0) {
+  const R = r + 2.5;
+  for (let x = Math.floor(cx - R); x <= Math.ceil(cx + R); x++)
+    for (let z = Math.floor(cz - R); z <= Math.ceil(cz + R); z++) {
+      const d = Math.hypot(x + 0.5 - cx, z + 0.5 - cz);
+      if (d <= r || d > R) continue;
+      for (let y = y0; y <= y1; y++) if (b.get(x, y, z) !== B.AIR) b.set(x, y, z, B.AIR);
+    }
+}

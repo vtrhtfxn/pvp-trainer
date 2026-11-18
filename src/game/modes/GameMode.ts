@@ -3,7 +3,7 @@ import type { Fighter, MoveInput } from '../Fighter';
 import type { ItemId } from '../items';
 import type { World } from '../World';
 
-export type ModeId = 'bedwars' | 'skywars' | 'sumo' | 'crumble' | 'hotpotato' | 'whodunit';
+export type ModeId = 'bedwars' | 'skywars' | 'sumo' | 'itemsumo' | 'crumble' | 'hotpotato' | 'whodunit';
 
 /** One line of the mode's scoreboard (drawn on the right, like a server sidebar). */
 export interface ScoreLine {
@@ -79,6 +79,8 @@ export interface BotControl {
   fight(target: Fighter): void;
   /** Walks (sprinting) toward (x, z) with no bridging; true once within `stop`. */
   walkTo(x: number, z: number, stop: number, sprint?: boolean): boolean;
+  /** Walks toward (x, z), bridging over gaps with the blocks it carries. */
+  goTo(x: number, z: number, stop: number): void;
   aimAt(x: number, y: number, z: number, gain?: number): void;
   /** Puts `id` in hand (false if it has none). */
   equip(id: ItemId): boolean;

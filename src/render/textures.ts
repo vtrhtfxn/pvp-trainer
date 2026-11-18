@@ -43,7 +43,72 @@ const LEAVES = ['#3c7a26', '#4a8a30', '#326b1f', '#579a39', '#2d5f1b'];
 const PLANKS = ['#a4834f', '#9b7a47', '#b08e59', '#8e6e40'];
 const GLOW = ['#fbe1a2', '#e7bb69', '#c98f41', '#fff3c9', '#ad6d2e', '#f0cc7f'];
 
+/** Greys around 80% white, for map blocks: tinted to the block's own colour when drawn. */
+function grey(rng: Rng, mean = 204, spread = 18): string {
+  const v = Math.round(Math.max(0, Math.min(255, mean + (rng.next() - 0.5) * 2 * spread)));
+  return `rgb(${v},${v},${v})`;
+}
+
+/** Imported-map block faces (maps/blocks.ts): grey textures, coloured per block by the mesher. */
+const mapPainters: Record<string, Painter> = {
+  map_plain(ctx, rng) {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(ctx, x, y, grey(rng, 206, 7));
+  },
+  map_rough(ctx, rng) {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(ctx, x, y, rng.chance(0.12) ? grey(rng, 168, 14) : grey(rng, 210, 16));
+  },
+  map_sand(ctx, rng) {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(ctx, x, y, rng.chance(0.2) ? grey(rng, 180, 10) : grey(rng, 212, 10));
+  },
+  map_wool(ctx, rng) {
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        // Fibres: short diagonal runs a little darker.
+        const fibre = (x + y * 2 + Math.floor(rng.next() * 2)) % 4 === 0;
+        px(ctx, x, y, fibre ? grey(rng, 186, 8) : grey(rng, 214, 9));
+      }
+  },
+  map_bricks(ctx, rng) {
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        const off = Math.floor(y / 4) % 2 === 0 ? 0 : 4;
+        const bx = (x + off) % 8;
+        const by = y % 4;
+        let c = grey(rng, 210, 12);
+        if (by === 3 || bx === 7) c = grey(rng, 150, 8);
+        else if (by === 0 || bx === 0) c = grey(rng, 232, 6);
+        px(ctx, x, y, c);
+      }
+  },
+  map_planks(ctx, rng) {
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        let c = grey(rng, 210, 14);
+        if (y % 4 === 3) c = grey(rng, 150, 6);
+        else if ((y % 8 < 4 && x === 3) || (y % 8 >= 4 && x === 11)) c = grey(rng, 170, 6);
+        px(ctx, x, y, c);
+      }
+  },
+  map_log(ctx, rng) {
+    for (let x = 0; x < 16; x++) {
+      const base = grey(rng, 200, 22);
+      for (let y = 0; y < 16; y++) px(ctx, x, y, rng.chance(0.25) ? grey(rng, 190, 26) : base);
+    }
+  },
+  map_log_top(ctx, rng) {
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+        px(ctx, x, y, d > 6.5 ? grey(rng, 160, 16) : Math.floor(d) % 2 === 0 ? grey(rng, 226, 6) : grey(rng, 200, 6));
+      }
+  },
+  map_leaves(ctx, rng) {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(ctx, x, y, rng.chance(0.16) ? grey(rng, 110, 12) : grey(rng, 212, 26));
+  },
+};
+
 const painters: Record<string, Painter> = {
+  ...mapPainters,
   grass_top(ctx, rng) {
     for (let y = 0; y < 16; y++)
       for (let x = 0; x < 16; x++) px(ctx, x, y, pick(rng, GRASS, [3, 4, 3, 2, 1, 3]));

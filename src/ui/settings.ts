@@ -76,6 +76,10 @@ export interface Settings {
   showRoundCounter: boolean;
   showHitboxes: boolean;
   showNametag: boolean;
+  /** Offline bots look like players: usernames, skins of their own, no tier or state shown. */
+  disguiseBots: boolean;
+  /** Duel arena: an imported map's id ('' = the classic arena). */
+  arena: string;
   showEffects: boolean;
   showPracticePanel: boolean;
   // ---- chat
@@ -146,6 +150,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showRoundCounter: true,
   showHitboxes: false,
   showNametag: true,
+  disguiseBots: true,
+  arena: '',
   showEffects: true,
   showPracticePanel: true,
   chatVisibility: 'shown',
@@ -182,6 +188,7 @@ export function loadSettings(): Settings {
       if ((saved.settingsRev ?? 0) < 1 && saved.fovEffects === 0.5) s.fovEffects = 1;
       s.settingsRev = DEFAULT_SETTINGS.settingsRev;
       if (!s.partyPlayers || Array.isArray(s.partyPlayers)) s.partyPlayers = {};
+      if (!/^[a-z0-9-]{0,40}$/.test(s.arena)) s.arena = '';
       // Custom kits are checked again once they have loaded (Game drops one that is gone).
       if (!KITS.some((kit) => kit.id === s.kit) && !/^custom:[a-z0-9]{1,16}$/.test(s.kit)) s.kit = DEFAULT_SETTINGS.kit;
       for (const k of ['versusA', 'versusB'] as const) if (!(s[k] in DIFFICULTIES) || s[k] === 'practice') s[k] = DEFAULT_SETTINGS[k];

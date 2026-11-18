@@ -22,10 +22,10 @@ export interface ArmorStats {
   legacyFallEpf: number;
 }
 
-export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'spear_mace' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'sumo' | 'crumble' | 'hotpotato' | 'whodunit';
+export type BuiltinKitId = 'sword' | 'sword18' | 'axe' | 'uhc' | 'diamond_pot' | 'neth_pot' | 'crystal' | 'smp' | 'mace' | 'spear_mace' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'sumo' | 'itemsumo' | 'crumble' | 'hotpotato' | 'whodunit';
 /** Built-in kits, and kits players made in the kit editor (`custom:<id>`). */
 export type KitId = BuiltinKitId | `custom:${string}`;
-export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'spear_mace' | 'sumo' | 'crumble' | 'hotpotato' | 'whodunit';
+export type KitIcon = 'sword' | 'sword18' | 'axe' | 'uhc' | 'potion' | 'neth_potion' | 'crystal' | 'smp' | 'mace' | 'custom' | 'cart' | 'dia_smp' | 'bedwars' | 'skywars' | 'spear_mace' | 'sumo' | 'itemsumo' | 'crumble' | 'hotpotato' | 'whodunit';
 
 /** Everything a fighter spawns with. */
 export interface Loadout {
@@ -710,6 +710,28 @@ export const KITS: KitDef[] = [
     party: { players: 2, min: 2, max: 8 },
     summary: 'Bare hands on a big round platform over the void. No damage — knock them off the edge. 2 to 8 players.',
     contents: ['No items: punches only, 1.8 knockback, nobody gets hurt', 'Fall off and you are out · four outposts up parkour stepping stones', 'After 75 s the outposts fall, then the platform shrinks'],
+    hotbar: [],
+    armor: [null, null, null, null],
+    offhand: null,
+    armorLabel: 'None',
+    legacyCombat: true,
+    noHunger: true,
+  },
+  {
+    id: 'itemsumo',
+    name: 'Item Sumo',
+    icon: 'itemsumo',
+    available: true,
+    subtier: true,
+    mode: 'itemsumo',
+    party: { players: 6, min: 2, max: 12 },
+    summary: 'Sumo with items on real community maps: knockback sticks, snowballs, wind charges, pearls. Three lives; hold the centre 20 s to win. 2 to 12 players.',
+    contents: [
+      'No damage, only knockback · a random item for everyone every 8 s',
+      'Three lives each · or stand on the centre 20 s in a row to win',
+      'Maps: Atomic, Atomic II, Calima, Gjöll, Weald by zzuf (Overcast Community, CC BY-SA 4.0)',
+      'After 2:30 the edge crumbles toward the middle',
+    ],
     hotbar: [],
     armor: [null, null, null, null],
     offhand: null,

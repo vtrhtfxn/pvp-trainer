@@ -227,7 +227,7 @@ shown as one of:
   switched. The skin's outer layer (hat, jacket, sleeves, trousers) is drawn too, and your
   first-person arm wears it. Online, your skin is sent with your join, so the people in the room
   (opponents, 2v2 teammates, tournament players and spectators) see it; only PNG data of a
-  sensible size is accepted. Bots keep the default player.
+  sensible size is accepted. Offline bots wear skins of their own (see **Bots look like players** below).
 - **Resource Packs** — play with any Minecraft resource pack (PvP packs, 16× to 512×, made for
   1.8 up to the newest versions). In the desktop app: **Open Pack Folder**, drop the pack's .zip
   (or its unzipped folder) in, press **Refresh** and **Use** it. In the browser (or an app installed
@@ -259,8 +259,10 @@ shown as one of:
   sprint, toggle sneak, double-tap-W sprint, invert hotbar scroll.
 - **Key Binds** — every action, including mouse buttons 4/5.
 - **Sound** — master, players, footsteps, blocks & world, menus.
+- **Arenas** — fight your offline duels on a real Minecraft map instead of the flat arena (see
+  **Arenas** below).
 - **HUD** — the practice panel and each of its lines, the versus bar (both fighters' health) and nametag, effect list,
-  hitboxes.
+  hitboxes, and **Bots Look Like Players** (on by default; see below).
 - **Chat** — shown / commands only / hidden, text and background opacity, size, width.
 
 ## Multiplayer
@@ -478,16 +480,16 @@ hand. The last 3 seconds are the usual 3-2-1. Offline, press Jump (Space) to ski
 
 A 1v1 version of Hypixel's Bed Wars (one player per team) on **Far Shores**: two 13 × 13 base islands 80 blocks apart, each with the bed tucked in at the back behind the spawn, the forge at the front, the shop and an **ender chest** beside the spawn; a big middle island with two emerald generators and pillars to fight around; and four diamond islands out to the sides — all floating over the void. The **ender chest** is your own storage: whatever you put in it is there in every ender chest on the map and survives your deaths (like cloud storage); nobody else can take it. 1.8 combat, hunger off.
 
-- **Resources:** your forge drops iron (every second) and gold (every 6 s); diamonds (30 s) and emeralds (60 s) spawn on the outer islands. Generators speed up after 5 minutes. Walk over drops to pick them up.
+- **Resources:** your forge drops iron (every second) and gold (every 6 s); diamonds (30 s) and emeralds (60 s) spawn on the outer islands. Generators upgrade on a timer, like Hypixel's: **Diamond II at 5:00, Emerald II at 8:00, Diamond III at 10:00** (each announced in chat; the scoreboard counts down to the next event). Walk over drops to pick them up.
 - **Shop** (right-click the shop block at your base; Hypixel prices): Wool ×16 for 4 iron, End Stone ×12 for 24 iron, Blast-Proof Glass ×4 for 12 iron, Oak Planks ×16 for 4 gold, Obsidian ×4 for 4 emeralds; stone/iron/diamond swords for 10 iron / 7 gold / 4 emeralds, Knockback Stick 5 gold; permanent chainmail/iron/diamond armor for 24 iron / 12 gold / 6 emeralds; pickaxe and axe upgrades (they drop a tier when you die), permanent shears; arrows, bow, Power bow; Speed II, Jump V and Invisibility potions; golden apple, fireball (40 iron), TNT, ender pearl, water bucket. **Upgrades:** Sharpened Swords (4 diamonds), Reinforced Armor I–IV (2/4/8/16 diamonds).
-- **Rules:** while your bed stands you respawn after 5 s (your iron/gold/diamonds/emeralds go to your killer); once it is broken the next death is a final kill. You can't break your own bed, and only blocks players placed can be broken (the map is protected; TNT and fireballs only break placed wool/wood/end stone, never glass or obsidian). Beds are destroyed for everyone at 12 minutes (sudden death).
+- **Rules:** while your bed stands you respawn after 5 s (your iron/gold/diamonds/emeralds go to your killer); once it is broken the next death is a final kill. You can't break your own bed, and only blocks players placed can be broken (the map is protected; TNT and fireballs only break placed wool/wood/end stone, never glass or obsidian). When your bed breaks, a big **BED DESTROYED!** title tells you ("You will no longer respawn!"). Beds are destroyed for everyone at 12:00; at **15:00 sudden death** begins and the map **crumbles in from its edges**, a block every 1.5 s, until only the middle island is left — nobody can hide out at the back.
 - **Bot:** collects, shops by tier, covers its bed in wool (end stone at higher tiers), bridges over, breaks your bed, and fights with the 1.8 sword AI (and throws snowballs/eggs at you on bridges).
 
 ### SkyWars
 
 A 1v1 version of Hypixel's Solo Normal SkyWars on **Sky Archipelago**: each player starts in a glass cage over their own island (64 blocks apart) with three chests; a big middle island has four better chests, and six small islands (two beside the middle, four on the corners) have one chest each. The cages open when the countdown ends. No respawns — last one standing wins. 1.8 combat, natural regeneration on.
 
-- **Chests:** island chests always give a sword, 2–4 armor pieces and blocks, then some of: bow and arrows, snowballs/eggs, golden apples, an ender pearl, water/lava buckets, a tool, food. Middle chests give enchanted diamond/iron gear, Power bows, pearls, apples and splash potions. All chests refill at 4:00. Break a chest and it spills its contents.
+- **Chests:** island chests always give a sword, 2–4 armor pieces and blocks, then some of: bow and arrows, snowballs/eggs, golden apples, an ender pearl, water/lava buckets, a tool, food. Middle chests give enchanted diamond/iron gear, Power bows, pearls, apples and splash potions. All chests refill at **3:00 and 6:00**; at **8:00 sudden death** crumbles the islands from the edges in to the middle island (the scoreboard counts down to each). Break a chest and it spills its contents.
 - **Chest screen:** right-click a chest; click an item to take it (armor goes straight on if that slot is empty) or *Take all*; click your own items to put them in.
 - **Bot:** loots its island, puts on the best armor, then (higher tiers) bridges to the middle chests before hunting you; it bridges with sneak, avoids fighting with its back to the void, and throws snowballs/eggs.
 
@@ -507,10 +509,23 @@ leaves mid-game.
 | Game | Players (usual) |
 |---|---|
 | Sumo | 2–8 (2) |
+| Item Sumo | 2–12 (6) |
 | Crumble | 2–12 (6) |
 | Hot Potato | 3–12 (6) |
 | Whodunit | 3–15 (8) |
 
+- **Item Sumo** — played on real community maps: **Atomic, Atomic II, Calima, Gjöll and Weald**
+  by zzuf from Overcast Community (CC BY-SA 4.0; one picked at random, the same one again in a
+  replay and for everyone online). Everyone starts on a pillar of their own around a floating
+  centre with 48 wool to bridge out. No damage, only knockback; every 8 s everyone gets a random
+  item — a Knockback II stick, snowballs, eggs, wind charges, an ender pearl, fireballs, jump or
+  speed potions, more wool — and 8 more wool to build with. **Three lives**: fall into the void and
+  you're back on a pillar 3 s later (one the edge hasn't taken). Stand on the centre (the
+  emerald) **20 s in a row** and you win outright; otherwise the last one with lives wins. At 2:30
+  the edge starts crumbling toward the middle, a block every 1.5 s; at 5:00 time is up and the most
+  lives wins (then the most knock-offs). Bots bridge out with their wool, drop onto the centre
+  when it's safe, throw what they have at whoever's in range, use the stick up close and go
+  straight for anyone about to win on the centre. (`src/game/modes/ItemSumo.ts`)
 - **Sumo** — bare hands on a big round platform over the void (radius 9 + the number of players),
   1.8 knockback and no damage: knock the others off, last one on wins. Four **outposts** float off
   the edge, each up a parkour run of three rising stepping stones (two-block gaps). After 75 s the
@@ -742,6 +757,37 @@ The technique list comes from Minecraft Wiki mechanics, PvP guides and tier-list
 tricks (block-hitting — play the 1.8 Sword kit for those) and macros are left out. Each drill's page explains the steps and the mechanic
 behind it. `tests/trainer.test.ts` plays every drill with scripted inputs and checks it can be passed
 (and that the wrong technique is called out).
+
+### Arenas
+
+Options → **Arenas** picks where offline 1v1 duels are fought (not 2v2, drills, the Gauntlet,
+tournaments or minigames, which have their own maps):
+
+- **Classic Arena** — the flat walled arena (and each kit's own, like Crystal's dirt).
+- **Built-in maps** from Overcast Community (CC BY-SA 4.0): **La Piazza** (an Italian square, by
+  Technodono and Tundren), **Deadwood** (a western town, zzuf and Metacognitive), **Frostbite RAGE**
+  (a snowy village, Tundren, Mewzzy and zzuf), **Jurassic Attack FFA** (a jungle canyon, Tundren,
+  Mewzzy, Ruediger_LP and Strangey) and **Paladin Banners** (castle ruins, Tywnis).
+- **Import Map…** — any map from the internet: a schematic (`.schem` from WorldEdit/FAWE, Sponge
+  versions 1–3; `.schematic` from MCEdit and old WorldEdit; `.litematic` from Litematica; structure
+  block `.nbt`) or a **world save** (`.zip` of a world folder, 1.8 to today: the area around its
+  spawn is used). It's kept in the browser's storage on that computer, in this game's compact form.
+
+Whatever the source, the map is cut to at most 112 × 112 blocks and 64 high around the middle; its
+commonest ground height becomes the floor, and two spawns are found automatically: open spots
+(sky above, or headroom), 8–12 blocks apart with a clear walkable line between them, as near the
+middle as the map allows. The map can't be broken (blocks you place can) and falling off its edge
+is a void death. Bots fight as usual and don't walk off edges by accident (they sneak there, like
+people). Duels on an imported map aren't recorded as replays.
+
+**How blocks look.** The blocks the game has stay themselves (stone, cobblestone, oak planks and
+logs, wool, glass, obsidian, dirt, grass…); every other block (~1000 names, and the old numeric ids
+of 1.8–1.12 worlds) becomes a **map block**: one of a few textures (planks, bricks, rough or smooth
+stone, wool, sand, logs, leaves) in that block's own colour, so terracotta, concrete, quartz,
+spruce, prismarine or deepslate still look like themselves. Decoration you walk through (flowers,
+grass, torches, carpets, signs, rails, buttons) and floor slabs are left out; top slabs, stairs,
+fences, walls and panes become full blocks. (`src/maps/`: `nbt.ts`, `formats.ts`, `legacy.ts`,
+`blocks.ts`, `gameMap.ts`, `arena.ts`, `mapStore.ts`.)
 
 ### Versus bar
 
@@ -1109,7 +1155,27 @@ nametag reads *Passive*.
 ## The bot
 
 The bot only presses keys, moves the mouse and clicks, with a reaction delay and aim error
-that depend on its tier. It plays with the same physics and combat rules you do. It:
+that depend on its tier. It plays with the same physics and combat rules you do.
+
+**Bots look like players** (offline duels, 2v2 and minigames; Options → HUD → Bots Look Like
+Players, on by default). Each bot gets a username of the kind people pick (`ShadowWolf`, `remy81`,
+`xXRavenXx` …) and a skin of its own drawn from scratch (skin tone, hair or a cap, shirt, sleeves,
+trousers and shoes in the standard 64×64 layout, `src/ai/disguise.ts`), shown on its model and as its
+face in the versus bar. During the fight nothing says it is a bot: no tier badge or colour, no
+"Fighting / Eating" status, a white nametag, and the round score uses its name. Some say `gl` in
+chat during the countdown and `gg` after the round, like people do. The same opponent (name and skin)
+stays for a whole "first to" series, and replays show it again. Not in drills, the Gauntlet or
+tournaments (their bots have names of their own), and never online: bots in an online room are
+always labelled, so nobody is misled about who they're playing. The results screen still shows the
+tier you beat.
+
+It moves its mouse like a person, too: a big turn is a flick that goes a little past you and comes
+back (a few degrees for HT1, up to ~15% of the turn for Practice), and it waits out the countdown
+looking around, glancing down at its hotbar and scrolling through it, before facing you on its
+starting slot for the 3-2-1. These habits use dice of their own (`Rng.fork`), so they don't shift
+what the fight's dice decide.
+
+It:
 
 - times hits to the cooldown (half-swings on LT1+), W-taps and S-taps after sprint hits
 - goes for jump crits, jump-resets, hit-selects and circle strafes
@@ -1271,7 +1337,11 @@ src/game      Fighter (movement/inventory/items/effects/durability/mining), comb
               Explosion, EndCrystal, crystals (placing, hitting, anchors),
               Match (tick order), Game (glue), kits, customKits (kit editor data), items
 src/game/modes  minigames on void maps: GameMode interface, maps, Bed Wars (+ shop), SkyWars (+ loot)
-src/ai        BotBrain + difficulty profiles; SkyPlanner (Bed Wars / SkyWars: shop, loot, bridge, beds)
+src/ai        BotBrain + difficulty profiles; SkyPlanner (Bed Wars / SkyWars: shop, loot, bridge, beds);
+              disguise (bot usernames + generated skins); edgeGuard (bots on imported arenas)
+src/maps      map files: NBT reader, schematics / Litematica / structures / world regions, old block ids,
+              block names → this game's blocks, the compact map format, arenas, imported-map storage
+src/assets/maps  shipped maps (Item Sumo, arenas) from Overcast Community, CC BY-SA 4.0 (see LICENSE.md)
 src/render    arena/voxel mesher, player model (vanilla HumanoidModel animation + armor layers),
               first-person hands, item meshes from the resource pack, arrows, particles, custom skins (skins.ts)
 src/ui        HUD, chat, Marketplace, inventory screen, menus, kit editor, settings, pixel-art sprites,
@@ -1285,7 +1355,8 @@ src/assets/pack  the resource-pack textures the game uses (items, armor, shield,
 src/render/Hitboxes.ts   F3+B-style debug boxes
 src/net       protocol, authoritative Duel, client NetMatch/NetClient, online play (p2p, relay)
 src/server    Node multiplayer server + dependency-free WebSocket implementation
-scripts/      pack-server.mjs builds the standalone server folder
+scripts/      pack-server.mjs builds the standalone server folder; convert-occ-maps.ts / convert-occ-arenas.ts
+              rebuild the shipped maps from Overcast Community's CommunityMaps
 electron/     macOS app shell (main + preload), icon generator, packager script
 tests/        mechanics + bot-vs-bot duel tests (npm test)
 ```
@@ -1301,6 +1372,9 @@ HUD sprites in `src/assets/pack/`; team leather armor is dyed the vanilla way) �
 for private practice; Mojang's terms don't allow redistributing their assets.
 The UI font is Minecraft's own, built from the pack's glyph sheets by `scripts/build-font.py`.
 Player rig (CC-BY 4.0, Sketchfab) by lewisglasgow2005.
+Maps: Item Sumo maps (Atomic, Atomic II, Calima, Gjöll, Weald by zzuf) and duel arenas (La Piazza,
+Deadwood, Frostbite RAGE, Jurassic Attack FFA, Paladin Banners) from Overcast Community's
+CommunityMaps, CC BY-SA 4.0 — authors and changes in `src/assets/maps/LICENSE.md`.
 Sounds: crits, knockback, sweeps, the totem pop, the mace smash, explosions and the spear lunge are Minecraft's own
 sound effects (`src/assets/sounds/`, trimmed and converted to mono Ogg) — © Mojang; the rest are
 synthesised in `src/audio/Sound.ts` (hurt is a short voiced grunt, hits a thump with a slap and a

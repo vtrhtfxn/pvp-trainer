@@ -317,9 +317,11 @@ export class NetMatch {
     kitId: KitId = 'sword',
     /** 4 for a 2v2. */
     seats = 2,
+    /** The map the host built (a mode with several maps). */
+    map?: string,
   ) {
     this.kit = kitById(kitId);
-    this.mode = createMode(this.kit);
+    this.mode = createMode(this.kit, { map: typeof map === 'string' ? map.slice(0, 32) : undefined });
     this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (this.kit.floorDepth ?? 0));
     if (this.mode) {
       this.world.blocks.voidWorld = true;

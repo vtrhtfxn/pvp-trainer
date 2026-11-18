@@ -16,6 +16,9 @@ import { applyJars, listJars } from '../mods/modStore';
 import { cleanSkin, loadSkin, saveSkin, type Skin } from '../render/skins';
 import { VoiceChat, type VoiceSettings } from '../net/voice';
 import { FramePacer } from './FramePacer';
+import { botUsernames, generateSkin } from '../ai/disguise';
+import { getMap } from '../maps/mapStore';
+import type { GameMap } from '../maps/gameMap';
 import { pictureTexture } from '../render/shieldStatus';
 import { setIconGlint, setShinyPots } from '../render/itemIcons';
 import { attackIndicatorFor } from '../render/Crosshair';
@@ -186,6 +189,16 @@ export class Game {
   private mySkin: Skin | null = loadSkin();
   private readonly voice = new VoiceChat();
   private readonly pacer = new FramePacer();
+  /** Offline bots disguised as players: their skins, by username. */
+  private readonly botSkins = new Map<string, Skin>();
+  /** …and their faces for the versus bar. */
+  private readonly botFaces = new Map<string, string>();
+  /** This duel's bots are disguised (no tier or state shown, a bit of chat). */
+  private disguised = false;
+  /** The seed of this series' bot names and skins. */
+  private disguiseSeed = 0;
+  /** The imported map duels are fought on (Options → Arenas), once loaded; null: the classic arena. */
+  private arenaMap: GameMap | null = null;
   private voiceRoom = '';
   private voiceHtml = '';
   private readonly voiceEl: HTMLDivElement;
@@ -245,10 +258,17 @@ export class Game {
     const lowEnd = (nav.deviceMemory ?? 8) < 8 || cores < 4;
     const aa = settings.antialias === 'on' || (settings.antialias === 'auto' && !lowEnd && ((window.devicePixelRatio || 1) < 2 || cores >= 8));
     this.view = new SceneRenderer(canvas, this.match.world, assets, { antialias: aa });
+    // The arena picked in Options → Arenas (it's ready by the time anyone starts a duel).
+    if (settings.arena)
+      void getMap(settings.arena).then((m) => {
+        this.arenaMap = m;
+        if (!m) settings.arena = '';
+      });
     this.view.skinOf = (f) => {
       // Online, everyone is known by name; offline, you are the match's player (not when watching bots).
       if (f.networked || this.netMatch?.spectator) return this.netSkins.get(f.name) ?? null;
-      return this.state !== 'spectating' && f === this.match.player ? this.mySkin : null;
+      if (f !== this.match.player) return this.botSkins.get(f.name) ?? null;
+      return this.state !== 'spectating' ? this.mySkin : null;
     };
     if (this.view.softwareGL) console.warn(`WebGL is software-rendered (${this.view.gpuName}): expect low FPS.`);
     const packIcon = (id: ItemId) =>
@@ -270,6 +290,7 @@ export class Game {
     kitIcons.sumo = itemIcon({ id: 'stick', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.crumble = itemIcon({ id: 'tnt', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.hotpotato = itemIcon({ id: 'fire_charge', count: 1 }) ?? makeKitIcon('custom');
+    kitIcons.itemsumo = itemIcon({ id: 'snowball', count: 1 }) ?? makeKitIcon('custom');
     kitIcons.whodunit = itemIcon({ id: 'iron_sword', count: 1 }) ?? makeKitIcon('sword');
     this.hud = new HUD(uiRoot, this.mods);
     this.voiceEl = document.createElement('div');
@@ -371,6 +392,7 @@ export class Game {
       onMarketplace: () => this.openMarket(),
       installedMods: () => this.mods.installedCount,
       skin: () => this.mySkin,
+      onArena: (map) => (this.arenaMap = map),
       onSkin: (sk) => {
         this.mySkin = sk;
         saveSkin(sk);
@@ -928,6 +950,44 @@ export class Game {
     else this.broadcast('chat', text);
   }
 
+  /** Gives the bots of `m` usernames and skins from `seed` (the same seed gives the same ones). */
+  private disguise(m: Match, seed: number) {
+    const bots = m.fighters.filter((f) => f !== m.player);
+    const names = botUsernames(seed, bots.length);
+    bots.forEach((f, i) => {
+      f.name = names[i];
+      if (this.botSkins.has(f.name)) return;
+      const s = generateSkin(seed * 31 + i + 1);
+      if (!s) return;
+      this.botSkins.set(f.name, { png: s.png, slim: false });
+      this.botFaces.set(f.name, s.face);
+    });
+  }
+
+  /** A disguised bot says something in chat after `delayMs` (if that duel is still on). */
+  private botSay(f: Fighter, text: string, delayMs: number) {
+    const m = this.match;
+    setTimeout(() => {
+      if (this.match !== m || !this.disguised || this.state === 'menu') return;
+      this.chat.print(this.chatLine('chat', f.name, text), false);
+    }, delayMs);
+  }
+
+  /** Small talk at the start and end of a duel, like people do (some bots say nothing). */
+  private botChat(m: Match, when: 'start' | 'end', won = false) {
+    if (!this.disguised) return;
+    const rng = Math.random;
+    for (const f of m.fighters) {
+      if (f === m.player || f.team === m.player.team) continue;
+      if (when === 'start') {
+        if (rng() < 0.45) this.botSay(f, ['gl', 'glhf', 'gl hf', 'good luck', 'gl!', 'hf'][Math.floor(rng() * 6)], 400 + rng() * 2200);
+      } else if (rng() < (won ? 0.6 : 0.8)) {
+        const lines = won ? ['gg', 'gg wp', 'ggs', 'gg close', 'gf'] : ['gg', 'gg wp', 'ggs', 'gf', 'nice', 'gg you were good'];
+        this.botSay(f, lines[Math.floor(rng() * lines.length)], 700 + rng() * 2000);
+      }
+    }
+  }
+
   private broadcast(kind: ChatKind, text: string) {
     const t = text.slice(0, CHAT_MAX);
     if (this.netMatch && this.net.connected) {
@@ -1292,21 +1352,38 @@ export class Game {
     }
     // A tournament game is one round; the match score is the tournament's own.
     if (tg || teams) this.series = newSeries(kit.id, profile.id, 1);
+    // The same opponent (name and skin) for every round of a series.
+    if (this.series !== s) {
+      this.disguiseSeed = Math.floor(Math.random() * 2 ** 30);
+      this.botSkins.clear();
+      this.botFaces.clear();
+    }
     if (teams) this.series!.modified = true;
-    this.hud.setSeries(tg ? this.tourneyLine() : g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
     const sr = this.series!;
     this.hud.setPips(!tg && !g && !drillDef && sr.target > 1 ? { you: sr.you, them: sr.bot, target: sr.target } : null);
     const seed = Math.floor(Math.random() * 2 ** 30);
     this.hudName = loadPlayerName();
-    this.match = new Match(kit, profile, seed, teams ? {} : undefined, kit.party ? this.settings.partyPlayers[kit.id] : undefined);
+    // An imported arena: plain 1v1 duels only (minigames have their own maps).
+    const arena = !kit.mode && !teams && !drillDef && !tg && !g ? this.arenaMap : null;
+    this.match = new Match(kit, profile, seed, teams ? {} : undefined, kit.party ? this.settings.partyPlayers[kit.id] : undefined, arena);
     if (tg) this.match.bot.name = tg.name;
+    // Offline bots look like players (not in drills, the Gauntlet's tier ladder, or a tournament
+    // where they have names of their own).
+    this.disguised = !!this.settings.disguiseBots && !tg && !g && !drillDef;
+    if (this.disguised) {
+      this.disguise(this.match as Match, this.disguiseSeed);
+      // "gl" at the start of a series, while everyone sorts their inventory.
+      if (this.series !== s || !nextRound) this.botChat(this.match as Match, 'start');
+    }
+    this.hud.setSeries(tg ? this.tourneyLine() : g ? this.gauntletLine() : !drillDef && this.series!.target > 1 ? this.seriesScore() : null);
     // A real duel opens with 10 s to sort your inventory (drills get straight to the point).
     if (!drillDef) this.match.countdownTicks = PREP_TICKS;
     // A new duel keeps what commands set up (rules, reach, game modes, time…) but not the rest.
     this.state = 'playing';
     this.applySession(true);
     this.cheated = sessionModified(this.session);
-    if (!drillDef && !this.cheated && !teams) this.startRecording(this.match as Match, seed);
+    // (A duel on an imported arena isn't recorded: the replay couldn't rebuild the map.)
+    if (!drillDef && !this.cheated && !teams && !arena) this.startRecording(this.match as Match, seed);
     this.sprinting = null;
     this.stepTicks = 0;
     this.sound.muted = false;
@@ -1828,8 +1905,9 @@ export class Game {
       }
       this.netWatch = null;
       const seats = msg.seats ?? 2;
-      if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView || seats > 2) {
-        this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId, seats);
+      const mapNow = (this.netMatch?.mode as { mapId?: string } | null | undefined)?.mapId;
+      if (!this.netMatch || this.netMatch.kit.id !== msg.kit || this.tourView || seats > 2 || (msg.map !== undefined && msg.map !== mapNow)) {
+        this.netMatch = new NetMatch(this.net, this.net.you, msg.kit as KitId, seats, msg.map);
         this.series = null;
         this.hud.setSeries(this.tourView ? this.tourLine() : null);
         this.hud.setPips(null);
@@ -1943,7 +2021,12 @@ export class Game {
 
   private seriesScore(): string {
     const s = this.series!;
-    return `FT${s.target} · You ${s.you} – ${s.bot} Bot`;
+    return `FT${s.target} · You ${s.you} – ${s.bot} ${this.foeLabel()}`;
+  }
+
+  /** What the score calls your opponent: its username when bots look like players. */
+  private foeLabel(): string {
+    return this.disguised && !this.netMatch ? this.match.bot.name : 'Bot';
   }
 
   // ------------------------------------------------------------------ gauntlet, advancements
@@ -2343,7 +2426,7 @@ export class Game {
       // The series goes on: straight into the next round against the same bot.
       this.chat.print([{ t: `${won ? 'Round won' : 'Round lost'} — ${this.seriesScore()}`, c: won ? COLOR.green : COLOR.red }]);
       this.startDuel(true);
-      this.hud.showCenter(`You ${series.you} – ${series.bot} Bot`, 'toast', 50);
+      this.hud.showCenter(`You ${series.you} – ${series.bot} ${this.foeLabel()}`, 'toast', 50);
       return;
     }
     if (this.session.rules.doImmediateRespawn) {
@@ -2416,6 +2499,7 @@ export class Game {
       players: kit.party ? m.fighters.length : undefined,
       leftHanded: this.settings.mainHand === 'left' || undefined,
       date: Date.now(),
+      disguise: this.disguised ? this.disguiseSeed : undefined,
     });
     rec.start(m.player);
     m.recorder = rec;
@@ -2462,6 +2546,8 @@ export class Game {
     this.hud.setVisible(false);
     this.replayBack = back;
     const w = new ReplayWatch(data);
+    // The disguised bots' skins again (their names came back with the replay).
+    if (data.disguise !== undefined) this.disguise(w.match, data.disguise);
     if (at !== undefined) {
       w.seek(Math.max(w.start, at - 60));
       w.cam = 'povA';
@@ -2720,12 +2806,14 @@ export class Game {
       // A minigame can say what nametags show (Hot Potato: who is lit; Whodunit: nothing).
       // (Online the host sends them, one per fighter.)
       const modeTag = (f: Fighter) => (m instanceof Match ? (m.mode?.tagStatus?.(m, f, p) ?? null) : (m.modeUi.tags?.[m.fighters.indexOf(f)] ?? null));
+      // A disguised bot's nametag is white, like a player's (the tier colour would give it away).
+      const foeColor = this.disguised && !this.netMatch ? '#ffffff' : m.profile.color;
       this.view.extras.others = [p, ...others, m.bot]
         .filter((f) => f !== eye && f !== theirFoe && others.length > 0)
-        .map((f) => ({ f, name: f.name, color: f.team === p.team ? '#55ff55' : m.profile.color, status: modeTag(f) ?? '' }));
+        .map((f) => ({ f, name: f.name, color: f.team === p.team ? '#55ff55' : foeColor, status: modeTag(f) ?? '' }));
       tag.name = theirFoe.name;
-      tag.color = theirFoe.team === p.team ? '#55ff55' : m.profile.color;
-      tag.status = this.state === 'menu' ? '' : (modeTag(theirFoe) ?? (theirFoe !== m.bot ? '' : m.brain.label));
+      tag.color = theirFoe.team === p.team ? '#55ff55' : foeColor;
+      tag.status = this.state === 'menu' ? '' : (modeTag(theirFoe) ?? (theirFoe !== m.bot || this.disguised ? '' : m.brain.label));
       this.view.crosshairOn = (this.state === 'playing' || this.state === 'paused') && this.hud.crosshairShown;
       const firstPerson = this.view.cameraMode === 'first' && !this.view.extras.freelook && eye === p;
       this.view.attackIndicator = (this.state === 'playing' || this.state === 'paused') && this.hud.shown && firstPerson ? attackIndicatorFor(p, m.world.fighters.some((o) => o !== p && o.isEnemy(p) && rayDistanceToTarget(p, o) >= 0)) : null;
@@ -2744,9 +2832,10 @@ export class Game {
       this.hud.update(p, foe, s, {
         aimingAtBot: rayDistanceToTarget(p, foe) >= 0,
         botName: foe.name,
-        botColor: m.profile.color,
-        botStatus: m.brain.label,
-        botTag: this.netMatch ? 'P2' : m.profile.name,
+        botColor: this.disguised && !this.netMatch ? '#ffffff' : m.profile.color,
+        botStatus: this.disguised && !this.netMatch ? '' : m.brain.label,
+        botTag: this.netMatch ? 'P2' : this.disguised ? '' : m.profile.name,
+        botFace: this.disguised && !this.netMatch ? this.botFaces.get(foe.name) : undefined,
         playerName: this.hudName,
         fightTicks: m.fightTicks,
         lastReach: this.lastReach,
@@ -2976,6 +3065,7 @@ export class Game {
         const won = this.playerWon(m);
         this.hud.showCenter(won ? 'VICTORY' : (m as Match).teams ? 'DEFEAT' : 'YOU DIED', won ? 'win' : 'lose', 40);
         this.autoGG(won);
+        if (m instanceof Match) this.botChat(m, 'end', !won);
       } else if (--this.resultTimer === 0) this.finishDuel();
     }
   }

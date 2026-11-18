@@ -134,8 +134,10 @@ export class World {
     readonly half = ARENA_HALF,
     /** Layers of breakable ground (Crystal); 0 = the usual unbreakable floor. */
     floorDepth = 0,
+    /** Layers above the floor (imported maps can be taller than the usual build limit). */
+    height = BUILD_HEIGHT,
   ) {
-    this.blocks = new Blocks(half, BUILD_HEIGHT, floorDepth);
+    this.blocks = new Blocks(half, height, floorDepth);
     this.blocks.onChange = (x, y, z, from, to) => this.emit({ type: 'blockConvert', x, y, z, from, to });
   }
 

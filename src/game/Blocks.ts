@@ -43,6 +43,8 @@ export const B = {
   SHULKER_POTS: 23,
   /** A TNT block (Crumble's floors): solid and inert here; it drops away under players. */
   TNT: 24,
+  /** A block of an imported map: its look (maps/blocks.ts MAP_MATERIALS) lives in `amount`. Unbreakable. */
+  MAP: 25,
   /** Floor and walls: solid, unbreakable, never stored. */
   BEDROCK: 255,
 } as const;
@@ -72,7 +74,8 @@ export type BlockName =
   | 'bed'
   | 'chest'
   | 'shop'
-  | 'tnt';
+  | 'tnt'
+  | 'map';
 
 export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.PLANKS]: 'oak_planks',
@@ -99,6 +102,7 @@ export const BLOCK_NAMES: Record<number, BlockName> = {
   [B.CHEST]: 'chest',
   [B.SHOP]: 'shop',
   [B.TNT]: 'tnt',
+  [B.MAP]: 'map',
 };
 
 /** Wool colours by `amount`: 0 red, 1 blue, 2 white. */
@@ -207,6 +211,7 @@ export function isSolid(id: number): boolean {
     id === B.CHEST ||
     id === B.SHOP ||
     id === B.TNT ||
+    id === B.MAP ||
     id === B.COBBLESTONE ||
     id === B.OBSIDIAN ||
     id === B.STONE ||
@@ -376,7 +381,7 @@ export class Blocks {
     if (before === B.AIR && id !== B.AIR) this.count++;
     else if (before !== B.AIR && id === B.AIR) this.count--;
     this.id[i] = id;
-    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL || id === B.SHULKER || id === B.SHULKER_POTS || id === B.WOOL || id === B.BED ? amount : 0;
+    this.amount[i] = isFluid(id) || id === B.RESPAWN_ANCHOR || id === B.FIRE || id === B.RAIL || id === B.SHULKER || id === B.SHULKER_POTS || id === B.WOOL || id === B.BED || id === B.MAP ? amount : 0;
     this.flags[i] = isFluid(id) ? (source ? 1 : 0) | (falling ? 2 : 0) : 0;
     this.placed[i] = 0;
     this.version++;

@@ -6,6 +6,7 @@ import type { ItemId, ItemStack } from '../items';
 import { CHEST_SLOTS, inReach, putInto, takeFrom, type ChestMode } from './containers';
 import { TEAM_COLORS, TEAM_NAMES, members, teamOf, teamSlot, type GameMode, type ModeHost as Match, type ScoreLine } from './GameMode';
 import { buildBedwarsMap, type BedwarsLayout, type Spot } from './maps';
+import { crumbleBeyond } from './party';
 import { SHOP, applyTeamEnchants, buy, respawnLoadout, type Currency, type ShopItem, type TeamGear } from './shop';
 
 /** Ticks between drops: the island forge (iron, gold) and the middle generators, tier I. */
@@ -21,6 +22,19 @@ const GEN_CAP: Record<Currency, number> = { iron_ingot: 48, gold_ingot: 12, diam
 export const RESPAWN_TICKS = 100;
 /** Beds are destroyed for everyone this long into the game (then it is sudden death). */
 export const BED_GONE_TICKS = 20 * 60 * 12;
+/** Then the map crumbles in from its edges (a block every 1.5 s) until only the middle is left. */
+export const CRUMBLE_TICKS = 20 * 60 * 15;
+const CRUMBLE_EVERY = 30;
+const CRUMBLE_MIN = 9;
+
+/** The timeline on the scoreboard (Hypixel's order: generator tiers, beds gone, sudden death). */
+const EVENTS: [string, number][] = [
+  ['Diamond II', 20 * 60 * 5],
+  ['Emerald II', 20 * 60 * 8],
+  ['Diamond III', 20 * 60 * 10],
+  ['Bed gone', BED_GONE_TICKS],
+  ['Sudden death', CRUMBLE_TICKS],
+];
 
 interface TeamState {
   gear: TeamGear;
@@ -60,6 +74,10 @@ export class Bedwars implements GameMode, ChestMode {
   private timers = { iron: 0, gold: 0, diamond: 0, emerald: 0 };
   private announcements: ScoreLine[] = [];
   private bedsGoneAnnounced = false;
+  /** When each team's bed was broken (for the BED DESTROYED title). */
+  private bedBrokenAt: [number, number] = [-1, -1];
+  /** Sudden death: how far out the map still reaches (null before it starts). */
+  private edge: number | null = null;
   /**
    * Each player's ender chest: 27 slots, the same in every ender chest on the map, and kept
    * through deaths (what you store there is safe, like cloud storage).
@@ -94,6 +112,8 @@ export class Bedwars implements GameMode, ChestMode {
     this.timers = { iron: 0, gold: 0, diamond: 0, emerald: 0 };
     this.announcements = [];
     this.bedsGoneAnnounced = false;
+    this.bedBrokenAt = [-1, -1];
+    this.edge = null;
     this.ender = new Map();
     w.protectMap = true;
     w.enderStorage = true;
@@ -185,8 +205,11 @@ export class Bedwars implements GameMode, ChestMode {
       d.pickupDelay = 0;
       w.items.push(d);
     };
-    // Faster forge in the diamond/emerald tier II periods (like Hypixel's timed upgrades).
-    const tier2 = t > 20 * 60 * 5;
+    // Generator tiers on a timer, like Hypixel's (diamonds at 5:00 and 10:00, emeralds at 8:00).
+    const diamondRate = t > 20 * 60 * 10 ? 0.5 : t > 20 * 60 * 5 ? 0.75 : 1;
+    const emeraldRate = t > 20 * 60 * 8 ? 0.75 : 1;
+    for (const [name, at] of EVENTS)
+      if (t === at && name !== 'Bed gone' && name !== 'Sudden death') this.announcements.push({ text: `${name.startsWith('Diamond') ? 'Diamond' : 'Emerald'} Generators have been upgraded to Tier ${name.split(' ')[1]}`, color: name.startsWith('Diamond') ? '#55ffff' : '#55ff55' });
     if (++this.timers.iron >= GEN.iron) {
       this.timers.iron = 0;
       for (const team of this.layout.teams) drop(team.gen, 'iron_ingot');
@@ -195,11 +218,11 @@ export class Bedwars implements GameMode, ChestMode {
       this.timers.gold = 0;
       for (const team of this.layout.teams) drop(team.gen, 'gold_ingot');
     }
-    if (++this.timers.diamond >= (tier2 ? GEN.diamond * 0.75 : GEN.diamond)) {
+    if (++this.timers.diamond >= GEN.diamond * diamondRate) {
       this.timers.diamond = 0;
       for (const d of this.layout.diamonds) drop(d, 'diamond');
     }
-    if (++this.timers.emerald >= (tier2 ? GEN.emerald * 0.75 : GEN.emerald)) {
+    if (++this.timers.emerald >= GEN.emerald * emeraldRate) {
       this.timers.emerald = 0;
       for (const e of this.layout.emeralds) drop(e, 'emerald');
     }
@@ -216,6 +239,7 @@ export class Bedwars implements GameMode, ChestMode {
       if (t >= BED_GONE_TICKS) continue;
       const other = team === 0 ? 1 : 0;
       this.teams[other].bedsBroken++;
+      this.bedBrokenAt[team] = t;
       // Whoever of the other team stood nearest the bed broke it.
       const bed = cells[0];
       const breaker = members(m, other).sort((a, b) => Math.hypot(a.pos.x - bed.x, a.pos.z - bed.z) - Math.hypot(b.pos.x - bed.x, b.pos.z - bed.z))[0];
@@ -224,7 +248,16 @@ export class Bedwars implements GameMode, ChestMode {
     }
     if (t >= BED_GONE_TICKS && !this.bedsGoneAnnounced) {
       this.bedsGoneAnnounced = true;
-      this.announcements.push({ text: 'All beds have been destroyed! Sudden death.', color: '#ffaa00' });
+      this.announcements.push({ text: 'All beds have been destroyed! Sudden death in 3:00.', color: '#ffaa00' });
+    }
+    // Sudden death: the map crumbles in from the edges, so nobody can hide out at the back.
+    if (t === CRUMBLE_TICKS) {
+      this.edge = 62;
+      this.announcements.push({ text: 'SUDDEN DEATH! The map is crumbling from the edges!', color: '#ff5555' });
+    }
+    if (this.edge !== null && t > CRUMBLE_TICKS && (t - CRUMBLE_TICKS) % CRUMBLE_EVERY === 0 && this.edge > CRUMBLE_MIN) {
+      this.edge--;
+      crumbleBeyond(w.blocks, this.edge, -12, 15);
     }
 
     // ---- deaths and respawns
@@ -271,11 +304,11 @@ export class Bedwars implements GameMode, ChestMode {
   scoreboard(m: Match, viewer: Fighter): ScoreLine[] {
     const t = m.fightTicks;
     const lines: ScoreLine[] = [{ text: 'BED WARS', color: '#ffff55' }];
-    const next = t < 20 * 60 * 5 ? ['Diamond II', 20 * 60 * 5] : t < BED_GONE_TICKS ? ['Bed gone', BED_GONE_TICKS] : null;
+    const next = EVENTS.find(([, at]) => t < at);
     if (next) {
-      const left = Math.max(0, Math.ceil(((next[1] as number) - t) / 20));
-      lines.push({ text: `${next[0]} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` });
-    } else lines.push({ text: 'Sudden death', color: '#ff5555' });
+      const left = Math.max(0, Math.ceil((next[1] - t) / 20));
+      lines.push({ text: `${next[0]} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, color: next[0] === 'Sudden death' ? '#ff5555' : undefined });
+    } else lines.push({ text: 'SUDDEN DEATH', color: '#ff5555' });
     for (const team of [0, 1] as const) {
       const st = this.teams[team];
       const left = members(m, team).filter((g) => !this.life(g).out).length;
@@ -291,6 +324,9 @@ export class Bedwars implements GameMode, ChestMode {
 
   title(m: Match, viewer: Fighter): { title: string; sub: string } | null {
     const life = this.life(viewer);
+    // Your bed just went: the big red title, like on Hypixel.
+    const broke = this.bedBrokenAt[teamOf(m, viewer)];
+    if (broke >= 0 && m.fightTicks - broke < 60 && !viewer.dead) return { title: 'BED DESTROYED!', sub: 'You will no longer respawn!' };
     if (viewer.dead && life.respawnAt !== null) {
       const left = Math.max(1, Math.ceil((life.respawnAt - m.fightTicks) / 20));
       return { title: 'YOU DIED!', sub: `Respawning in ${left}…` };

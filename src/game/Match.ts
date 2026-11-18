@@ -7,6 +7,8 @@ import { hitNearerEntity } from './crystals';
 import { Fighter } from './Fighter';
 import { partySize, type KitDef } from './kits';
 import { World } from './World';
+import { mapWorldSize, placeMap, type GameMap } from '../maps/gameMap';
+import { guardEdge } from '../ai/edgeGuard';
 import type { GameMode } from './modes/GameMode';
 import { createMode } from './modes';
 import { runAction, type ReplayAction, type ReplayRecorder } from './replay';
@@ -22,7 +24,7 @@ export const TEAM_SPREAD = 3;
 /** Duel kits played 2v2 (you and a bot ally against two bots). Custom kits can be too. */
 export const TEAM_KITS = ['sword', 'sword18', 'axe', 'uhc', 'diamond_pot', 'neth_pot', 'crystal', 'smp', 'dia_smp', 'mace', 'spear_mace', 'cart', 'bedwars', 'skywars'] as const;
 /** Party minigames played as two teams of two (Whodunit's hidden roles don't fit teams). */
-export const PARTY_TEAM_KITS = ['sumo', 'crumble', 'hotpotato'] as const;
+export const PARTY_TEAM_KITS = ['sumo', 'itemsumo', 'crumble', 'hotpotato'] as const;
 
 export function teamKit(id: string): boolean {
   return (TEAM_KITS as readonly string[]).includes(id) || (PARTY_TEAM_KITS as readonly string[]).includes(id) || id.startsWith('custom:');
@@ -57,6 +59,8 @@ export class Match {
   readonly partyTeams: boolean;
   /** Bed Wars / SkyWars rules on top of the duel, or null for a plain duel. */
   readonly mode: GameMode | null;
+  /** A duel on a map you imported (instead of the flat arena), or null. */
+  readonly arena: GameMap | null;
   /** Everyone in the game: you, the bot, and in a 2v2 your ally and the second opponent. */
   readonly fighters: Fighter[];
   /** 2v2: your teammate (a bot), or null in a 1v1. */
@@ -98,6 +102,8 @@ export class Match {
     teams?: { allyProfile?: BotProfile },
     /** A party minigame: how many play, you included (the kit's usual number if not given). */
     players?: number,
+    /** A plain duel on an imported map. */
+    arena?: GameMap | null,
   ) {
     // A party minigame is you and bots, every one for themselves.
     // 2v2 in a party minigame: four players, every other one on your team.
@@ -106,9 +112,14 @@ export class Match {
     if (party) teams = undefined;
     this.seed = seed ?? (Math.random() * 2 ** 32) >>> 0;
     this.rng = new Rng(this.seed);
-    this.mode = createMode(kit);
-    this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
-    if (this.mode) {
+    // The map (of a mode with several) comes from the seed, so a replay has the same one.
+    this.mode = createMode(kit, { pick: new Rng(this.seed ^ 0x3a9).next() });
+    this.arena = !this.mode && arena ? arena : null;
+    if (this.arena) {
+      const size = mapWorldSize(this.arena);
+      this.world = new World(size.half, size.depth, size.height);
+    } else this.world = new World(this.mode ? MODE_WORLD_HALF : undefined, this.mode ? 12 : (kit.floorDepth ?? 0));
+    if (this.mode || this.arena) {
       // A floating map over the void: no floor, no walls.
       this.world.blocks.voidWorld = true;
       this.world.blocks.clear();
@@ -198,6 +209,7 @@ export class Match {
     this.ally?.reset(side, half, 0, this.kit);
     this.bot2?.reset(side, -half, Math.PI, this.kit);
     this.world.clearEntities();
+    if (this.arena) this.placeArena(this.arena);
     for (const f of this.fighters) {
       f.naturalRegen = this.kit.naturalRegen ?? true;
       f.food.locked = !!this.kit.noHunger;
@@ -220,6 +232,26 @@ export class Match {
     this.useHeld = false;
     this.attackHeld = false;
     this.lastPlayerAttack = null;
+  }
+
+  /** Builds the imported map and puts each side on its spawn, facing the other. */
+  private placeArena(a: GameMap) {
+    placeMap(this.world.blocks, a);
+    this.world.protectMap = true;
+    this.world.voidY = a.voidY;
+    const [s0, s1] = a.spawns;
+    const face = (from: number[], to: number[]) => Math.atan2(-(to[0] - from[0]), -(to[2] - from[2]));
+    const put = (f: Fighter, s: number[], yaw: number, side: number) => {
+      // Teammates stand beside each other, across the line between the two spawns.
+      f.pos.set(s[0] + Math.cos(yaw) * side, s[1], s[2] - Math.sin(yaw) * side);
+      f.prevPos.copy(f.pos);
+      f.yaw = f.prevYaw = f.bodyYaw = f.prevBodyYaw = yaw;
+    };
+    const side = this.teams ? TEAM_SPREAD / 2 : 0;
+    put(this.player, s0, face(s0, s1), -side);
+    put(this.bot, s1, face(s1, s0), -side);
+    if (this.ally) put(this.ally, s0, face(s0, s1), side);
+    if (this.bot2) put(this.bot2, s1, face(s1, s0), side);
   }
 
   /** A fresh right-click press (so a tap shorter than a tick still fires a crossbow). */
@@ -304,6 +336,8 @@ export class Match {
         x.brain.chooseTarget(this.enemiesOf(x.fighter));
         x.brain.tick();
       }
+      // On an imported map over the void, bots don't walk off its edges by accident.
+      if (this.arena) for (const f of this.fighters) if (f !== p) guardEdge(f);
     } else {
       // Before the fight you can still pick your starting slot and off hand, just not use them.
       if (this.phase === 'countdown') {
@@ -315,12 +349,13 @@ export class Match {
       p.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
       if (this.phase === 'countdown') {
         b.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
-        b.yaw = Math.atan2(-(p.pos.x - b.pos.x), -(p.pos.z - b.pos.z));
+        // Bots wait like people do: looking around, at the hotbar, then at whoever they fight.
+        const left = this.countdownTicks - this.phaseTicks;
+        if (this.botDriver) b.yaw = Math.atan2(-(p.pos.x - b.pos.x), -(p.pos.z - b.pos.z));
+        else this.brain.warmup(left);
         for (const x of this.extras) {
-          const f = x.fighter;
-          const t = x.brain.opponent;
-          f.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
-          f.yaw = Math.atan2(-(t.pos.x - f.pos.x), -(t.pos.z - f.pos.z));
+          x.fighter.input = { forward: 0, strafe: 0, jump: false, sneak: false, sprint: false };
+          x.brain.warmup(left);
         }
       }
     }

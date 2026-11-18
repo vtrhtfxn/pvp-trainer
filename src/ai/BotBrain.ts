@@ -140,6 +140,16 @@ export class BotBrain {
   private seen: Seen[] = [];
   private errYaw = 0;
   private errPitch = 0;
+  /** Its own dice for looks and habits, so they don't shift what the fight's dice decide. */
+  private readonly habits: Rng;
+  /** A big turn is a flick that goes a little past the target (radians), then comes back. */
+  private flick = 0;
+  /** Ticks the flick still holds once past the target (−1: not past it yet). */
+  private flickHold = -1;
+  private flickAge = 0;
+  /** Before the fight: where it is looking, until when, and the hotbar slot it started on. */
+  private warmLook = { yaw: 0, pitch: 0, until: 0, gain: 0.3 };
+  private homeSlot = -1;
   private strafeDir = 0;
   private strafeTimer = 0;
   private wtapTimer = 0;
@@ -287,6 +297,7 @@ export class BotBrain {
     private readonly rng: Rng,
     private readonly doAttack: () => AttackOutcome,
   ) {
+    this.habits = rng.fork(0x4ab17);
     this.swingThreshold = rng.range(profile.chargeMin, profile.chargeMax);
     bot.shieldRaiseTicks = C.BOT_SHIELD_RAISE_TICKS;
   }
@@ -585,8 +596,69 @@ export class BotBrain {
     const n = P.aimNoiseDeg * DEG;
     this.errYaw += (this.rng.gauss() * n * 2 - this.errYaw) * 0.15;
     this.errPitch += (this.rng.gauss() * n * 1.2 - this.errPitch) * 0.15;
+    const yaw = wantYaw + this.errYaw;
     // Keeping the crosshair on a strafe at Speed II takes faster mouse movement from everyone.
-    this.turnTo(wantYaw + this.errYaw, wantPitch + this.errPitch, this.fastTarget ? gain * 1.6 : gain);
+    this.turnTo(yaw + this.flickOffset(yaw), wantPitch + this.errPitch, this.fastTarget ? gain * 1.6 : gain);
+  }
+
+  /**
+   * Nobody's mouse stops dead on a target after a big turn: it goes a little past and comes back.
+   * Worse aim overshoots more (a few degrees for the best, up to ~15% of the turn for Practice).
+   */
+  private flickOffset(yaw: number): number {
+    const off = wrapAngle(yaw - this.bot.yaw);
+    if (this.flick === 0) {
+      if (Math.abs(off) < 28 * DEG) return 0;
+      this.flick = off * this.habits.range(0.03, 0.03 + this.profile.aimNoiseDeg * 0.03);
+      this.flickHold = -1;
+      this.flickAge = 0;
+    }
+    this.flickAge++;
+    if (this.flickHold < 0 && Math.sign(off) !== Math.sign(this.flick)) this.flickHold = this.habits.int(1, 2);
+    if (this.flickHold === 0 || this.flickAge > 14) {
+      this.flick = 0;
+      return 0;
+    }
+    if (this.flickHold > 0) this.flickHold--;
+    return this.flick;
+  }
+
+  /**
+   * The countdown, like a person waits for it: looking around, down at the hotbar, scrolling
+   * through it, at the opponent; in the last seconds back on the starting slot, facing them.
+   */
+  warmup(ticksLeft: number) {
+    const b = this.bot;
+    const t = this.target;
+    const h = this.habits;
+    if (this.homeSlot < 0) this.homeSlot = b.selected;
+    const at = yawTowards(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
+    if (ticksLeft <= 50) {
+      if (b.selected !== this.homeSlot && ticksLeft % 2 === 0) b.selectSlot(b.selected + (b.selected < this.homeSlot ? 1 : -1));
+      this.turnTo(at + this.errYaw * 0.5, 0.05, 0.35);
+      return;
+    }
+    const w = this.warmLook;
+    if (--w.until <= 0) {
+      const r = h.next();
+      w.gain = h.range(0.15, 0.4);
+      w.until = h.int(14, 46);
+      if (r < 0.4) {
+        w.yaw = at + h.range(-0.12, 0.12);
+        w.pitch = h.range(-0.05, 0.15);
+      } else if (r < 0.65) {
+        // Down at the hotbar / the inventory.
+        w.yaw = b.yaw + h.range(-0.3, 0.3);
+        w.pitch = h.range(0.9, 1.35);
+      } else {
+        w.yaw = at + (h.chance(0.5) ? 1 : -1) * h.range(0.5, 1.8);
+        w.pitch = h.range(-0.35, 0.25);
+      }
+      // Scrolls the hotbar a slot or two now and then.
+      if (h.chance(0.35)) b.selectSlot(clamp(b.selected + (h.chance(0.5) ? 1 : -1) * h.int(1, 2), 0, 8));
+    }
+    this.errYaw += (h.gauss() * 0.02 - this.errYaw) * 0.2;
+    this.turnTo(w.yaw + this.errYaw, w.pitch, w.gain);
   }
 
   turnTo(yaw: number, pitch: number, gain = 1) {

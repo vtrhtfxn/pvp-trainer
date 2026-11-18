@@ -245,7 +245,7 @@ class Room {
     });
     this.duel = duel;
     this.rematchVotes.clear();
-    for (const c of this.players) c.send({ t: 'start', countdown: duel.countdownSeconds, kit: this.kit, you: c.seat, seats: seats.length });
+    for (const c of this.players) c.send({ t: 'start', countdown: duel.countdownSeconds, kit: this.kit, you: c.seat, seats: seats.length, map: duel.map });
     this.sendSquad();
     this.startClock();
     this.lobby.log(`room ${this.code}: ${sq.party ? this.kit : '2v2'} started — ${names.join(', ')}`);
@@ -317,8 +317,8 @@ class Room {
     this.duel = new Duel([a.name, b.name], kit);
     this.duel.countdownTicks = PREP_TICKS;
     this.prepDuel(this.duel);
-    a.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 0 });
-    b.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 1 });
+    a.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 0, map: this.duel.map });
+    b.send({ t: 'start', countdown: this.duel.countdownSeconds, kit, you: 1, map: this.duel.map });
     for (const c of this.watchers) c.send({ t: 'watch', countdown: this.duel.countdownSeconds, kit });
     this.startClock();
     this.lobby.log(`room ${this.code}: tournament game — ${a.name} vs ${b.name} on ${kit}`);
@@ -423,7 +423,7 @@ class Room {
     this.duel.countdownTicks = PREP_TICKS;
     this.prepDuel(this.duel);
     this.rematchVotes.clear();
-    this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
+    this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit, map: this.duel.map });
     this.startClock();
     this.lobby.log(`room ${this.code}: duel started — ${names[0]} vs ${names[1]}`);
   }
@@ -520,8 +520,8 @@ class Room {
     if (this.rematchVotes.size >= need && this.players.length === need) {
       this.rematchVotes.clear();
       this.duel.reset();
-      if (this.squad) for (const c of this.players) c.send({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit, you: c.seat, seats: this.duel.seats });
-      else this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit });
+      if (this.squad) for (const c of this.players) c.send({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit, you: c.seat, seats: this.duel.seats, map: this.duel.map });
+      else this.broadcast({ t: 'start', countdown: this.duel.countdownSeconds, kit: this.kit, map: this.duel.map });
     }
   }
 

@@ -1,5 +1,6 @@
 import { DIFFICULTIES, type BotProfile } from '../ai/difficulty';
 import type { AttributeId, GameMode } from './attributes';
+import { botUsernames } from '../ai/disguise';
 import { kitById, type KitDef, type KitId } from './kits';
 import { COUNTDOWN_TICKS, Match } from './Match';
 import { wrapAngle } from '../core/math';
@@ -26,6 +27,12 @@ export function replayMatch(d: ReplayData): Match {
   m.player.name = d.playerName;
   m.player.leftHanded = !!d.leftHanded;
   m.bot.name = d.botName;
+  // Disguised bots get the same usernames back (the first is the opponent's, as recorded).
+  if (d.disguise !== undefined) {
+    const bots = m.fighters.filter((f) => f !== m.player);
+    const names = botUsernames(d.disguise, bots.length);
+    bots.forEach((f, i) => (f.name = i === 0 ? d.botName : names[i]));
+  }
   Object.assign(m.world.rules, d.rules);
   m.world.dayTime = d.dayTime;
   m.world.raining = d.raining;

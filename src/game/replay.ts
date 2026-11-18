@@ -78,6 +78,8 @@ export interface ReplayHeader {
   prep?: number;
   /** Date.now() when the duel started. */
   date: number;
+  /** The bots looked like players: the seed their usernames and skins came from. */
+  disguise?: number;
 }
 
 export interface ReplayData extends ReplayHeader {
