@@ -444,8 +444,11 @@ Mace launch seen through your own eyes used to stack screen-sized gusts and part
 frame rate down. **Render Scale** goes from 25% (smoother on weak computers) to 150%
 (supersampling, extra crisp on strong ones). Block textures use the graphics card's best
 anisotropic filtering, so the ground and walls stay sharp at a slant, and the fog sits further out. Behind a screen it draws
-less: 30 FPS for the title-screen duel and results, 10 FPS paused offline or minimized (the
-simulation keeps its 20 ticks). Every shader is compiled and linked behind the loading screen, the
+less: 30 FPS for the title-screen duel and results, 10 FPS paused offline. **Minimized or in a
+background tab it draws nothing at all** (no world, HUD or widgets) while the simulation keeps
+its 20 ticks; an offline duel pauses itself, like Minecraft losing focus. A background browser
+tab gets no animation frames, so a slow timer keeps online games (and Bot vs Bot) ticking there,
+catching up on up to a second of ticks at a time. Every shader is compiled and linked behind the loading screen, the
 inventory's player preview is only redrawn when the mouse or your gear changes, and Auto
 anti-aliasing stays off on PCs under 8 GB or 4 cores.
 

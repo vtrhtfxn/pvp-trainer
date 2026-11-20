@@ -577,6 +577,16 @@ export class Game {
     this.toMenu();
     this.view.prewarm();
     requestAnimationFrame(this.onFrame);
+    // A background browser tab gets no animation frames at all, which froze online games (the
+    // host and the others went on without you). A slow timer stands in while it's hidden.
+    setInterval(() => {
+      const now = performance.now();
+      if (document.hidden && now - this.lastStep > 200) this.step(now);
+    }, 250);
+    // Like Minecraft losing focus: an offline duel pauses when you minimize or switch tabs.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && !this.online) this.pause();
+    });
   }
 
   // ------------------------------------------------------------------ state changes
@@ -2590,6 +2600,16 @@ export class Game {
 
   private frame(now: number) {
     requestAnimationFrame(this.onFrame);
+    this.step(now);
+  }
+
+  /** When step last ran (the hidden-tab timer only steps in when frames have stopped). */
+  private lastStep = 0;
+
+  /** One frame of the game: input, the 20 TPS ticks it's due, then (if anyone can see it) drawing. */
+  private step(now: number) {
+    this.lastStep = now;
+    const hidden = document.hidden;
     // Max Framerate: skip display refreshes that come too soon.
     let cap = this.settings.maxFps;
     // Behind a screen the world barely moves: paused offline it is frozen outright, and the
@@ -2611,7 +2631,9 @@ export class Game {
       this.menuDrawn = now;
     }
 
-    const dt = this.pacer.step(Math.min(0.1, (now - this.last) / 1000), cap > 0);
+    // Hidden, steps come far apart (a browser runs background timers about once a second): catch
+    // up on up to a second of ticks so an online game doesn't fall behind the others.
+    const dt = this.pacer.step(Math.min(hidden ? 1 : 0.1, (now - this.last) / 1000), cap > 0);
     this.last = now;
     this.time += dt;
     this.fpsFrames++;
@@ -2718,6 +2740,9 @@ export class Game {
     }
     const alpha = ticking ? Math.min(1, this.acc / tickMs) : 1;
     this.renderAlpha = alpha;
+    // Minimized or in a background tab: the game goes on, but nobody sees the world, the HUD or
+    // the widgets, so none of them are drawn (no GPU work, no page layout).
+    if (hidden) return;
 
     this.updateWeather(dt, offlineDuel);
     const tag = this.tag;
