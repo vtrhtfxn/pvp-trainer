@@ -4,8 +4,7 @@ import { botUsernames } from '../ai/disguise';
 import { kitById, type KitDef, type KitId } from './kits';
 import { COUNTDOWN_TICKS, Match } from './Match';
 import { wrapAngle } from '../core/math';
-import { monotoneCubic } from '../render/lookSmooth';
-import { CHECK_EVERY, FrameFeeder, checksum, type ReplayData } from './replay';
+import { CHECK_EVERY, FrameFeeder, checksum, curveLook, tickLooks, type ReplayData } from './replay';
 import { SPEC_CAMS, SPEC_SPEEDS, type RoundResult, type SpecCam, type Watch } from './Spectate';
 
 const PLAYER_COLOR = '#55ff55';
@@ -74,20 +73,17 @@ export class ReplayWatch implements Watch {
   private feeder!: FrameFeeder;
   private ended = false;
   /** Your look at every tick of the recording (frames leave it out when it didn't change). */
-  private readonly yaws: number[] = [];
-  private readonly pitches: number[] = [];
+  private readonly yaws: number[];
+  private readonly pitches: number[];
+  /** The frames you saw between ticks (frame k: on the way from tick k − 1 to k), where recorded. */
+  private readonly between: (number[] | undefined)[];
 
   constructor(readonly data: ReplayData) {
     this.kit = replayKit(data);
     this.profile = replayProfile(data);
-    let yaw = 0;
-    let pitch = 0;
-    for (const f of data.frames) {
-      if (f.y !== undefined) yaw = f.y;
-      if (f.p !== undefined) pitch = f.p;
-      this.yaws.push(yaw);
-      this.pitches.push(pitch);
-    }
+    ({ yaws: this.yaws, pitches: this.pitches } = tickLooks(data.frames));
+    // Only well-formed sample lists (fraction, yaw, pitch triples of finite numbers) are used.
+    this.between = data.frames.map((f) => (Array.isArray(f.L) && f.L.length % 3 === 0 && f.L.length <= 180 && f.L.every((n) => Number.isFinite(n)) ? f.L : undefined));
     this.rebuild();
     this.seek(this.start);
   }
@@ -169,27 +165,39 @@ export class ReplayWatch implements Watch {
   }
 
   /**
-   * Where your eyes point `alpha` of the way from the last tick to this one. The recording has
-   * one look per tick; a mouse moves in bursts, so going from one to the next in straight lines
-   * makes the turning speed jump 20 times a second (a judder that reads as a low frame rate). This
-   * follows a smooth curve through every recorded look instead — using the next tick's look,
-   * which a replay already knows — so it is still exactly where you were looking at each tick.
+   * Where your eyes point `alpha` of the way to the next tick, as they did on your screen. Where
+   * the recording kept the frames you saw between ticks (a flick, a quick correction), it goes
+   * through each of them; elsewhere a smooth curve through the per-tick looks (using the next
+   * tick's, which a replay already knows) is within a fraction of a degree of what you saw — not
+   * straight lines from tick to tick, whose 20 changes of speed a second read as a low frame rate.
    */
   look(alpha: number): { yaw: number; pitch: number } {
     const p = this.match.player;
     const k = this.t;
-    if (k < 2) return { yaw: p.yaw, pitch: p.pitch };
-    const last = this.yaws.length - 1;
-    const at = (a: number[], i: number) => a[Math.max(0, Math.min(last, i))];
-    const y1 = at(this.yaws, k - 2);
-    const y0 = y1 + wrapAngle(at(this.yaws, k - 3) - y1);
-    const y2 = y1 + wrapAngle(at(this.yaws, k - 1) - y1);
-    // Past the end there is no next look: hold still.
-    const y3 = k <= last ? y2 + wrapAngle(at(this.yaws, k) - at(this.yaws, k - 1)) : y2;
-    const p1 = at(this.pitches, k - 2);
-    const p3 = k <= last ? at(this.pitches, k) : at(this.pitches, k - 1);
-    const pitch = monotoneCubic(at(this.pitches, k - 3), p1, at(this.pitches, k - 1), p3, alpha);
-    return { yaw: wrapAngle(monotoneCubic(y0, y1, y2, y3, alpha)), pitch: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch)) };
+    if (k < 1) return { yaw: p.yaw, pitch: p.pitch };
+    // Live, your eyes moved with the mouse every frame while your body went from the last tick to
+    // the next one: the same here, on the way from tick k − 1 to tick k (the replay knows it).
+    const L = this.between[k];
+    if (L && k < this.yaws.length) {
+      // The frames you saw this tick, in straight lines between them (they're a frame apart).
+      let t0 = 0;
+      let y0 = this.yaws[k - 1];
+      let p0 = this.pitches[k - 1];
+      for (let i = 0; i <= L.length; i += 3) {
+        const t1 = i < L.length ? L[i] / 100 : 1;
+        const y1 = i < L.length ? y0 + wrapAngle(L[i + 1] - y0) : y0 + wrapAngle(this.yaws[k] - y0);
+        const p1 = i < L.length ? L[i + 2] : this.pitches[k];
+        if (alpha <= t1 || i >= L.length) {
+          const u = t1 > t0 ? Math.max(0, Math.min(1, (alpha - t0) / (t1 - t0))) : 1;
+          return { yaw: wrapAngle(y0 + (y1 - y0) * u), pitch: p0 + (p1 - p0) * u };
+        }
+        t0 = t1;
+        y0 = y1;
+        p0 = p1;
+      }
+    }
+    const [yaw, pitch] = curveLook(this.yaws, this.pitches, k, alpha);
+    return { yaw: wrapAngle(yaw), pitch };
   }
 
   tick(): boolean {

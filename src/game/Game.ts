@@ -2740,6 +2740,9 @@ export class Game {
     }
     const alpha = ticking ? Math.min(1, this.acc / tickMs) : 1;
     this.renderAlpha = alpha;
+    // The replay keeps where your eyes were on this frame too, between ticks: watched back, your
+    // POV turns frame by frame the way it did on your screen, not 20 times a second.
+    if (playing && !spec && m instanceof Match && m.recorder && m.phase !== 'ended') m.recorder.look(alpha, p.yaw, p.pitch);
     // Minimized or in a background tab: the game goes on, but nobody sees the world, the HUD or
     // the widgets, so none of them are drawn (no GPU work, no page layout).
     if (hidden) return;

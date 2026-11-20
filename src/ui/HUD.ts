@@ -424,7 +424,9 @@ export class HUD {
     this.updateDamageTint(player);
     // BactroMod can switch the water / lava overlay off.
     const eye = this.mods?.on('bactromod') && this.mods.cfg('bactromod', 'noLiquid') ? null : eyeFluid(player);
-    this.fluidTint.className = `fluid-tint${info.firstPerson && eye ? ` ${eye}` : ''}`;
+    // (Only touched when it changes: rewriting a class every frame makes the browser restyle.)
+    const tint = `fluid-tint${info.firstPerson && eye ? ` ${eye}` : ''}`;
+    if (this.fluidTint.className !== tint) this.fluidTint.className = tint;
 
 
     // Use progress: eating, drawing a bow, loading a crossbow.
@@ -433,9 +435,12 @@ export class HUD {
     if (kind === 'food') progress = 1 - player.useItemRemaining / player.useItemDuration;
     else if (kind === 'bow') progress = bowPower(player.useTicks());
     else if (kind === 'crossbow') progress = Math.min(1, player.useTicks() / C.CROSSBOW_CHARGE_TICKS);
-    this.eatBar.style.display = progress >= 0 ? 'block' : 'none';
+    const show = progress >= 0 ? 'block' : 'none';
+    if (this.eatBar.style.display !== show) this.eatBar.style.display = show;
     if (progress >= 0) {
-      this.eatFill.style.width = `${progress * 100}%`;
+      // Scaled, not resized: the bar fills on the compositor without a page layout each change.
+      const fill = `scaleX(${progress.toFixed(3)})`;
+      if (this.eatFill.style.transform !== fill) this.eatFill.style.transform = fill;
       this.eatBar.classList.toggle('full', kind !== 'food' && progress >= 1);
     }
 

@@ -493,7 +493,9 @@ body {
 }
 .eat-fill {
   height: 100%;
-  width: 0;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
   background: var(--gold);
 }
 

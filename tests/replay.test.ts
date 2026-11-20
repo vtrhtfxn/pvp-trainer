@@ -5,7 +5,7 @@ import { Rng } from '../src/core/rng';
 import { defaultGameRules } from '../src/game/World';
 import { kitById, type BuiltinKitId } from '../src/game/kits';
 import { Match } from '../src/game/Match';
-import { ReplayRecorder, loadReplays, saveReplays, MAX_REPLAYS, type ReplayData } from '../src/game/replay';
+import { ReplayRecorder, loadReplays, saveReplays, tickLooks, MAX_REPLAYS, type ReplayData } from '../src/game/replay';
 import { ReplayWatch, dropEvents, replayMatch } from '../src/game/ReplayWatch';
 import { SHOP } from '../src/game/modes/shop';
 import { Skywars } from '../src/game/modes/Skywars';
@@ -129,15 +129,45 @@ describe('replays', () => {
       if (Math.abs(p.yaw - p.prevYaw) > 1e-6) turning++;
     }
     expect(turning).toBeGreaterThan(20);
-    // The smoothed POV look still lands exactly on each tick's recorded look.
+    // As on your screen, your eyes go from this tick's look to the next one's (the replay knows it),
+    // landing exactly on each recorded look.
+    const { yaws, pitches } = tickLooks(data.frames);
     for (let i = 0; i < 40; i++) {
       w.tick();
       const at0 = w.look(0);
       const at1 = w.look(1);
-      expect(Math.abs(wrapAngle(at0.yaw - p.prevYaw))).toBeLessThan(1e-9);
-      expect(Math.abs(wrapAngle(at1.yaw - p.yaw))).toBeLessThan(1e-9);
-      expect(at1.pitch).toBeCloseTo(p.pitch, 9);
+      expect(Math.abs(wrapAngle(at0.yaw - p.yaw))).toBeLessThan(1e-9);
+      expect(Math.abs(wrapAngle(at1.yaw - yaws[w.t]))).toBeLessThan(1e-9);
+      expect(at1.pitch).toBeCloseTo(pitches[w.t], 9);
     }
+  });
+
+  it('a flick between ticks is kept frame by frame and played back as you saw it', () => {
+    const h = header('sword', 'lt3', 3);
+    const m = replayMatch({ ...h, id: '', frames: [], checks: [], winner: null, fightTicks: 0 });
+    const rec = new ReplayRecorder(h);
+    m.recorder = rec;
+    rec.start(m.player);
+    const p = m.player;
+    // Steady turning (a smooth curve covers it: nothing extra kept), then one tick with a sharp
+    // flick out and back between two ticks that look almost the same.
+    for (let t = 0; t < 40; t++) {
+      for (const f of [0.25, 0.5, 0.75]) rec.look(f, p.yaw + 0.01 * f, 0);
+      p.yaw += 0.01;
+      m.tick();
+    }
+    rec.look(0.33, p.yaw + 0.4, 0.1);
+    rec.look(0.66, p.yaw + 0.2, 0.05);
+    m.tick();
+    for (let t = 0; t < 5; t++) m.tick();
+    const data = rec.finish(null, m.fightTicks)!;
+    const kept = data.frames.filter((f) => f.L);
+    expect(kept.length).toBe(1);
+    const k = data.frames.findIndex((f) => f.L);
+    const w = new ReplayWatch(data);
+    w.seek(k);
+    expect(Math.abs(wrapAngle(w.look(0.33).yaw - (w.match.player.yaw + 0.4)))).toBeLessThan(1e-3);
+    expect(w.look(0.66).pitch).toBeCloseTo(0.05, 3);
   });
 
   it('the recording is small', () => {

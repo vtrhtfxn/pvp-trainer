@@ -376,11 +376,40 @@ export class Sound {
     const d = this.out(pos, 0.7, 'blocks');
     if (!d) return;
     if (this.pack('eat', d, 0.7, 1 + (Math.random() - Math.random()) * 0.2)) return;
-    const t = this.ctx!.currentTime;
-    for (let i = 0; i < 3; i++) {
-      const f = 900 + Math.random() * 1600;
-      this.noiseBurst(d, t + i * 0.035, 0.035, 'bandpass', f, f * 0.7, 2.5, 0.6);
+    // Three quick crunches, baked once into one buffer: eating plays every 4 ticks, and building
+    // three filtered noise chains each time was a dozen audio nodes per bite.
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.crunch ??= this.bakeCrunch();
+    src.playbackRate.value = 0.85 + Math.random() * 0.35;
+    src.connect(d);
+    src.start();
+  }
+
+  private crunch: AudioBuffer | null = null;
+
+  /** The eating crunch: three short bursts of crackly noise, 35 ms apart, fading out. */
+  private bakeCrunch(): AudioBuffer {
+    const ctx = this.ctx!;
+    const rate = ctx.sampleRate;
+    const buf = ctx.createBuffer(1, Math.ceil(rate * 0.16), rate);
+    const out = buf.getChannelData(0);
+    for (let k = 0; k < 3; k++) {
+      const start = Math.floor(k * 0.035 * rate);
+      const len = Math.floor(0.035 * rate);
+      // A crude band-pass: high-passed noise (difference of samples) smoothed a little.
+      let prev = 0;
+      let lp = 0;
+      const smooth = 0.35 + k * 0.1;
+      for (let i = 0; i < len; i++) {
+        const n = Math.random() * 2 - 1;
+        lp += (n - prev - lp) * smooth;
+        prev = n;
+        const env = Math.min(1, i / (0.004 * rate)) * Math.pow(1 - i / len, 2);
+        out[start + i] += lp * env * 0.6;
+      }
     }
+    return buf;
   }
 
   burp(pos: { x: number; y: number; z: number }) {

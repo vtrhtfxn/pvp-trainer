@@ -113,13 +113,21 @@ export class SpectatorHud {
   }
 
   update(s: Watch, dt: number) {
+    // Only what changed is written: rewriting the same text and widths every frame made the
+    // browser redo the page's style and layout each frame (a replay stutter).
+    const text = (e: HTMLElement, v: string) => {
+      if (e.textContent !== v) e.textContent = v;
+    };
+    const css = (e: HTMLElement, k: 'width' | 'color' | 'display' | 'opacity', v: string) => {
+      if (e.style[k] !== v) e.style[k] = v;
+    };
     const paint = (side: Side, f: Fighter, name: string, color: string, label: string) => {
-      side.name.textContent = name;
-      side.name.style.color = color;
-      side.hp.style.width = `${(Math.max(0, f.health) / f.maxHealth) * 100}%`;
-      side.abs.style.width = `${Math.min(100, (f.absorption / f.maxHealth) * 100)}%`;
+      text(side.name, name);
+      css(side.name, 'color', color);
+      css(side.hp, 'width', `${((Math.max(0, f.health) / f.maxHealth) * 100).toFixed(1)}%`);
+      css(side.abs, 'width', `${Math.min(100, (f.absorption / f.maxHealth) * 100).toFixed(1)}%`);
       const totems = f.countItem('totem_of_undying');
-      side.text.textContent = `${(Math.max(0, f.health) / 2).toFixed(1)} ❤${f.absorption > 0 ? ` +${(f.absorption / 2).toFixed(1)}` : ''}${totems ? ` · ${totems} totem${totems > 1 ? 's' : ''}` : ''}${label ? ` · ${label}` : ''}`;
+      text(side.text, `${(Math.max(0, f.health) / 2).toFixed(1)} ❤${f.absorption > 0 ? ` +${(f.absorption / 2).toFixed(1)}` : ''}${totems ? ` · ${totems} totem${totems > 1 ? 's' : ''}` : ''}${label ? ` · ${label}` : ''}`);
     };
     paint(this.sides[0], s.match.player, s.nameA, s.colorA, s.label('a'));
     paint(this.sides[1], s.match.bot, s.nameB, s.colorB, s.label('b'));
@@ -136,9 +144,9 @@ export class SpectatorHud {
       }
     }
     const pr = s.progress();
-    this.bar.style.display = pr ? '' : 'none';
+    css(this.bar, 'display', pr ? '' : 'none');
     if (pr) {
-      this.barFill.style.width = `${pr.total ? (pr.at / pr.total) * 100 : 0}%`;
+      css(this.barFill, 'width', `${(pr.total ? (pr.at / pr.total) * 100 : 0).toFixed(2)}%`);
       if (this.barText.textContent !== pr.text) this.barText.textContent = pr.text;
     }
     if (this.bannerTimer > 0) {

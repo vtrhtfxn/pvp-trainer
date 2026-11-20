@@ -6,6 +6,8 @@ import type { GameRules } from './World';
 import { Bedwars } from './modes/Bedwars';
 import type { GameMode, ModeHost } from './modes/GameMode';
 import { SHOP } from './modes/shop';
+import { wrapAngle } from '../core/math';
+import { monotoneCubic } from '../render/lookSmooth';
 
 /**
  * Replays. The simulation is deterministic (every random number comes from the match seed), so a
@@ -42,7 +44,16 @@ export interface ReplayFrame {
   a?: ReplayAction[];
   /** The whole inventory (41 slots), when a screen changed it since the last tick. */
   i?: (ItemStack | null)[];
+  /**
+   * Where your eyes were on screen between the previous tick and this one, frame by frame:
+   * [hundredths of the way, yaw, pitch] repeated. Only kept for ticks where a smooth curve through
+   * the per-tick looks would miss them (a quick flick or correction), so most frames have none.
+   */
+  L?: number[];
 }
+
+/** Most a smooth curve through the per-tick looks may miss what you saw before frames are kept (≈0.15°). */
+const LOOK_TOLERANCE = 0.0025;
 
 const FLAG_JUMP = 1;
 const FLAG_SNEAK = 2;
@@ -143,11 +154,21 @@ export class ReplayRecorder {
   private last = { m: [0, 0, 0] as [number, number, number], y: Number.NaN, p: Number.NaN, s: -1 };
   /** Set when something the replay can't reproduce happened (a command): the recording is dropped. */
   broken = false;
+  /** Your look at each drawn frame since the last tick ([fraction, yaw, pitch]…). */
+  private looks: number[] = [];
+  /** …kept per frame until finish() decides which ticks need them. */
+  private readonly frameLooks: (number[] | undefined)[] = [];
 
   constructor(readonly header: ReplayHeader) {}
 
   start(player: Fighter) {
     this.lastInv = inventoryKey(player);
+  }
+
+  /** Where you looked on a drawn frame, `fraction` of the way to the next tick. */
+  look(fraction: number, yaw: number, pitch: number) {
+    if (fraction <= 0.01 || fraction >= 0.99 || this.looks.length >= 60) return;
+    this.looks.push(fraction, yaw, pitch);
   }
 
   /** A screen action, between ticks: it goes into the next frame. */
@@ -183,6 +204,10 @@ export class ReplayRecorder {
       f.i = inventoryOf(player);
       this.lastInv = key;
     }
+    if (this.looks.length) {
+      this.frameLooks[this.frames.length] = this.looks;
+      this.looks = [];
+    }
     this.frames.push(f);
   }
 
@@ -191,17 +216,66 @@ export class ReplayRecorder {
     if (this.frames.length % CHECK_EVERY === 0) this.checks.push(checksum(player, bot));
   }
 
+  /** The frames, with the on-screen looks of the ticks a smooth curve wouldn't reproduce. */
+  private withLooks(): ReplayFrame[] {
+    const { yaws, pitches } = tickLooks(this.frames);
+    return this.frames.map((f, k) => {
+      const raw = this.frameLooks[k];
+      if (!raw || k === 0) return f;
+      let worst = 0;
+      for (let i = 0; i < raw.length; i += 3) {
+        const [cy, cp] = curveLook(yaws, pitches, k, raw[i]);
+        worst = Math.max(worst, Math.abs(wrapAngle(raw[i + 1] - cy)), Math.abs(raw[i + 2] - cp));
+      }
+      if (worst <= LOOK_TOLERANCE) return f;
+      const L: number[] = [];
+      for (let i = 0; i < raw.length; i += 3) L.push(Math.round(raw[i] * 100), Math.round(raw[i + 1] * 1e4) / 1e4, Math.round(raw[i + 2] * 1e4) / 1e4);
+      return { ...f, L };
+    });
+  }
+
   finish(winner: 'player' | 'bot' | null, fightTicks: number): ReplayData | null {
     if (this.broken || this.frames.length === 0) return null;
     return {
       ...this.header,
       id: `${this.header.date.toString(36)}-${this.header.seed.toString(36)}`,
-      frames: this.frames.slice(),
+      frames: this.withLooks(),
       checks: this.checks.slice(),
       winner,
       fightTicks,
     };
   }
+}
+
+/** Each tick's look (yaw and pitch carried forward through frames that left them out). */
+export function tickLooks(frames: readonly ReplayFrame[]): { yaws: number[]; pitches: number[] } {
+  const yaws: number[] = [];
+  const pitches: number[] = [];
+  let y = 0;
+  let p = 0;
+  for (const f of frames) {
+    if (f.y !== undefined) y = f.y;
+    if (f.p !== undefined) p = f.p;
+    yaws.push(y);
+    pitches.push(p);
+  }
+  return { yaws, pitches };
+}
+
+/**
+ * Your look `t` (0–1) of the way from tick `k − 1` to tick `k`, the curve a replay draws when it
+ * has no frames for that stretch: a monotone cubic through the ticks around it (yaw unwrapped).
+ */
+export function curveLook(yaws: readonly number[], pitches: readonly number[], k: number, t: number): [number, number] {
+  const last = yaws.length - 1;
+  const at = (a: readonly number[], i: number) => a[Math.max(0, Math.min(last, i))];
+  if (k > last) return [at(yaws, last), at(pitches, last)];
+  const y1 = at(yaws, k - 1);
+  const y0 = y1 + wrapAngle(at(yaws, k - 2) - y1);
+  const y2 = y1 + wrapAngle(at(yaws, k) - y1);
+  const y3 = y2 + wrapAngle(at(yaws, k + 1) - at(yaws, k));
+  const pitch = monotoneCubic(at(pitches, k - 2), at(pitches, k - 1), at(pitches, k), at(pitches, k + 1), t);
+  return [monotoneCubic(y0, y1, y2, y3, t), Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch))];
 }
 
 /** What a replay drives: the match's player controls (Match implements this). */

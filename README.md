@@ -888,7 +888,12 @@ looking around (`Esc` lets go of it). The camera bar at the bottom (click, or `V
 switches between orbit, following either fighter, **either fighter's POV** — their hand, held item
 and hotbar as they see them — and the free camera. A POV is 1:1 with what that fighter saw: their look exactly as it was each
 tick, their hand and held item, their HUD (hearts, hunger, armor, hotbar) and the crosshair — in
-**Replays** too, so watching your own duel back looks like playing it. `[` `]` change the speed (¼× to 4×), `P` pauses (`Space` too, outside
+**Replays** too, so watching your own duel back looks like playing it. Your own POV in a replay
+goes frame by frame like your screen did: besides your look each tick, the recording keeps the
+frames you saw between ticks wherever a smooth curve through the ticks would miss them by more
+than ~0.15° (a flick, a quick correction) — a few KB a minute — and your eyes lead your body
+through the tick exactly as they did live. The replay's camera bar only rewrites what changed, so
+it no longer makes the page redo its layout every frame. `[` `]` change the speed (¼× to 4×), `P` pauses (`Space` too, outside
 the free camera), `R` starts a new round and `Esc` leaves. A round with no kill after 3 minutes goes
 to whoever has more health (and totems) left.
 
